@@ -900,7 +900,7 @@ async function fetchJSON(url, opt = {}, ms = 8000) {
 const PAGE = location.pathname.split('/').pop() || 'index.html';
 const fatalErr = msg => Object.assign(new Error(msg), { fatal: true });
 const Auth = {
-  user: null, build: null, newBuild: false, waiting: null, acc: null, accBusy: false, bootDB: null,
+  user: null, build: null, newBuild: false, waiting: null, acc: null, accBusy: false, bootDB: null, bootFile: '',
   api(a, body) {
     return fetchJSON('api.php?a=' + a + '&page=' + encodeURIComponent(PAGE), body === undefined ? {} :
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 15000);
@@ -943,7 +943,11 @@ const Auth = {
         list = await loadList();
       }
       const head = exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
-        : boot ? `<h3>Première mise en service</h3><p class="auth-note" style="margin-bottom:12px">Aucun accès n’existe encore : créez celui d’un administrateur.</p>`
+        : boot ? `<h3>Première mise en service</h3><p class="auth-note" style="margin-bottom:12px">Le serveur ne contient encore aucun planning.
+            ${this.bootFile ? `Données reprises de <b>${esc(this.bootFile)}</b> (${this.bootDB.projects.length} projets).`
+              : `Si vous utilisiez déjà le planning sur un poste, exportez-y une sauvegarde (Paramétrage › Données &amp; sauvegarde › Exporter) et reprenez-la ici ; sinon le jeu de démonstration sera utilisé.`}</p>
+            <button class="btn" type="button" data-import style="width:100%;margin-bottom:12px">${ic('upload')} ${this.bootFile ? 'Choisir une autre sauvegarde' : 'Reprendre une sauvegarde (.json)'}</button>
+            <p class="auth-note" style="margin-bottom:12px">Créez ensuite l’accès d’un administrateur :</p>`
           : `<div class="auth-tabs"><button type="button" data-t="login" class="${tab === 'login' ? 'on' : ''}">Se connecter</button>
              <button type="button" data-t="signup" class="${tab === 'signup' ? 'on' : ''}">Créer mon accès</button></div>`;
       const login = `<form data-f="login" class="fgrid one" novalidate>
@@ -973,6 +977,15 @@ const Auth = {
     el.onclick = e => {
       const t = e.target.closest('[data-t]');
       if (t && t.dataset.t !== tab) { tab = t.dataset.t; draw(); return; }
+      if (e.target.closest('[data-import]')) {
+        pickFile('.json,application/json').then(async f => {
+          if (!f) return;
+          let d = null; try { d = JSON.parse(await readFile(f)); } catch (x) { }
+          if (!d || !Array.isArray(d.projects) || !Array.isArray(d.users)) return err('Ce fichier n’est pas une sauvegarde du planning.');
+          this.bootDB = migrate(d); this.bootFile = f.name; list = null; draw();
+        });
+        return;
+      }
       if (e.target.closest('[data-other]')) {
         if (Sync.pending.length && !confirm('Des modifications ne sont pas encore enregistrées : elles seront perdues. Continuer ?')) return;
         this.api('logout', {}).catch(() => { }).finally(() => location.reload());
