@@ -660,7 +660,12 @@ try {
     # Processus PHP (déclaration globale, recréée à chaque passage pour rester à jour).
     $fcgi = "[fullPath='$phpCgi']"
     $configFcgi = (AppCmd @('list', 'config', '-section:system.webServer/fastCgi') -SansErreur).Sortie
-    if ($configFcgi -match [regex]::Escape("fullPath=""$phpCgi""")) {
+    $fcgiExiste = $configFcgi -match [regex]::Escape("fullPath=""$phpCgi""")
+    if ($fcgiExiste -and -not $aNous) {
+        # PHP installé à la main, peut-être utilisé par d'autres sites : sa déclaration reste telle quelle.
+        Ok "FastCGI : déclaration existante de $phpCgi conservée"
+    } else {
+    if ($fcgiExiste) {
         AppCmd @('set', 'config', '-section:system.webServer/fastCgi', "/-$fcgi", '/commit:apphost') | Out-Null
     }
     AppCmd @('set', 'config', '-section:system.webServer/fastCgi',
@@ -671,6 +676,7 @@ try {
     AppCmd @('set', 'config', '-section:system.webServer/fastCgi',
              "/+$fcgi.environmentVariables.[name='PHPRC',value='$DossierPHP']", '/commit:apphost') | Out-Null
     Ok "FastCGI : $phpCgi"
+    }
 
     # PHP n'est branché QUE sur cette application : les autres sites du serveur ne changent pas.
     # responseBufferLimit=0 : la réponse part tout de suite, les e-mails sont envoyés après.
