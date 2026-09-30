@@ -318,6 +318,20 @@ body.kiosk .tbl{font-size:15px}
 #print table{width:100%;border-collapse:collapse;font-size:10.5px}
 #print th,#print td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
 #print th{background:#f0f0f0}
+/* connexion */
+#auth{position:fixed;inset:0;z-index:90;background:var(--bg);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 32px;overflow-y:auto}
+#auth:empty{display:none}
+.auth-box{width:100%;max-width:410px}
+.auth-brand{display:flex;align-items:center;gap:12px;justify-content:center;margin-bottom:18px}
+.auth-brand b{display:block;font-size:17px;font-weight:650;line-height:1.2}
+.auth-brand small{display:block;font-size:12px;color:var(--text-3)}
+.auth-tabs{display:flex;gap:4px;padding:4px;background:var(--surface-3);border-radius:9px;margin-bottom:14px}
+.auth-tabs button{flex:1;border:0;background:0;padding:7px;border-radius:7px;cursor:pointer;font-weight:600;font-size:13.5px;color:var(--text-2)}
+.auth-tabs button.on{background:var(--surface);color:var(--text);box-shadow:var(--sh)}
+.auth-box h3{font-size:16px;margin-bottom:4px}
+.auth-box .bnr{margin-bottom:12px}
+.auth-note{font-size:12.5px;color:var(--text-3);margin:0;line-height:1.5}
+.auth-foot{font-size:12px;color:var(--text-3);text-align:center;margin:14px 0 0;line-height:1.5}
 /* responsive */
 @media(max-width:1180px){.bl{width:250px}}
 @media(max-width:980px){
@@ -363,11 +377,13 @@ body.kiosk .tbl{font-size:15px}
 <div id="modals"></div>
 <div id="toasts"></div>
 <div id="print"></div>
+<div id="auth"></div>
 <script>
 'use strict';
 /* =====================================================================
    D8 PRODUCTION · PLANNING  —  application autonome (1 fichier)
-   Stockage : IndexedDB (poste local) ou api.php (serveur partagé, multi-postes)
+   Stockage : IndexedDB (poste local) ou api.php (serveur partagé, multi-postes,
+   avec connexion par identifiant et mot de passe)
    Aucune dépendance externe : fonctionne hors ligne, sur intranet.
    ===================================================================== */
 const APP_VERSION = '1.0';
@@ -552,6 +568,7 @@ const ICONS = {
   list: 'M8 6h13M8 12h13M8 18h13M3 6h0M3 12h0M3 18h0',
   filter: 'M22 3H2l8 9.5V19l4 2v-8.5z',
   lock: 'M5 11h14v11H5zM8 11V7a4 4 0 0 1 8 0v4',
+  logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   play: 'M5 3l16 9-16 9z',
   dots: 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
   arrow: 'M5 12h14M13 6l6 6-6 6',
@@ -876,22 +893,187 @@ async function fetchJSON(url, opt = {}, ms = 8000) {
   } finally { clearTimeout(t); }
 }
 
+/* ---------- connexion (base partagée uniquement) ----------
+   Chaque personne crée son identifiant et son mot de passe à sa première connexion,
+   puis les saisit à chaque ouverture du navigateur (cookie de session). En base locale,
+   il n'y a pas de connexion : les données ne quittent pas le poste. */
+const PAGE = location.pathname.split('/').pop() || 'index.html';
+const fatalErr = msg => Object.assign(new Error(msg), { fatal: true });
+const Auth = {
+  user: null, build: null, newBuild: false, waiting: null, acc: null, accBusy: false, bootDB: null,
+  api(a, body) {
+    return fetchJSON('api.php?a=' + a + '&page=' + encodeURIComponent(PAGE), body === undefined ? {} :
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 15000);
+  },
+  set(u) { this.user = u; if (this.build == null && u.build != null) this.build = u.build; },
+  /** affiche l'écran de connexion ; la promesse se résout une fois la personne connectée */
+  prompt(info = {}) {
+    if (!this.waiting) this.waiting = new Promise(res => this.show(info, u => { this.waiting = null; $('#auth').innerHTML = ''; res(u); }));
+    return this.waiting;
+  },
+  relogin() { return this.prompt({ expired: true }).then(u => { setSync('ok', 'Reconnecté'); return u; }); },
+  brand() {
+    return `<div class="auth-brand"><span class="logo">D8</span><span><b>${esc(DB ? DB.settings.appName : 'D8 Production')}</b>
+      <small>${esc(DB ? DB.settings.appSub : 'Planning atelier & terrain')}</small></span></div>`;
+  },
+  fatal(msg) {
+    const el = $('#auth');
+    el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b">
+      <div class="bnr danger">${ic('warn')}<span>${esc(msg)}</span></div>
+      <button class="btn pri" type="button" data-reload>Réessayer</button></div></div></div>`;
+    $('[data-reload]', el).onclick = () => location.reload();
+  },
+  async show(info, done) {
+    const el = $('#auth'), exp = !!(info.expired && this.user), boot = !!info.bootstrap;
+    let tab = boot ? 'signup' : 'login', list = null, needCode = !!info.needCode, min = info.minPassword || 8;
+    const loadList = async () => {
+      if (boot) {                                   // 1re mise en service : le planning n'existe pas encore sur le serveur
+        this.bootDB = this.bootDB || migrate(await Sync.readLocal() || seed());
+        const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).includes('admin')).map(r => r.id));
+        return this.bootDB.users.filter(u => u.active !== false && adm.has(u.roleId)).sort(byName).map(u => ({ id: u.id, name: label(u) }));
+      }
+      const r = await this.api('signup-list').catch(() => null);
+      if (!r || !r.ok || !r.body) return [];
+      needCode = !!r.body.needCode; if (r.body.minPassword) min = r.body.minPassword;
+      return (r.body.users || []).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    };
+    const draw = async () => {
+      if (tab === 'signup' && !list) {
+        el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b mut">Chargement…</div></div></div>`;
+        list = await loadList();
+      }
+      const head = exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
+        : boot ? `<h3>Première mise en service</h3><p class="auth-note" style="margin-bottom:12px">Aucun accès n’existe encore : créez celui d’un administrateur.</p>`
+          : `<div class="auth-tabs"><button type="button" data-t="login" class="${tab === 'login' ? 'on' : ''}">Se connecter</button>
+             <button type="button" data-t="signup" class="${tab === 'signup' ? 'on' : ''}">Créer mon accès</button></div>`;
+      const login = `<form data-f="login" class="fgrid one" novalidate>
+        <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false"${exp ? ` value="${esc(this.user.login)}" readonly` : ''}></div>
+        <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="current-password"></div>
+        <button class="btn pri" type="submit">Se connecter</button>
+        ${exp ? `<button class="btn gh" type="button" data-other>Se connecter avec un autre compte</button>`
+          : `<p class="auth-note">Première connexion ? Choisissez « Créer mon accès ».<br>Mot de passe oublié ? Un administrateur peut réinitialiser votre accès.</p>`}</form>`;
+      const signup = `<form data-f="signup" class="fgrid one" novalidate>
+        <div class="fld"><label for="au-u">Vous êtes</label><select class="in" id="au-u" name="userId"><option value="">— choisissez votre nom —</option>
+          ${list && list.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
+          <span class="help">${boot ? 'Seuls les administrateurs du jeu de départ sont proposés.' : 'Votre nom n’apparaît pas ? Un administrateur doit d’abord créer votre fiche (Paramétrage › Utilisateurs), ou votre accès existe déjà.'}</span></div>
+        <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false">
+          <span class="help">3 caractères minimum : lettres, chiffres, point, tiret, @.</span></div>
+        <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="new-password">
+          <span class="help">${min} caractères minimum.</span></div>
+        <div class="fld"><label for="au-c">Confirmation du mot de passe</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
+        ${needCode ? `<div class="fld"><label for="au-k">Code d’accès</label><input class="in" id="au-k" name="code" autocomplete="off"><span class="help">Communiqué par le service informatique.</span></div>` : ''}
+        <button class="btn pri" type="submit">Créer mon accès</button></form>`;
+      el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b">${head}
+        <div class="bnr danger hide" data-err></div>${tab === 'login' || exp ? login : signup}</div></div>
+        <p class="auth-foot">La session reste ouverte jusqu’à la fermeture du navigateur ou une longue inactivité.${location.protocol === 'https:' ? ''
+          : '<br>Connexion non chiffrée (http) : n’utilisez pas un mot de passe qui sert ailleurs.'}</p></div>`;
+      const f = $(exp ? '#au-p' : tab === 'signup' ? '#au-u' : '#au-l', el); if (f) f.focus();
+    };
+    const err = m => { const b = $('[data-err]', el); if (!b) return; b.innerHTML = m ? ic('warn') + '<span>' + esc(m) + '</span>' : ''; b.classList.toggle('hide', !m); };
+    el.onclick = e => {
+      const t = e.target.closest('[data-t]');
+      if (t && t.dataset.t !== tab) { tab = t.dataset.t; draw(); return; }
+      if (e.target.closest('[data-other]')) {
+        if (Sync.pending.length && !confirm('Des modifications ne sont pas encore enregistrées : elles seront perdues. Continuer ?')) return;
+        this.api('logout', {}).catch(() => { }).finally(() => location.reload());
+      }
+    };
+    el.onsubmit = async e => {
+      e.preventDefault();
+      const form = e.target, kind = form.dataset.f, v = Object.fromEntries(new FormData(form));
+      v.login = String(v.login || '').trim();
+      if (!v.login || !v.password) return err('Renseignez l’identifiant et le mot de passe.');
+      if (kind === 'signup') {
+        if (!v.userId) return err('Choisissez votre nom dans la liste.');
+        if (!/^[a-z0-9._@-]{3,60}$/i.test(v.login)) return err('Identifiant : 3 à 60 caractères parmi lettres, chiffres, point, tiret, @.');
+        if (v.password.length < min) return err(`Mot de passe trop court (${min} caractères minimum).`);
+        if (v.password !== v.confirm) return err('Les deux mots de passe ne correspondent pas.');
+        delete v.confirm;
+        if (boot) v.name = (list.find(u => u.id === v.userId) || {}).name || '';
+      }
+      const btn = $('button[type=submit]', form); btn.disabled = true; err('');
+      let r = null; try { r = await this.api(kind, v); } catch (x) { }
+      btn.disabled = false;
+      if (r && r.ok && r.body && r.body.auth) {
+        el.onclick = el.onsubmit = null;
+        this.set(r.body); done(r.body);
+      } else {
+        err((r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.');
+        if (kind === 'signup' && r && r.status === 409) list = null;   // la liste a pu changer entre-temps
+      }
+    };
+    draw();
+  },
+  async logout() {
+    closePop();
+    if ((Sync.pending.length || Sync.busy) && !await ask('Des modifications sont encore en cours d’enregistrement. Se déconnecter quand même ? Elles seront perdues.', { ok: 'Se déconnecter', danger: true })) return;
+    try { await this.api('logout', {}); } catch (e) { }
+    location.reload();
+  },
+  changePassword() {
+    closePop();
+    const m = modal({
+      title: 'Changer mon mot de passe', size: 'sm',
+      body: `<form class="fgrid one" id="pwd" novalidate>
+        <input type="text" name="login" value="${esc(this.user ? this.user.login : '')}" autocomplete="username" hidden>
+        <div class="fld"><label>Mot de passe actuel</label><input class="in" type="password" name="current" autocomplete="current-password" autofocus></div>
+        <div class="fld"><label>Nouveau mot de passe</label><input class="in" type="password" name="next" autocomplete="new-password"></div>
+        <div class="fld"><label>Confirmation</label><input class="in" type="password" name="confirm" autocomplete="new-password"></div>
+        <p class="auth-note">Vos autres sessions ouvertes (autres postes) seront déconnectées.</p></form>`,
+      foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn pri" data-ok>Enregistrer</button>`
+    });
+    const save = async () => {
+      const v = Object.fromEntries(new FormData($('#pwd', m.el)));
+      if (!v.current || !v.next) return toast('Renseignez les deux mots de passe.', 'warn');
+      if (v.next !== v.confirm) return toast('Les deux nouveaux mots de passe ne correspondent pas.', 'warn');
+      const r = await this.api('password', { current: v.current, next: v.next }).catch(() => null);
+      if (r && r.ok) { m.close(); toast('Mot de passe modifié', 'ok'); }
+      else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+    };
+    $('[data-ok]', m.el).onclick = save;
+    $('#pwd', m.el).onsubmit = e => { e.preventDefault(); save(); };
+  },
+  /** accès créés (page Utilisateurs, administrateurs) */
+  async loadAccounts() {
+    if (this.accBusy) return; this.accBusy = true;
+    let r = null; try { r = await this.api('accounts'); } catch (e) { }
+    this.acc = r && r.ok && r.body ? Object.fromEntries(r.body.accounts.map(a => [a.userId, a])) : {};
+    this.accBusy = false;
+    if (route().path === '/admin/users') render();
+  },
+  /** une nouvelle version du fichier HTML a été déposée sur le serveur */
+  checkBuild(b) {
+    if (b == null || this.newBuild) return;
+    if (this.build == null) { this.build = b; return; }
+    if (b === this.build) return;
+    this.newBuild = true;
+    if (route().seg[0] === 'ecran') { if (!Sync.pending.length && !Sync.busy) location.reload(); return; }
+    banner('info', 'Une nouvelle version de l’application vient d’être installée. <button class="btn sm" data-act="app-reload">Recharger maintenant</button>', 'newbuild');
+  }
+};
+
 const Sync = {
   mode: 'memory', version: 0, pending: [], busy: false, retry: 0, bc: null, lastSave: '',
   async init() {
     const forceLocal = new URLSearchParams(location.search).has('local');
     if (/^https?:/.test(location.protocol) && !forceLocal) {
-      try {
-        const r = await fetchJSON('api.php?a=load', {}, 4500);
-        if (r.ok && r.body && typeof r.body.version === 'number') {
-          this.mode = 'server'; this.version = r.body.version;
-          if (r.body.data) return migrate(r.body.data);
-          const fresh = migrate(await this.readLocal() || seed());
-          const s = await this.post(fresh, 0);
-          if (s && s.version) this.version = s.version;
-          return fresh;
-        }
-      } catch (e) { /* pas d'API → mode local */ }
+      let r = null;
+      try { r = await Auth.api('me'); } catch (e) { /* pas d'API → mode local */ }
+      if (r && r.body) {                          // api.php répond : base partagée, connexion obligatoire
+        if (r.status === 401 && r.body.auth === false) r = { ok: true, body: await Auth.prompt(r.body) };
+        if (!r.ok || !r.body.auth) throw fatalErr(r.body.error === 'Action inconnue'
+          ? 'Le fichier api.php installé sur le serveur est une ancienne version : remplacez-le par celui livré avec cette page.'
+          : 'Le serveur a répondu : ' + (r.body.error || 'réponse inattendue') + '.');
+        Auth.set(r.body);
+        const l = await fetchJSON('api.php?a=load', {}, 30000).catch(() => null);
+        if (!l || !l.ok || !l.body || typeof l.body.version !== 'number') throw fatalErr('Impossible de charger le planning depuis le serveur.');
+        this.mode = 'server'; this.version = l.body.version;
+        if (l.body.data) return migrate(l.body.data);
+        const fresh = Auth.bootDB || migrate(await this.readLocal() || seed());
+        const s = await this.post(fresh, 0);
+        if (s && s.version) this.version = s.version;
+        return fresh;
+      }
     }
     let data = null;
     try { await IDB.open(); data = await IDB.get('db'); this.mode = 'local'; } catch (e) {
@@ -924,11 +1106,10 @@ const Sync = {
       banner('danger', 'Enregistrement impossible (espace de stockage saturé). Exportez une sauvegarde depuis Données &amp; sauvegarde.');
     }
   }, 350),
-  post(data, base) {
-    const u = me();
-    return fetchJSON('api.php?a=save&base=' + base + '&user=' + encodeURIComponent(u ? label(u) : ''),
+  post(data, base) {                          // l'auteur est déduit de la session par le serveur
+    return fetchJSON('api.php?a=save&base=' + base,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }, 25000)
-      .then(r => r.ok ? r.body : (r.status === 409 ? Object.assign({ conflict: true }, r.body) : null));
+      .then(r => r.ok ? r.body : r.status === 409 ? Object.assign({ conflict: true }, r.body) : r.status === 401 ? { unauth: true } : null);
   },
   async flush() {
     if (this.busy || !this.pending.length || this.mode !== 'server') return;
@@ -936,6 +1117,11 @@ const Sync = {
     const count = this.pending.length;
     try {
       let r = await this.post(DB, this.version);
+      if (r && r.unauth) {                    // session expirée : on garde les modifications et on redemande le mot de passe
+        setSync('warn', 'Session expirée');
+        await Auth.relogin();
+        this.busy = false; this.flush(); return;
+      }
       if (r && r.conflict) {              // quelqu'un a enregistré avant nous → on rejoue nos modifications sur la version du serveur
         const fresh = migrate(r.data);
         for (const fn of this.pending) { try { fn(fresh); } catch (e) { console.warn(e); } }
@@ -956,9 +1142,11 @@ const Sync = {
     if (this.pending.length) this.flush();
   },
   async poll() {
-    if (this.mode !== 'server' || this.busy || this.pending.length) return;
+    if (this.mode !== 'server' || this.busy || this.pending.length || Auth.waiting) return;
     try {
-      const r = await fetchJSON('api.php?a=ping', {}, 6000);
+      const r = await fetchJSON('api.php?a=ping&page=' + encodeURIComponent(PAGE), {}, 6000);
+      if (r.status === 401) { setSync('warn', 'Session expirée'); Auth.relogin().then(() => this.poll()); return; }
+      if (r.ok && r.body) Auth.checkBuild(r.body.build);
       if (r.ok && r.body && r.body.version > this.version) {
         const l = await fetchJSON('api.php?a=load', {}, 20000);
         if (l.ok && l.body && l.body.data) {
@@ -973,7 +1161,7 @@ function setSync(cls, txt) {
   const el = $('#sync'); if (!el) return;
   el.className = 'sync ' + cls;
   el.lastElementChild.textContent = txt;
-  el.title = Sync.mode === 'server' ? 'Base partagée (api.php)' : Sync.mode === 'local' ? 'Base locale à ce navigateur' : 'Aucun stockage disponible';
+  el.title = Sync.mode === 'server' ? 'Base partagée (api.php)' + (Auth.user ? ' · connecté en tant que ' + Auth.user.login : '') : Sync.mode === 'local' ? 'Base locale à ce navigateur' : 'Aucun stockage disponible';
 }
 
 /* =====================================================================
@@ -1039,7 +1227,11 @@ const opEnd = o => { const h = opHalves(o); return h.length ? h[h.length - 1][0]
 const opHours = o => (o.halfDays || 1) * hpd() / 2;
 const staffName = id => { const s = get('staff', id); return s ? label(s) : ''; };
 const firstStatus = (d, st) => (d.statuses.filter(s => s.stage === st).sort(byOrder)[0] || d.statuses[0] || {}).id || '';
-function me() { const u = DB && (get('users', UI.user) || DB.users.find(x => x.active !== false)); return u || null; }
+function me() {
+  if (!DB) return null;
+  if (Sync.mode === 'server') return (Auth.user && get('users', Auth.user.userId)) || null;   // la personne connectée, jamais une autre
+  return get('users', UI.user) || DB.users.find(x => x.active !== false) || null;
+}
 function roleOf(u) { return u ? get('roles', u.roleId) : null; }
 function can(p) {
   if (!DB || !DB.users.length) return true;
@@ -1550,16 +1742,25 @@ Object.assign(ACT, {
     mutate('Suppression des données de démonstration', d => { d.projects = []; d.ops = []; d.absences = []; d.meta.demo = false; d.counters.project = 1; d.counters.op = 1; });
   },
   who: el => {
-    const u = me(), r = roleOf(u);
-    popover(el, `<div style="padding:8px 10px;border-bottom:1px solid var(--border)"><b>${esc(u ? label(u) : '')}</b><div class="mut" style="font-size:12px">${esc(r ? r.name : 'sans rôle')}</div></div>
-      <div style="max-height:260px;overflow:auto">${DB.users.filter(x => x.active !== false).sort(byName).map(x =>
-      `<div class="pal-i" data-act="switch-user" data-id="${x.id}"><span class="av" style="background:${x.id === (u && u.id) ? 'var(--primary)' : 'var(--text-3)'}">${initials(label(x))}</span><span>${esc(label(x))}</span><small>${esc(label(roleOf(x)) || '')}</small></div>`).join('')}</div>
-      <div style="border-top:1px solid var(--border);margin-top:4px">
+    const u = me(), r = roleOf(u), srv = Sync.mode === 'server';
+    popover(el, `<div style="padding:8px 10px;border-bottom:1px solid var(--border)"><b>${esc(u ? label(u) : (Auth.user ? Auth.user.name : ''))}</b><div class="mut" style="font-size:12px">${esc(r ? r.name : 'sans rôle')}${srv && Auth.user ? ' · identifiant ' + esc(Auth.user.login) : ''}</div></div>
+      ${srv ? '' : `<div style="max-height:260px;overflow:auto">${DB.users.filter(x => x.active !== false).sort(byName).map(x =>
+      `<div class="pal-i" data-act="switch-user" data-id="${x.id}"><span class="av" style="background:${x.id === (u && u.id) ? 'var(--primary)' : 'var(--text-3)'}">${initials(label(x))}</span><span>${esc(label(x))}</span><small>${esc(label(roleOf(x)) || '')}</small></div>`).join('')}</div>`}
+      <div style="${srv ? '' : 'border-top:1px solid var(--border);'}margin-top:4px">
+        ${srv ? `<div class="pal-i" data-act="change-pwd">${ic('lock')}<span>Changer mon mot de passe</span></div>` : ''}
         <div class="pal-i" data-act="shortcuts">${ic('keyboard')}<span>Raccourcis clavier</span></div>
         <div class="pal-i" data-act="go" data-to="/admin/parametres">${ic('sliders')}<span>Paramètres</span></div>
+        ${srv ? `<div class="pal-i" data-act="logout" style="color:var(--danger)">${ic('logout')}<span>Se déconnecter</span></div>` : ''}
       </div>`);
   },
+  'change-pwd': () => Auth.changePassword(),
+  logout: () => Auth.logout(),
+  'app-reload': () => {
+    if (Sync.pending.length || Sync.busy) return toast('Enregistrement en cours… réessayez dans un instant.', 'warn');
+    location.reload();
+  },
   'switch-user': el => {
+    if (Sync.mode === 'server') return;       // en base partagée, on est la personne connectée
     UI.user = el.dataset.id; saveUI(); closePop();
     mutate('Connexion', d => { const u = d.users.find(x => x.id === UI.user); if (u) u.lastLogin = D.today(); }, { nolog: true });
     render();
@@ -2595,7 +2796,7 @@ const SCHEMAS = {
   },
   users: {
     label: 'Utilisateurs', one: 'un utilisateur', icon: 'usercircle',
-    desc: 'Comptes visibles dans le sélecteur en haut à droite et proposés comme commerciaux sur les projets.',
+    desc: 'Personnes autorisées à se connecter (chacune crée son identifiant et son mot de passe à sa première connexion) et proposées comme commerciaux sur les projets.',
     fields: [
       { k: 'firstName', l: 'Prénom', t: 'text', list: 1 },
       { k: 'lastName', l: 'Nom', t: 'text', req: 1, list: 1 },
@@ -2702,6 +2903,13 @@ function pageAdmin(kind, q) {
   let rows = DB[kind].slice().sort(kind === 'staff' || kind === 'users' ? byName : byOrder);
   if (qq) rows = rows.filter(x => norm(JSON.stringify(Object.values(x))).includes(norm(qq)));
   const cols = S.fields.filter(f => f.list);
+  const accs = kind === 'users' && Sync.mode === 'server';
+  if (accs && (Auth.acc === null || lastPath !== route().path)) { if (lastPath !== route().path) Auth.acc = null; Auth.loadAccounts(); }
+  const accCell = x => !accs ? '' : `<td>${!Auth.acc ? '<span class="mut">…</span>' : Auth.acc[x.id]
+    ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>`
+    : '<span class="mut">à créer</span>'}</td>`;
+  const accBtn = x => accs && Auth.acc && Auth.acc[x.id] && !(Auth.user && Auth.user.userId === x.id)
+    ? `<button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>` : '';
   let extra = '';
   if (kind === 'users') {
     const dorm = DB.users.filter(u => u.active !== false && u.lastLogin && D.diff(u.lastLogin, D.today()) > (DB.settings.dormantDays || 180));
@@ -2714,13 +2922,13 @@ function pageAdmin(kind, q) {
   ${extra}
   <div class="toolbar"><input class="in srchin" id="adq_${kind}" data-on="adq" data-k="${kind}" placeholder="Filtrer" value="${esc(qq)}">
     <span class="mut">${rows.length} élément${rows.length > 1 ? 's' : ''}</span></div>
-  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}<th style="width:110px"></th></tr></thead><tbody>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}${accs ? '<th>Identifiant</th>' : ''}<th style="width:${accs ? 145 : 110}px"></th></tr></thead><tbody>
     ${rows.map(x => `<tr class="clic" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}">
-      ${cols.map(f => `<td>${cellVal(f, x)}</td>`).join('')}
-      <td class="nowrap"><button class="ibtn" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}" title="Modifier">${ic('edit')}</button>
+      ${cols.map(f => `<td>${cellVal(f, x)}</td>`).join('')}${accCell(x)}
+      <td class="nowrap">${accBtn(x)}<button class="ibtn" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}" title="Modifier">${ic('edit')}</button>
         <button class="ibtn" data-act="crud-dup" data-c="${kind}" data-id="${esc(x.id)}" title="Dupliquer">${ic('copy')}</button>
         <button class="ibtn" data-act="crud-del" data-c="${kind}" data-id="${esc(x.id)}" title="Supprimer">${ic('trash')}</button></td></tr>`).join('')
-    || `<tr><td colspan="${cols.length + 1}">${emptyBox('Liste vide', 'Ajoutez un premier élément pour commencer.')}</td></tr>`}
+    || `<tr><td colspan="${cols.length + (accs ? 2 : 1)}">${emptyBox('Liste vide', 'Ajoutez un premier élément pour commencer.')}</td></tr>`}
   </tbody></table></div>`;
 }
 function pageSettings() {
@@ -2955,6 +3163,14 @@ Object.assign(ACT, {
     })));
     download(c + '.csv', CSV.make(rows), 'text/csv;charset=utf-8');
   },
+  'reset-access': async (el, e) => {
+    if (e) e.stopPropagation(); if (!needs('admin')) return;
+    const u = get('users', el.dataset.id); if (!u) return;
+    if (!await ask(`Réinitialiser l’accès de <b>${esc(label(u))}</b> ?<br><br>Son identifiant et son mot de passe seront supprimés et ses sessions ouvertes fermées. La personne recréera son accès à sa prochaine connexion (« Créer mon accès »).`, { ok: 'Réinitialiser', danger: true })) return;
+    const r = await Auth.api('reset', { userId: u.id }).catch(() => null);
+    if (r && r.ok) { toast('Accès de ' + label(u) + ' réinitialisé', 'ok'); Auth.acc = null; Auth.loadAccounts(); }
+    else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+  },
   'disable-dormant': async () => {
     const lim = DB.settings.dormantDays || 180;
     const l = DB.users.filter(u => u.active !== false && u.lastLogin && D.diff(u.lastLogin, D.today()) > lim);
@@ -3089,6 +3305,7 @@ document.addEventListener('drop', e => {
 
 /* ---------- clavier ---------- */
 document.addEventListener('keydown', e => {
+  if (!DB || $('#auth').firstChild) return;   // écran de connexion affiché : pas de raccourcis
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('.op,.bl-i')) { e.preventDefault(); e.target.click(); return; }
   if (e.key === 'Escape') {
     const m = $$('.mwrap').pop();
@@ -3339,13 +3556,15 @@ render = function () { baseRender(); try { afterRender(); } catch (e) { console.
   applyTheme();
   if (UI.mini) document.body.classList.add('mini');
   try { DB = await Sync.init(); }
-  catch (e) { console.error(e); DB = migrate(null); }
-  if (!UI.user || !DB.users.some(u => u.id === UI.user)) {
+  catch (e) { console.error(e); if (e.fatal) return Auth.fatal(e.message); DB = migrate(null); }
+  if (Sync.mode === 'server') { UI.user = Auth.user.userId; saveUI(); }
+  else if (!UI.user || !DB.users.some(u => u.id === UI.user)) {
     const a = DB.users.find(u => ((get('roles', u.roleId) || {}).perms || []).includes('admin')) || DB.users[0];
     UI.user = a ? a.id : ''; saveUI();
   }
   setSync(Sync.mode === 'memory' ? 'warn' : 'ok',
     Sync.mode === 'server' ? 'Synchronisé · v' + Sync.version : Sync.mode === 'local' ? 'Enregistré sur ce poste' : 'Aucun stockage');
+  if (Sync.mode === 'server' && !me()) banner('danger', 'Votre fiche utilisateur n’existe plus dans le planning : consultation seule. Contactez un administrateur.', 'nouser');
   if (Sync.mode === 'memory') banner('danger', 'Ce navigateur bloque le stockage : les modifications seront perdues à la fermeture. Exportez régulièrement une sauvegarde.', 'nostore');
   if (!location.hash) location.hash = '#/';
   render();
