@@ -39,7 +39,7 @@ récent, 64 bits, compte administrateur, accès Internet (sinon voir
 | IIS | Application `/ticketing` avec son propre pool `D8Support`. PHP est branché **sur cette application seulement** : les autres sites du serveur ne changent pas. Les messages d'erreur de l'application sont transmis tels quels (sinon IIS les remplace par ses pages HTML). |
 | Sécurité | `web.config` rend le dossier `data\` (base, pièces jointes, journaux) inaccessible depuis le navigateur ; l'installateur le vérifie. |
 | Pare-feu | Ouvre le port HTTP du site en entrée. |
-| Planning D8 | Active aussi PHP pour `planning_prod_d8` (même site) : `api.php` fonctionne, le planning passe en **base partagée**, son dossier `data\` (planning, comptes, sessions) est accessible en écriture pour IIS et masqué du navigateur. Rien n'est fait si le dossier n'existe pas. |
+| Planning D8 | Active aussi PHP pour `planning_prod_d8` (même site) : `api.php` fonctionne, le planning passe en **base partagée**, son dossier `data\` (planning, comptes, sessions) est accessible en écriture pour IIS et masqué du navigateur. Si `$SIGNUP_CODE` est vide dans `api.php`, un code aléatoire y est écrit (ancienne version gardée dans `data\api.php.precedent`) et affiché à la fin : il faut le saisir pour créer son accès. Rien n'est fait si le dossier n'existe pas. |
 | Vérification | Interroge l'application, contrôle que la base n'est pas téléchargeable, affiche le code d'installation. |
 | Sauvegarde | Tâche planifiée quotidienne (22 h 00, compte SYSTEM) dans `C:\Sauvegardes\D8Support`, 14 archives gardées, et une sauvegarde d'essai tout de suite. |
 
