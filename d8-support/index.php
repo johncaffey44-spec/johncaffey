@@ -1193,7 +1193,9 @@ select.input {
 .btn-menu { display: none; background: transparent; border: 0; color: inherit; padding: .35rem; border-radius: 8px; }
 
 
-.main { padding: 1.6rem 1.8rem 3rem; max-width: 1180px; width: 100%; }
+/* Toute la largeur disponible : plafonnée et non centrée, la page restait collée
+   à gauche sur les grands écrans. */
+.main { padding: 1.6rem 1.8rem 3rem; width: 100%; }
 
 .scrim {
   position: fixed; inset: 0; background: rgba(15, 34, 42, .50); z-index: 40;
