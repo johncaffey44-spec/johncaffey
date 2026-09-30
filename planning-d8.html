@@ -84,6 +84,9 @@ h1,h2,h3,h4{margin:0;font-weight:640;letter-spacing:-.01em}
 body.mini #sb{width:62px}
 body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .nav-b,body.mini .sb-new .lbl,body.mini .sb-foot span{display:none}
 body.mini .nav-a{justify-content:center;padding:9px 0}
+body.mini .sb-head{flex-direction:column;padding:12px 0 6px;gap:6px}
+body.mini .brand{flex:none}
+body.mini .sb-new{margin:6px 10px 8px;padding:9px 0}
 body.mini .sb-foot{justify-content:center}
 #main{flex:1;min-width:0;display:flex;flex-direction:column}
 #top{height:54px;display:flex;align-items:center;gap:10px;padding:0 18px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:25}
@@ -339,6 +342,8 @@ body.kiosk .tbl{font-size:15px}
   body.sb-open #sb{transform:none}
   body.mini #sb{width:250px}
   body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .nav-b,body.mini .sb-new .lbl,body.mini .sb-foot span{display:revert}
+  body.mini .sb-head{flex-direction:row;padding:14px 10px 8px 14px}
+  body.mini .brand{flex:1}
   .plan{flex-direction:column}.bl{width:100%;position:static;max-height:none}
   #view{padding:14px 12px 40px}
   #top{padding:0 12px}
@@ -354,9 +359,9 @@ body.kiosk .tbl{font-size:15px}
   <aside id="sb">
     <div class="sb-head">
       <a class="brand" href="#/"><span class="logo">D8</span><span class="trunc"><b id="app-name">D8 Production</b><small id="app-sub">Planning atelier &amp; terrain</small></span></a>
-      <button class="ibtn" style="color:var(--side-mu)" data-act="mini" title="Réduire le menu"></button>
+      <button class="ibtn" style="color:var(--side-mu)" data-act="mini" title="Réduire / agrandir le menu"></button>
     </div>
-    <button class="sb-new" data-act="new-project"><span class="lbl">Nouveau projet</span></button>
+    <button class="sb-new" data-act="new-project" title="Nouveau projet"><span class="lbl">Nouveau projet</span></button>
     <nav id="nav"></nav>
     <div class="sb-foot"><span id="sb-info"></span></div>
   </aside>
@@ -1546,6 +1551,7 @@ function renderTop(r) {
   $('#who-name').textContent = u ? label(u) : 'Utilisateur';
   $('[data-act=theme]').innerHTML = ic(UI.theme === 'dark' ? 'sun' : 'moon');
   $('[data-act=mini]').innerHTML = ic('menu');
+  if (!$('.sb-new .ic')) $('.sb-new').insertAdjacentHTML('afterbegin', ic('plus'));
   $('#burger').innerHTML = ic('menu');
 }
 let BANNERS = [];
