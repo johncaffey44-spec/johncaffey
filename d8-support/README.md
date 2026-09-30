@@ -39,6 +39,7 @@ récent, 64 bits, compte administrateur, accès Internet (sinon voir
 | IIS | Application `/ticketing` avec son propre pool `D8Support`. PHP est branché **sur cette application seulement** : les autres sites du serveur ne changent pas. Les messages d'erreur de l'application sont transmis tels quels (sinon IIS les remplace par ses pages HTML). |
 | Sécurité | `web.config` rend le dossier `data\` (base, pièces jointes, journaux) inaccessible depuis le navigateur ; l'installateur le vérifie. |
 | Pare-feu | Ouvre le port HTTP du site en entrée. |
+| Planning D8 | Active aussi PHP pour `planning_prod_d8` (même site) : `api.php` fonctionne, le planning passe en **base partagée**, son dossier `data\` (planning, comptes, sessions) est accessible en écriture pour IIS et masqué du navigateur. Rien n'est fait si le dossier n'existe pas. |
 | Vérification | Interroge l'application, contrôle que la base n'est pas téléchargeable, affiche le code d'installation. |
 | Sauvegarde | Tâche planifiée quotidienne (22 h 00, compte SYSTEM) dans `C:\Sauvegardes\D8Support`, 14 archives gardées, et une sauvegarde d'essai tout de suite. |
 
@@ -85,6 +86,7 @@ INSTALLER.cmd -NomApplication support -HeureSauvegarde 12:30
 | `-DossierSauvegardes` | `C:\Sauvegardes\D8Support` | Destination des sauvegardes. De préférence un partage réseau (`\\nas\sauvegardes\d8support`) : la tâche tourne sous le compte SYSTEM, c'est donc le compte ordinateur du serveur (`DOMAINE\SERVEUR$`) qui doit pouvoir y écrire. |
 | `-HeureSauvegarde` | `22:00` | Heure de la sauvegarde quotidienne. |
 | `-SauvegardesAGarder` | `14` | Nombre d'archives conservées. |
+| `-AutresApplications` | `planning_prod_d8` | Autres dossiers du site où activer PHP (séparés par des virgules). `-AutresApplications @()` : aucun. |
 | `-SansSauvegarde` | | Ne crée pas la tâche planifiée. |
 | `-SansPause` | | Ne demande pas « Entrée » à la fin (déploiement automatisé). |
 
@@ -105,6 +107,19 @@ et le pool `D8Support`. Dans le Planificateur de tâches : supprimer
 « D8 Support - sauvegarde quotidienne ». Puis supprimer les dossiers
 `C:\inetpub\wwwroot\ticketing` (**les données sont dans `data\`**) et, si
 rien d'autre ne s'en sert, `C:\PHP`.
+
+## Planning D8 : passage en base partagée
+
+Tant que PHP n'était pas actif, chaque poste gardait **son** planning dans
+son navigateur (base locale). Une fois `api.php` actif, la page bascule en
+base partagée, vide au départ. **Avant de lancer l'installateur**, exporter
+le planning depuis le poste qui a les bonnes données (*Paramétrage › Données
+& sauvegarde › Exporter*), puis le recharger à l'écran « Première mise en
+service » (voir `MISE-A-JOUR.md` à la racine du dépôt).
+
+La sauvegarde quotidienne de l'installateur ne couvre que D8 Support :
+le planning garde ses propres copies dans `planning_prod_d8\data\backups`,
+sur le même disque. Faites-les copier ailleurs aussi.
 
 ## Limites à connaître
 

@@ -12,7 +12,8 @@
          l'emploi ;
       4. copie index.php et web.config dans C:\inetpub\wwwroot\ticketing et
          donne à IIS le droit d'écrire dans data\ (et nulle part ailleurs) ;
-      5. crée l'application IIS /ticketing avec son propre pool et y branche PHP ;
+      5. crée l'application IIS /ticketing avec son propre pool et y branche PHP,
+         ainsi que sur les autres applications PHP du site (planning_prod_d8) ;
       6. ouvre le port HTTP dans le pare-feu Windows ;
       7. vérifie que tout répond et affiche le code d'installation ;
       8. programme une sauvegarde quotidienne.
@@ -50,6 +51,9 @@ param(
     [string]$HeureSauvegarde = '22:00',
     [int]$SauvegardesAGarder = 14,
     [switch]$SansSauvegarde,
+    # Autres dossiers du site où activer PHP aussi (dossier data\ protégé et
+    # accessible en écriture). Absent du serveur : ignoré. @() : aucun.
+    [string[]]$AutresApplications = @('planning_prod_d8'),
     # Ne pas attendre « Entrée » à la fin (installation automatisée).
     [switch]$SansPause
 )
@@ -399,10 +403,11 @@ display_startup_errors = Off
 log_errors = On
 error_log = "$DossierPHP\logs\php-erreurs.log"
 
-; Pieces jointes : jusqu'a 3 fichiers de 5 Mo par envoi
+; Pieces jointes : jusqu'a 3 fichiers de 5 Mo par envoi (tickets) ;
+; enregistrement du planning : jusqu'a 40 Mo
 file_uploads = On
 upload_max_filesize = 8M
-post_max_size = 20M
+post_max_size = 48M
 upload_tmp_dir = "$DossierPHP\temp"
 sys_temp_dir = "$DossierPHP\temp"
 
@@ -692,6 +697,41 @@ try {
              '/existingResponse:PassThrough', '/commit:apphost') | Out-Null
     Ok "Messages d'erreur de l'application transmis tels quels"
 
+    # Autres applications PHP du même site (dossiers simples sous la racine du site).
+    $autresActivees = @()
+    $racineSite = [Environment]::ExpandEnvironmentVariables(
+        (AppCmd @('list', 'vdir', "$Site/", '/text:physicalPath') -SansErreur).Sortie.Trim())
+    foreach ($nomAutre in $AutresApplications) {
+        $nomAutre = ([string]$nomAutre).Trim('/', '\', ' ')
+        if (-not $nomAutre -or $nomAutre -eq $NomApplication) { continue }
+        $dossierAutre = ''
+        if ($racineSite) { $dossierAutre = Join-Path $racineSite $nomAutre }
+        if (-not $dossierAutre -or -not (Test-Path $dossierAutre)) {
+            Info "$nomAutre : dossier introuvable sous la racine du site, ignoré."
+            continue
+        }
+        $emplacement = "$Site/$nomAutre"
+        AppCmd @('set', 'config', $emplacement, '-section:system.webServer/handlers',
+                 "/-[name='$NomGestionnaire']", '/commit:apphost') -SansErreur | Out-Null
+        AppCmd @('set', 'config', $emplacement, '-section:system.webServer/handlers',
+                 "/+[name='$NomGestionnaire',path='*.php',verb='GET,HEAD,POST',modules='FastCgiModule',scriptProcessor='$phpCgi',resourceType='File',requireAccess='Script',responseBufferLimit='0']",
+                 '/commit:apphost') | Out-Null
+        AppCmd @('set', 'config', $emplacement, '-section:system.webServer/httpErrors',
+                 '/existingResponse:PassThrough', '/commit:apphost') | Out-Null
+        # data\ (données, comptes, sessions) jamais servi ; envois jusqu'à 50 Mo.
+        AppCmd @('set', 'config', $emplacement, '-section:system.webServer/security/requestFiltering',
+                 "/-hiddenSegments.[segment='data']", '/commit:apphost') -SansErreur | Out-Null
+        AppCmd @('set', 'config', $emplacement, '-section:system.webServer/security/requestFiltering',
+                 "/+hiddenSegments.[segment='data']", '/requestLimits.maxAllowedContentLength:52428800',
+                 '/commit:apphost') | Out-Null
+        $dataAutre = Join-Path $dossierAutre 'data'
+        New-Item -ItemType Directory -Force -Path $dataAutre | Out-Null
+        Definir-Droits $dossierAutre @('/grant', "${IUSR}:(OI)(CI)RX", "${IIS_IUSRS}:(OI)(CI)RX")
+        Proteger-Dossier $dataAutre -EcritureIIS
+        Ok "$nomAutre : PHP activé, data\ en écriture pour IIS et masqué du navigateur"
+        $autresActivees += $nomAutre
+    }
+
     AppCmd @('start', 'apppool', $NomPool) -SansErreur | Out-Null
     $ligneSite = (AppCmd @('list', 'site', $Site) -SansErreur).Sortie
     if ($ligneSite -match 'state:Stopped') {
@@ -740,7 +780,8 @@ try {
         Attention 'Pas de liaison http : vérification automatique impossible.'
     } else {
         $ipTest = $liaison.Ip
-        $baseTest = "http://${ipTest}:$($liaison.Port)/$NomApplication/"
+        $racineTest = "http://${ipTest}:$($liaison.Port)/"
+        $baseTest = $racineTest + "$NomApplication/"
 
         $reponse = Lire-Http ($baseTest + 'index.php?action=boot') $liaison.Hote
         if ($reponse.Code -ne 200 -or $reponse.Corps -notmatch '"ok"\s*:\s*true') {
@@ -757,6 +798,23 @@ try {
             throw "DANGER : la base est téléchargeable depuis le navigateur. Vérifiez que $Dossier\web.config est bien présent."
         }
         Ok "Dossier data\ inaccessible depuis le navigateur (HTTP $($reponse.Code))"
+
+        foreach ($nomAutre in $autresActivees) {
+            if (Test-Path (Join-Path (Join-Path $racineSite $nomAutre) 'api.php')) {
+                $reponse = Lire-Http ($racineTest + "$nomAutre/api.php?a=me") $liaison.Hote
+                if (($reponse.Code -in 200, 401) -and $reponse.Corps -match '"auth"') {
+                    Ok "$nomAutre : api.php répond (base partagée active)"
+                } else {
+                    Afficher-Diagnostic $reponse
+                    Attention "$nomAutre : api.php ne répond pas correctement (voir ci-dessus)."
+                }
+            }
+            $reponse = Lire-Http ($racineTest + "$nomAutre/data/accounts.json") $liaison.Hote
+            if ($reponse.Code -eq 200) {
+                throw "DANGER : $nomAutre\data est lisible depuis le navigateur."
+            }
+            Ok "$nomAutre : dossier data\ inaccessible depuis le navigateur (HTTP $($reponse.Code))"
+        }
 
         $fichierCode = Join-Path $data '.ht_installation.txt'
         if (Test-Path $fichierCode) {
@@ -808,6 +866,9 @@ try {
     Write-Host ''
     Write-Host "   Adresse à donner aux utilisateurs : $adresse" -ForegroundColor White
     Write-Host "   Vérification de l'installation    : ${adresse}index.php?page=verification"
+    foreach ($nomAutre in $autresActivees) {
+        Write-Host "   PHP activé aussi pour             : http://$nomServeur$suffixePort/$nomAutre/"
+    }
     Write-Host ''
     if ($codeInstallation) {
         Write-Host "   Code d'installation : $codeInstallation" -ForegroundColor Yellow
