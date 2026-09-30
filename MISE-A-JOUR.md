@@ -1,5 +1,30 @@
 # Planning D8 — connexion et mise à jour sans perte de données
 
+## 0. Vous n'avez que `planning-d8.html` et `api.php`, sans dossier `data` ?
+
+`api.php` crée le dossier `data` **dès sa première exécution par un serveur web avec PHP**. Si ce dossier n'existe pas, `api.php` n'a jamais tourné, et **vos données sont dans le navigateur** (base locale) de chaque poste.
+
+**Vérifier :** ouvrez le planning et regardez l'indicateur en haut.
+- « **Enregistré sur ce poste** » : base locale. Les données sont dans ce navigateur, sur ce PC uniquement. Chaque poste a son propre planning, et vider les données du navigateur efface tout.
+- Barre d'adresse commençant par `file:///` : la page est ouverte par double-clic. PHP ne peut pas s'exécuter et `api.php` est ignoré.
+
+**Passer en base partagée sans rien perdre :**
+1. Sur le poste qui contient le planning à jour : *Paramétrage › Données & sauvegarde › Exporter*. Gardez ce fichier `.json` précieusement. S'il y a eu des saisies sur plusieurs postes, chaque poste a son propre planning. Choisissez celui de référence : les données ne se fusionnent pas.
+2. Déposez `planning-d8.html` et `api.php` dans un dossier d'un serveur web interne **avec PHP 7.4 ou plus** : IIS + PHP, ou un NAS Synology/QNAP avec Web Station. Donnez au compte du serveur web le droit d'écrire dans ce dossier.
+3. Ouvrez `http://serveur/dossier/planning-d8.html`. L'écran « Première mise en service » apparaît.
+4. Cliquez sur **Reprendre une sauvegarde (.json)** et choisissez le fichier exporté.
+5. Choisissez votre nom (administrateur), un identifiant et un mot de passe. Vos données sont alors envoyées sur le serveur, et le dossier `data` apparaît.
+6. Chacun ouvre ensuite la même adresse `http://…` (et non plus le fichier en double-clic) et crée son accès.
+
+Tant que le planning est en base locale, **aucune connexion n'est demandée** : les données ne quittent pas le poste, donc un mot de passe vérifié dans le navigateur serait décoratif.
+
+**Mettre à jour le HTML en base locale :**
+1. Exportez une sauvegarde.
+2. Remplacez le fichier **au même emplacement, avec le même nom**.
+3. Rouvrez-le **dans le même navigateur**.
+
+Si le planning apparaît vide ou revient au jeu de démonstration, *Restaurer* le fichier exporté. Changer le nom, le dossier ou le navigateur donne une « adresse » différente, donc une base différente.
+
 ## 1. Où sont les données ?
 
 | Mode | Où sont les données | Remplacer le HTML… |
