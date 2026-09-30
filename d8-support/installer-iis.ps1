@@ -642,19 +642,20 @@ try {
     # --------------------------------------------------------------------------
     Etape 'Configuration IIS'
     $ligneSite = (AppCmd @('list', 'site', $Site) -SansErreur).Sortie
-    if ($ligneSite -notmatch '^SITE "') {
+    if ($ligneSite -notmatch ('(?m)^SITE "' + [regex]::Escape($Site) + '"')) {
         $sites = (AppCmd @('list', 'site') -SansErreur).Sortie
         throw "Le site IIS « $Site » n'existe pas. Sites présents :`n$sites`nRelancez avec -Site ""Nom du site""."
     }
 
-    if ((AppCmd @('list', 'apppool', $NomPool) -SansErreur).Sortie -notmatch '^APPPOOL "') {
+    if ((AppCmd @('list', 'apppool', $NomPool) -SansErreur).Sortie -notmatch ('(?m)^APPPOOL "' + [regex]::Escape($NomPool) + '"')) {
         AppCmd @('add', 'apppool', "/name:$NomPool") | Out-Null
     }
     # « Pas de code managé » : PHP n'a pas besoin de .NET.
     AppCmd @('set', 'apppool', $NomPool, '/managedRuntimeVersion:', '/managedPipelineMode:Integrated') -SansErreur | Out-Null
     Ok "Pool d'applications $NomPool"
 
-    if ((AppCmd @('list', 'app', $cheminIIS) -SansErreur).Sortie -notmatch '^APP "') {
+    # Nom exact exigé : pour une application absente, appcmd renvoie l'application parente (« Default Web Site/ »).
+    if ((AppCmd @('list', 'app', $cheminIIS) -SansErreur).Sortie -notmatch ('(?m)^APP "' + [regex]::Escape($cheminIIS) + '"')) {
         AppCmd @('add', 'app', "/site.name:$Site", "/path:/$NomApplication", "/physicalPath:$Dossier", "/applicationPool:$NomPool") | Out-Null
     } else {
         AppCmd @('set', 'app', $cheminIIS, "/applicationPool:$NomPool") | Out-Null
