@@ -91,16 +91,19 @@ Ordre à respecter :
 3. Copier **les deux fichiers ensemble** : `planning-d8.html` et `api.php`.
 4. Vérifier que le compte du serveur web (sous IIS : `IIS AppPool\<pool>` ou `IUSR`) peut **écrire** dans `data`. Le sous-dossier `data/sessions` est créé automatiquement.
 5. Rouvrir la page avec **Ctrl + F5** sur chaque poste.
-6. Commencer par vous connecter vous-même, en tant qu'administrateur : *Créer mon accès*, puis choisir votre nom, un identifiant et un mot de passe.
-7. Chacun fait de même à sa première connexion. Ensuite, l'identifiant et le mot de passe sont demandés **à chaque ouverture du navigateur**.
+6. Commencer par vous connecter vous-même, en tant qu'administrateur. À la toute première ouverture (serveur vide), l'écran *Première mise en service* vous fait choisir votre nom parmi les administrateurs, puis un identifiant et un mot de passe.
+7. **Invitez ensuite chaque personne**, les autres administrateurs compris : *Paramétrage › Utilisateurs*, bouton **enveloppe** sur sa ligne. Transmettez-lui le lien obtenu (bouton *Envoyer par courriel* ou *Copier le lien*). En l'ouvrant, elle choisit son identifiant et son mot de passe. Ensuite, ils sont demandés **à chaque ouverture du navigateur**.
 8. **Écrans d'atelier** : créez une fiche utilisateur dédiée (ex. « Écran atelier », rôle *Lecture seule*), créez son accès une fois sur chaque écran, puis laissez le navigateur ouvert. La session reste active tant que l'écran interroge le serveur.
 
 ## 4. Fonctionnement de la connexion
 
-- **Créer son accès** : on choisit son nom dans la liste des fiches *Paramétrage › Utilisateurs* qui sont actives et n'ont pas encore d'accès, puis on saisit un identifiant et un mot de passe (8 caractères minimum).
+- **Première mise en service** (serveur sans planning ni compte) : un administrateur choisit son nom et crée son identifiant et son mot de passe. C'est le seul accès qui se crée sans invitation.
+- **Invitation** : un administrateur clique sur l'enveloppe d'une personne dans *Paramétrage › Utilisateurs*. Après la création d'une fiche, la page propose aussi de l'inviter tout de suite. Le lien obtenu est **personnel**, ne sert **qu'une fois** et expire après **7 jours** (`$INVITE_DAYS`). Un nouveau lien annule le précédent. La colonne « Identifiant » affiche *à inviter*, *invité · expire le…*, puis l'identifiant choisi.
+- **Créer son accès** : la personne ouvre son lien, voit son nom, choisit un identifiant et un mot de passe (8 caractères minimum). Sans lien valable, le serveur refuse toute création d'accès.
+- Le serveur ne garde que l'**empreinte** du lien (`data/invitations.json`), jamais le lien lui-même.
 - **Se connecter** : identifiant et mot de passe. La session dure jusqu'à la fermeture du navigateur, ou jusqu'à 12 h sans aucun échange avec le serveur (`$SESSION_IDLE`).
 - **Session expirée pendant le travail** : les modifications en attente sont **conservées**. La page redemande le mot de passe, puis les enregistre.
-- **Mot de passe oublié** : un administrateur clique sur le cadenas de la personne dans *Paramétrage › Utilisateurs* (colonne « Identifiant »). L'accès est supprimé et la personne le recrée.
+- **Mot de passe oublié** : un administrateur clique sur le cadenas de la personne dans *Paramétrage › Utilisateurs* (colonne « Identifiant »). L'accès est supprimé et la page propose aussitôt d'envoyer une nouvelle invitation.
 - **Changer son mot de passe** : menu en haut à droite › *Changer mon mot de passe*. Cette action ferme ses sessions sur les autres postes.
 - **Compte désactivé** (case « Compte actif ») : la connexion est refusée.
 - **Anti-force brute** : après 8 échecs depuis une même adresse IP, la connexion est bloquée 15 min.
@@ -108,7 +111,7 @@ Ordre à respecter :
 
 ### Limites à connaître
 
-1. **Création libre des accès** : sans code, la première personne qui choisit un nom encore « à créer » en prend l'accès. Il y a deux parades : renseigner `$SIGNUP_CODE` dans `api.php` et le donner de vive voix, ou faire créer les accès le jour même de la mise en service.
+1. **Un lien d'invitation vaut un accès** tant qu'il n'a pas servi : envoyez-le à la personne concernée seulement (courriel interne, messagerie), jamais dans un canal partagé. Un lien intercepté puis utilisé avant elle se repère facilement : la personne voit « lien plus valable » et la colonne affiche un identifiant qu'elle n'a pas choisi. Réinitialisez alors l'accès et réinvitez-la.
 2. **En http, les mots de passe circulent en clair** sur le réseau interne. Passez en HTTPS dès que possible (certificat interne de l'AD CS, par exemple).
 3. **Le serveur vérifie *qui* enregistre, pas *ce qui* est modifié.** Les droits par rôle (Commercial, Lecture seule…) sont appliqués par l'interface. Une personne connectée et techniquement habile peut encore modifier le document complet. Ses enregistrements sont toutefois signés par sa session, dans le journal et dans `planning.meta.json`.
 4. **« Reprendre là où je m'étais arrêté »** (Chrome, Edge) conserve les cookies de session : dans ce cas, la fermeture du navigateur ne déconnecte pas. La déconnexion se fait par le menu, ou après 12 h d'inactivité.

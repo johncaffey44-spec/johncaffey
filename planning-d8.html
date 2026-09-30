@@ -568,6 +568,7 @@ const ICONS = {
   list: 'M8 6h13M8 12h13M8 18h13M3 6h0M3 12h0M3 18h0',
   filter: 'M22 3H2l8 9.5V19l4 2v-8.5z',
   lock: 'M5 11h14v11H5zM8 11V7a4 4 0 0 1 8 0v4',
+  mail: 'M3 5h18v14H3zM3 6l9 7 9-7',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   play: 'M5 3l16 9-16 9z',
   dots: 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
@@ -894,13 +895,22 @@ async function fetchJSON(url, opt = {}, ms = 8000) {
 }
 
 /* ---------- connexion (base partagée uniquement) ----------
-   Chaque personne crée son identifiant et son mot de passe à sa première connexion,
-   puis les saisit à chaque ouverture du navigateur (cookie de session). En base locale,
+   Première mise en service : un administrateur crée son identifiant et son mot de passe.
+   Ensuite, chaque personne est INVITÉE par un administrateur : le lien reçu
+   (…#invitation=jeton) lui fait choisir son identifiant et son mot de passe, qu'elle
+   saisit ensuite à chaque ouverture du navigateur (cookie de session). En base locale,
    il n'y a pas de connexion : les données ne quittent pas le poste. */
 const PAGE = location.pathname.split('/').pop() || 'index.html';
 const fatalErr = msg => Object.assign(new Error(msg), { fatal: true });
 const Auth = {
-  user: null, build: null, newBuild: false, waiting: null, acc: null, accBusy: false, bootDB: null, bootFile: '',
+  user: null, build: null, newBuild: false, waiting: null, acc: null, inv: {}, accBusy: false, bootDB: null, bootFile: '',
+  /** jeton du lien d'invitation ouvert, ou '' (il reste dans l'adresse du navigateur, jamais envoyé dans l'URL au serveur) */
+  inviteToken() { const m = /^#invitation=([a-f0-9]{40})$/.exec(location.hash); return m ? m[1] : ''; },
+  clearInvite() { if (/^#invitation=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search + '#/'); },
+  ignoreInvite() {
+    this.clearInvite();
+    toast('Vous êtes déjà connecté(e) : le lien d’invitation n’a pas été utilisé. Pour le tester, ouvrez-le dans une fenêtre de navigation privée.', 'warn', null, 10000);
+  },
   api(a, body) {
     return fetchJSON('api.php?a=' + a + '&page=' + encodeURIComponent(PAGE), body === undefined ? {} :
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 15000);
@@ -925,22 +935,22 @@ const Auth = {
   },
   async show(info, done) {
     const el = $('#auth'), exp = !!(info.expired && this.user), boot = !!info.bootstrap;
-    let tab = boot ? 'signup' : 'login', list = null, needCode = !!info.needCode, min = info.minPassword || 8;
-    const loadList = async () => {
-      if (boot) {                                   // 1re mise en service : le planning n'existe pas encore sur le serveur
-        this.bootDB = this.bootDB || migrate(await Sync.readLocal() || seed());
-        const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).includes('admin')).map(r => r.id));
-        return this.bootDB.users.filter(u => u.active !== false && adm.has(u.roleId)).sort(byName).map(u => ({ id: u.id, name: label(u) }));
-      }
-      const r = await this.api('signup-list').catch(() => null);
-      if (!r || !r.ok || !r.body) return [];
-      needCode = !!r.body.needCode; if (r.body.minPassword) min = r.body.minPassword;
-      return (r.body.users || []).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    const token = exp || boot ? '' : this.inviteToken();
+    let tab = boot ? 'signup' : token ? 'invite' : 'login', list = null, invite = null, min = info.minPassword || 8;
+    const loadList = async () => {                // 1re mise en service : le planning n'existe pas encore sur le serveur
+      this.bootDB = this.bootDB || migrate(await Sync.readLocal() || seed());
+      const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).includes('admin')).map(r => r.id));
+      return this.bootDB.users.filter(u => u.active !== false && adm.has(u.roleId)).sort(byName).map(u => ({ id: u.id, name: label(u) }));
     };
     const draw = async () => {
-      if (tab === 'signup' && !list) {
+      if ((tab === 'signup' && !list) || (tab === 'invite' && !invite)) {
         el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b mut">Chargement…</div></div></div>`;
-        list = await loadList();
+        if (tab === 'signup') list = await loadList();
+        else {
+          const r = await this.api('invite-info', { token }).catch(() => null);
+          if (r && r.ok && r.body) { invite = r.body; if (invite.minPassword) min = invite.minPassword; }
+          else { invite = { error: (r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.' }; }
+        }
       }
       const head = exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
         : boot ? `<h3>Première mise en service</h3><p class="auth-note" style="margin-bottom:12px">Le serveur ne contient encore aucun planning.
@@ -948,30 +958,34 @@ const Auth = {
               : `Si vous utilisiez déjà le planning sur un poste, exportez-y une sauvegarde (Paramétrage › Données &amp; sauvegarde › Exporter) et reprenez-la ici ; sinon le jeu de démonstration sera utilisé.`}</p>
             <button class="btn" type="button" data-import style="width:100%;margin-bottom:12px">${ic('upload')} ${this.bootFile ? 'Choisir une autre sauvegarde' : 'Reprendre une sauvegarde (.json)'}</button>
             <p class="auth-note" style="margin-bottom:12px">Créez ensuite l’accès d’un administrateur :</p>`
-          : `<div class="auth-tabs"><button type="button" data-t="login" class="${tab === 'login' ? 'on' : ''}">Se connecter</button>
-             <button type="button" data-t="signup" class="${tab === 'signup' ? 'on' : ''}">Créer mon accès</button></div>`;
+          : tab === 'invite' ? (invite.error ? `<h3>Invitation</h3><div class="bnr warn">${ic('warn')}<span>${esc(invite.error)}</span></div>
+              <button class="btn" type="button" data-t="login" style="width:100%">J’ai déjà un accès : me connecter</button>`
+            : `<h3>Bienvenue ${esc(invite.name)}</h3><p class="auth-note" style="margin-bottom:12px">Vous avez été invité(e) à utiliser le planning.
+              Choisissez votre identifiant et votre mot de passe : vous les saisirez à chaque connexion.
+              Ce lien personnel ne sert qu’une fois et expire le ${esc(D.dt(invite.expires))}.</p>`)
+          : `<h3>Connexion</h3>`;
       const login = `<form data-f="login" class="fgrid one" novalidate>
         <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false"${exp ? ` value="${esc(this.user.login)}" readonly` : ''}></div>
         <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="current-password"></div>
         <button class="btn pri" type="submit">Se connecter</button>
         ${exp ? `<button class="btn gh" type="button" data-other>Se connecter avec un autre compte</button>`
-          : `<p class="auth-note">Première connexion ? Choisissez « Créer mon accès ».<br>Mot de passe oublié ? Un administrateur peut réinitialiser votre accès.</p>`}</form>`;
+          : `<p class="auth-note">Pas encore d’accès ? Un administrateur doit vous envoyer une invitation.<br>Mot de passe oublié ? Un administrateur peut réinitialiser votre accès et vous réinviter.</p>`}</form>`;
       const signup = `<form data-f="signup" class="fgrid one" novalidate>
-        <div class="fld"><label for="au-u">Vous êtes</label><select class="in" id="au-u" name="userId"><option value="">— choisissez votre nom —</option>
+        ${tab === 'invite' ? '' : `<div class="fld"><label for="au-u">Vous êtes</label><select class="in" id="au-u" name="userId"><option value="">— choisissez votre nom —</option>
           ${list && list.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
-          <span class="help">${boot ? 'Seuls les administrateurs du jeu de départ sont proposés.' : 'Votre nom n’apparaît pas ? Un administrateur doit d’abord créer votre fiche (Paramétrage › Utilisateurs), ou votre accès existe déjà.'}</span></div>
+          <span class="help">Seuls les administrateurs du jeu de départ sont proposés.</span></div>`}
         <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false">
           <span class="help">3 caractères minimum : lettres, chiffres, point, tiret, @.</span></div>
         <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="new-password">
           <span class="help">${min} caractères minimum.</span></div>
         <div class="fld"><label for="au-c">Confirmation du mot de passe</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
-        ${needCode ? `<div class="fld"><label for="au-k">Code d’accès</label><input class="in" id="au-k" name="code" autocomplete="off"><span class="help">Communiqué par le service informatique.</span></div>` : ''}
         <button class="btn pri" type="submit">Créer mon accès</button></form>`;
       el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b">${head}
-        <div class="bnr danger hide" data-err></div>${tab === 'login' || exp ? login : signup}</div></div>
+        <div class="bnr danger hide" data-err></div>${tab === 'login' || exp ? login : tab === 'invite' && invite.error ? '' : signup}</div></div>
         <p class="auth-foot">La session reste ouverte jusqu’à la fermeture du navigateur ou une longue inactivité.${location.protocol === 'https:' ? ''
           : '<br>Connexion non chiffrée (http) : n’utilisez pas un mot de passe qui sert ailleurs.'}</p></div>`;
       const f = $(exp ? '#au-p' : tab === 'signup' ? '#au-u' : '#au-l', el); if (f) f.focus();
+      if (tab === 'login' && token) this.clearInvite();   // lien inutilisable : on revient à l'adresse normale
     };
     const err = m => { const b = $('[data-err]', el); if (!b) return; b.innerHTML = m ? ic('warn') + '<span>' + esc(m) + '</span>' : ''; b.classList.toggle('hide', !m); };
     el.onclick = e => {
@@ -997,7 +1011,8 @@ const Auth = {
       v.login = String(v.login || '').trim();
       if (!v.login || !v.password) return err('Renseignez l’identifiant et le mot de passe.');
       if (kind === 'signup') {
-        if (!v.userId) return err('Choisissez votre nom dans la liste.');
+        if (tab === 'invite') v.token = token;
+        else if (!v.userId) return err('Choisissez votre nom dans la liste.');
         if (!/^[a-z0-9._@-]{3,60}$/i.test(v.login)) return err('Identifiant : 3 à 60 caractères parmi lettres, chiffres, point, tiret, @.');
         if (v.password.length < min) return err(`Mot de passe trop court (${min} caractères minimum).`);
         if (v.password !== v.confirm) return err('Les deux mots de passe ne correspondent pas.');
@@ -1009,10 +1024,11 @@ const Auth = {
       btn.disabled = false;
       if (r && r.ok && r.body && r.body.auth) {
         el.onclick = el.onsubmit = null;
+        if (tab === 'invite') this.clearInvite();
         this.set(r.body); done(r.body);
       } else {
         err((r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.');
-        if (kind === 'signup' && r && r.status === 409) list = null;   // la liste a pu changer entre-temps
+        if (kind === 'signup' && r && r.status === 403 && tab === 'invite') { invite = null; draw(); }   // lien devenu invalide
       }
     };
     draw();
@@ -1051,6 +1067,7 @@ const Auth = {
     if (this.accBusy) return; this.accBusy = true;
     let r = null; try { r = await this.api('accounts'); } catch (e) { }
     this.acc = r && r.ok && r.body ? Object.fromEntries(r.body.accounts.map(a => [a.userId, a])) : {};
+    this.inv = r && r.ok && r.body ? Object.fromEntries((r.body.invites || []).map(i => [i.userId, i])) : {};
     this.accBusy = false;
     if (route().path === '/admin/users') render();
   },
@@ -1078,6 +1095,7 @@ const Sync = {
           ? 'Le fichier api.php installé sur le serveur est une ancienne version : remplacez-le par celui livré avec cette page.'
           : 'Le serveur a répondu : ' + (r.body.error || 'réponse inattendue') + '.');
         Auth.set(r.body);
+        if (Auth.inviteToken()) setTimeout(() => Auth.ignoreInvite(), 800);   // lien ouvert par une personne déjà connectée
         const l = await fetchJSON('api.php?a=load', {}, 30000).catch(() => null);
         if (!l || !l.ok || !l.body || typeof l.body.version !== 'number') throw fatalErr('Impossible de charger le planning depuis le serveur.');
         this.mode = 'server'; this.version = l.body.version;
@@ -1102,6 +1120,12 @@ const Sync = {
   async reloadLocal() {
     const d = await this.readLocal(); if (!d) return;
     DB = migrate(d); REV++; render();
+  },
+  /** attend que les modifications en cours soient enregistrées sur le serveur (true si c'est le cas) */
+  async settled(ms = 20000) {
+    const t0 = Date.now();
+    while ((this.pending.length || this.busy) && Date.now() - t0 < ms) await new Promise(r => setTimeout(r, 200));
+    return !this.pending.length && !this.busy;
   },
   push(fn) {
     if (this.mode === 'server') { this.pending.push(fn); this.flush(); }
@@ -2809,7 +2833,7 @@ const SCHEMAS = {
   },
   users: {
     label: 'Utilisateurs', one: 'un utilisateur', icon: 'usercircle',
-    desc: 'Personnes autorisées à se connecter (chacune crée son identifiant et son mot de passe à sa première connexion) et proposées comme commerciaux sur les projets.',
+    desc: 'Personnes autorisées à se connecter (un administrateur les invite à créer leur identifiant et leur mot de passe : bouton enveloppe) et proposées comme commerciaux sur les projets.',
     fields: [
       { k: 'firstName', l: 'Prénom', t: 'text', list: 1 },
       { k: 'lastName', l: 'Nom', t: 'text', req: 1, list: 1 },
@@ -2897,14 +2921,48 @@ function crudForm(coll, id) {
         for (const f of S.fields) { if (f.t === 'refs' || f.t === 'multi') v[f.k] = v[f.k] || []; if (f.ro) delete v[f.k]; }
         const req = S.fields.find(f => f.req && !String(v[f.k] ?? '').trim());
         if (req) return toast('Le champ « ' + req.l + ' » est obligatoire.', 'danger');
+        const nid = it ? it.id : uid(coll.slice(0, 3));
         mutate((it ? 'Modification · ' : 'Ajout · ') + S.label, db => {
           if (it) Object.assign(db[coll].find(x => x.id === it.id), v);
-          else db[coll].push(Object.assign({ id: uid(coll.slice(0, 3)) }, v));
+          else db[coll].push(Object.assign({ id: nid }, v));
         });
         close();
+        if (!it && coll === 'users' && Sync.mode === 'server' && v.active !== false) {
+          const u = get('users', nid);
+          if (u) ask(`Fiche de <b>${esc(label(u))}</b> créée.<br><br>L’inviter maintenant à créer son identifiant et son mot de passe ?`,
+            { title: 'Inviter la personne', ok: 'Inviter', cancel: 'Plus tard' }).then(y => y && inviteUser(u));
+        }
       };
     }
   });
+}
+/** crée un lien d'invitation (usage unique) et le présente à l'administrateur pour qu'il le transmette */
+async function inviteUser(u) {
+  if (Sync.mode !== 'server') return toast('Les invitations nécessitent la base partagée (api.php).', 'warn');
+  if (!await Sync.settled()) return toast('Enregistrement en cours : réessayez dans un instant.', 'warn');
+  const r = await Auth.api('invite', { userId: u.id }).catch(() => null);
+  if (!r || !r.ok || !r.body || !r.body.token) return toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+  Auth.acc = null; Auth.loadAccounts();
+  const link = location.origin + location.pathname + '#invitation=' + r.body.token, exp = D.dt(r.body.expires);
+  const app = DB.settings.appName || 'Planning D8';
+  const mail = 'mailto:' + encodeURIComponent(u.email || '') + '?subject=' + encodeURIComponent('Votre accès au ' + app)
+    + '&body=' + encodeURIComponent(`Bonjour ${label(u)},\n\nVoici votre lien personnel pour créer votre identifiant et votre mot de passe sur le ${app} :\n\n${link}\n\nCe lien ne sert qu’une fois et expire le ${exp}. Ne le transmettez à personne.\n\nÀ bientôt`);
+  const m = modal({
+    title: 'Invitation de ' + label(u), size: 'sm',
+    body: `<p style="margin:0 0 10px;line-height:1.5">Transmettez ce lien à <b>${esc(label(u))}</b> uniquement : il lui permet de choisir son identifiant et son mot de passe.
+      Il ne sert qu’une fois et expire le <b>${esc(exp)}</b>. Un nouveau lien annule celui-ci.</p>
+      <input class="in" data-link readonly value="${esc(link)}">`,
+    foot: `<a class="btn" href="${esc(mail)}">${ic('mail')} Envoyer par courriel</a><span class="spacer"></span>
+      <button class="btn pri" data-copy>${ic('copy')} Copier le lien</button>`
+  });
+  const inp = $('[data-link]', m.el); inp.onclick = () => inp.select();
+  $('[data-copy]', m.el).onclick = () => {
+    inp.select();
+    const ok = () => toast('Lien copié : collez-le dans un courriel ou une messagerie.', 'ok');
+    // navigator.clipboard n'existe qu'en HTTPS : repli sur l'ancienne commande en HTTP
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(link).then(ok, () => { document.execCommand('copy') && ok(); });
+    else if (document.execCommand('copy')) ok(); else toast('Copie impossible : sélectionnez le lien et faites Ctrl+C.', 'warn');
+  };
 }
 function pageAdmin(kind, q) {
   if (kind === 'parametres') return pageSettings();
@@ -2920,9 +2978,11 @@ function pageAdmin(kind, q) {
   if (accs && (Auth.acc === null || lastPath !== route().path)) { if (lastPath !== route().path) Auth.acc = null; Auth.loadAccounts(); }
   const accCell = x => !accs ? '' : `<td>${!Auth.acc ? '<span class="mut">…</span>' : Auth.acc[x.id]
     ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>`
-    : '<span class="mut">à créer</span>'}</td>`;
-  const accBtn = x => accs && Auth.acc && Auth.acc[x.id] && !(Auth.user && Auth.user.userId === x.id)
-    ? `<button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>` : '';
+    : Auth.inv[x.id] ? `<span class="mut" title="Invitation envoyée par ${esc(Auth.inv[x.id].by || '')} le ${esc(D.dt(Auth.inv[x.id].created))}">invité · expire le ${esc(D.dt(Auth.inv[x.id].expires))}</span>`
+    : x.active === false ? '<span class="mut">—</span>' : '<span class="mut">à inviter</span>'}</td>`;
+  const accBtn = x => !accs || !Auth.acc ? '' : Auth.acc[x.id]
+    ? (Auth.user && Auth.user.userId === x.id ? '' : `<button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>`)
+    : x.active === false ? '' : `<button class="ibtn" data-act="invite-access" data-id="${esc(x.id)}" title="${Auth.inv[x.id] ? 'Renvoyer une invitation (annule le lien précédent)' : 'Inviter à créer son mot de passe'}">${ic('mail')}</button>`;
   let extra = '';
   if (kind === 'users') {
     const dorm = DB.users.filter(u => u.active !== false && u.lastLogin && D.diff(u.lastLogin, D.today()) > (DB.settings.dormantDays || 180));
@@ -3179,10 +3239,17 @@ Object.assign(ACT, {
   'reset-access': async (el, e) => {
     if (e) e.stopPropagation(); if (!needs('admin')) return;
     const u = get('users', el.dataset.id); if (!u) return;
-    if (!await ask(`Réinitialiser l’accès de <b>${esc(label(u))}</b> ?<br><br>Son identifiant et son mot de passe seront supprimés et ses sessions ouvertes fermées. La personne recréera son accès à sa prochaine connexion (« Créer mon accès »).`, { ok: 'Réinitialiser', danger: true })) return;
+    if (!await ask(`Réinitialiser l’accès de <b>${esc(label(u))}</b> ?<br><br>Son identifiant et son mot de passe seront supprimés et ses sessions ouvertes fermées. Vous pourrez ensuite lui envoyer une nouvelle invitation pour qu’elle recrée son accès.`, { ok: 'Réinitialiser', danger: true })) return;
     const r = await Auth.api('reset', { userId: u.id }).catch(() => null);
-    if (r && r.ok) { toast('Accès de ' + label(u) + ' réinitialisé', 'ok'); Auth.acc = null; Auth.loadAccounts(); }
+    if (r && r.ok) {
+      Auth.acc = null; Auth.loadAccounts();
+      if (u.active !== false && await ask(`Accès de <b>${esc(label(u))}</b> réinitialisé.<br><br>Lui envoyer une nouvelle invitation maintenant ?`, { title: 'Réinviter', ok: 'Inviter', cancel: 'Plus tard' })) inviteUser(u);
+    }
     else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+  },
+  'invite-access': (el, e) => {
+    if (e) e.stopPropagation(); if (!needs('admin')) return;
+    const u = get('users', el.dataset.id); if (u) inviteUser(u);
   },
   'disable-dormant': async () => {
     const lim = DB.settings.dormantDays || 180;
@@ -3581,6 +3648,7 @@ render = function () { baseRender(); try { afterRender(); } catch (e) { console.
   if (Sync.mode === 'memory') banner('danger', 'Ce navigateur bloque le stockage : les modifications seront perdues à la fermeture. Exportez régulièrement une sauvegarde.', 'nostore');
   if (!location.hash) location.hash = '#/';
   render();
+  window.addEventListener('hashchange', () => { if (Auth.user && Auth.inviteToken()) Auth.ignoreInvite(); });   // avant render
   window.addEventListener('hashchange', render);
   window.addEventListener('resize', debounce(drawCharts, 200));
   setInterval(() => Sync.poll(), Math.max(5, +DB.settings.pollSec || 15) * 1000);

@@ -14,20 +14,22 @@
  * sur la version à jour. Adapté à quelques dizaines d'utilisateurs et quelques
  * milliers de projets — au-delà, il faut une vraie base de données.
  *
- * CONNEXION : chaque personne listée dans Paramétrage › Utilisateurs crée son
- * propre identifiant et son mot de passe à sa première connexion, puis les
- * saisit à chaque ouverture du navigateur. Les mots de passe sont stockés
- * hachés (password_hash) dans data/accounts.json, jamais dans le planning.
- * Un administrateur peut réinitialiser l'accès d'une personne (mot de passe
- * oublié, départ) : elle devra alors recréer son identifiant.
+ * CONNEXION : à la toute première mise en service, un administrateur crée
+ * son identifiant et son mot de passe. Ensuite, personne ne peut créer d'accès
+ * sans INVITATION : dans Paramétrage › Utilisateurs, un administrateur invite
+ * une personne ; elle reçoit un lien personnel (valable $INVITE_DAYS jours,
+ * utilisable une seule fois) qui lui fait choisir son identifiant et son mot
+ * de passe. Les mots de passe sont stockés hachés (password_hash) dans
+ * data/accounts.json, jamais dans le planning. Un administrateur peut
+ * réinitialiser l'accès d'une personne (mot de passe oublié) puis la réinviter.
  *
  * SÉCURITÉ — à lire avant la mise en service :
  *   1. Servez l'application en HTTPS si possible : sans HTTPS, les mots de
  *      passe circulent en clair sur le réseau interne.
  *   2. $ALLOWED_NETS limite l'accès aux plages IP internes : ajustez-le.
- *   3. $SIGNUP_CODE : sans code, n'importe qui sur le réseau peut créer
- *      l'accès d'une personne qui n'en a pas encore. Définissez un code et
- *      communiquez-le de vive voix, ou faites créer les accès rapidement.
+ *   3. Un lien d'invitation vaut un accès : transmettez-le à la personne
+ *      concernée uniquement (courriel interne, messagerie), jamais sur un
+ *      affichage public. Un nouveau lien annule le précédent.
  *   4. Le dossier « data » contient toutes les données (planning, comptes,
  *      sessions) : placez-le hors de la racine web si votre hébergement le
  *      permet ($DATA_DIR ci-dessous), et sauvegardez-le avec vos autres
@@ -45,7 +47,7 @@ $BACKUP_EVERY  = 900;                 // une copie au maximum toutes les N secon
 $MAX_BYTES     = 40 * 1024 * 1024;    // taille maximale acceptée pour un enregistrement
 
 /* --- connexion --- */
-$SIGNUP_CODE   = '';                  // code à saisir pour créer son accès ('' = aucun code demandé)
+$INVITE_DAYS   = 7;                   // durée de validité d'un lien d'invitation (jours)
 $SESSION_IDLE  = 12 * 3600;           // déconnexion après N secondes sans aucun échange avec le serveur
 $MIN_PASSWORD  = 8;                   // longueur minimale des mots de passe
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
@@ -132,6 +134,19 @@ function page_build(): ?string {
     return filemtime($f) . '-' . filesize($f);
 }
 
+/* --- invitations : on ne garde que l'empreinte SHA-256 du jeton, jamais le jeton --- */
+function invites_read(string $F): array {
+    $all = read_json($F);
+    return array_filter($all, function ($i) { return is_array($i) && strtotime((string)($i['expires'] ?? '')) > time(); });
+}
+function invite_token_ok($t): bool { return is_string($t) && (bool)preg_match('/^[a-f0-9]{40}$/', $t); }
+/** invitation valide correspondant au jeton, ou null */
+function invite_find(string $F, $token): ?array {
+    if (!invite_token_ok($token)) return null;
+    $i = invites_read($F)[hash('sha256', $token)] ?? null;
+    return is_array($i) ? $i : null;
+}
+
 /* --- limitation des tentatives de connexion (par adresse IP) --- */
 function throttle_check(string $F, string $ip, int $max, int $win): void {
     $e = read_json($F)[$ip] ?? null;
@@ -170,6 +185,7 @@ $FILE  = "$DATA_DIR/planning.json";
 $META  = "$DATA_DIR/planning.meta.json";
 $LOCK  = "$DATA_DIR/planning.lock";
 $ACC   = "$DATA_DIR/accounts.json";      // identifiants + mots de passe hachés
+$INV   = "$DATA_DIR/invitations.json";   // invitations en attente (empreinte du lien, jamais le lien)
 $FAILS = "$DATA_DIR/auth-fails.json";    // tentatives de connexion ratées
 
 /* --- session : cookie de navigateur (effacé à la fermeture), HttpOnly, SameSite=Strict --- */
@@ -217,7 +233,7 @@ $lock = fopen($LOCK, 'c');
 if ($lock === false) out(500, ['error' => 'Verrou indisponible']);
 
 $me = auth_user($ACC, $SESSION_IDLE, $lock);
-$PUBLIC = ['me', 'signup-list', 'signup', 'login', 'logout'];
+$PUBLIC = ['me', 'invite-info', 'signup', 'login', 'logout'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);
 // la session n'est plus modifiée ensuite : on la libère pour ne pas bloquer les requêtes parallèles
 if (!in_array($action, ['signup', 'login', 'logout', 'password'], true)) session_write_close();
@@ -225,25 +241,24 @@ if (!in_array($action, ['signup', 'login', 'logout', 'password'], true)) session
 /* --- qui suis-je ? --- */
 if ($action === 'me') {
     if ($me) out(200, me_payload($me));
-    out(401, ['auth' => false, 'needCode' => $SIGNUP_CODE !== '', 'minPassword' => $MIN_PASSWORD,
+    out(401, ['auth' => false, 'minPassword' => $MIN_PASSWORD,
               'bootstrap' => !is_file($FILE) && !read_json($ACC)]);
 }
 
-/* --- personnes pouvant encore créer leur accès --- */
-if ($action === 'signup-list') {
+/* --- lien d'invitation : pour qui est-il ? --- */
+if ($action === 'invite-info') {
+    $in = body_json();
     flock($lock, LOCK_SH);
-    $doc = read_doc($FILE);
-    $acc = read_json($ACC);
+    throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
+    $i = invite_find($INV, $in['token'] ?? '');
+    $u = $i ? find_user(read_doc($FILE), (string)$i['userId']) : null;
     flock($lock, LOCK_UN);
-    $taken = [];
-    foreach ($acc as $a) $taken[(string)($a['userId'] ?? '')] = true;
-    $users = [];
-    foreach (($doc['users'] ?? []) as $u) {
-        if (!is_array($u) || ($u['active'] ?? true) === false || isset($taken[(string)($u['id'] ?? '')])) continue;
-        $users[] = ['id' => (string)$u['id'], 'name' => user_label($u)];
+    if (!$i || !$u || ($u['active'] ?? true) === false) {
+        flock($lock, LOCK_EX);
+        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+        out(404, ['error' => 'Ce lien d’invitation n’est plus valable (déjà utilisé, remplacé ou expiré). Demandez-en un nouveau à un administrateur.']);
     }
-    usort($users, function ($a, $b) { return strcasecmp($a['name'], $b['name']); });
-    out(200, ['bootstrap' => !is_file($FILE) && !$acc, 'needCode' => $SIGNUP_CODE !== '', 'minPassword' => $MIN_PASSWORD, 'users' => $users]);
+    out(200, ['name' => user_label($u), 'expires' => $i['expires'], 'minPassword' => $MIN_PASSWORD]);
 }
 
 /* --- création de son accès (identifiant + mot de passe) --- */
@@ -251,10 +266,6 @@ if ($action === 'signup') {
     $in = body_json();
     flock($lock, LOCK_EX);
     throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
-    if ($SIGNUP_CODE !== '' && !hash_equals($SIGNUP_CODE, (string)($in['code'] ?? ''))) {
-        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
-        out(403, ['error' => 'Code d’accès incorrect.']);
-    }
     $login = clean_login($in['login'] ?? '');
     $pass = (string)($in['password'] ?? '');
     $uid = (string)($in['userId'] ?? '');
@@ -264,10 +275,19 @@ if ($action === 'signup') {
     if (strtolower($pass) === $login) out(400, ['error' => 'Le mot de passe doit être différent de l’identifiant.']);
     $acc = read_json($ACC);
     $bootstrap = !is_file($FILE) && !$acc;   // toute première mise en service : pas encore de planning sur le serveur
+    $inviteKey = '';
     if ($bootstrap) {
         $name = cut(trim((string)($in['name'] ?? '')), 80);
         if ($uid === '' || $name === '') out(400, ['error' => 'Choisissez votre nom dans la liste.']);
     } else {
+        // en dehors de la première mise en service, un accès ne se crée que sur invitation
+        $i = invite_find($INV, $in['token'] ?? '');
+        if (!$i) {
+            throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+            out(403, ['error' => 'Il faut une invitation pour créer un accès : demandez-la à un administrateur.']);
+        }
+        $inviteKey = hash('sha256', (string)$in['token']);
+        $uid = (string)$i['userId'];            // la personne vient de l'invitation, pas du navigateur
         $u = find_user(read_doc($FILE), $uid);
         if (!$u || ($u['active'] ?? true) === false) out(400, ['error' => 'Personne inconnue ou compte désactivé.']);
         $name = user_label($u);
@@ -278,6 +298,12 @@ if ($action === 'signup') {
     $acc[$login] = ['userId' => $uid, 'name' => $name, 'hash' => password_hash($pass, PASSWORD_DEFAULT),
                     'stamp' => bin2hex(random_bytes(8)), 'created' => date('c'), 'lastLogin' => date('c')];
     if (!write_json($ACC, $acc)) out(500, ['error' => 'Écriture impossible']);
+    if ($inviteKey !== '') {                    // le lien ne sert qu'une fois
+        $inv = invites_read($INV);
+        unset($inv[$inviteKey]);
+        write_json($INV, $inv);
+    }
+    throttle_clear($FAILS, $ip);
     flock($lock, LOCK_UN);
     out(200, me_payload(open_session($login, $acc[$login], $name)));
 }
@@ -355,7 +381,32 @@ if ($action === 'accounts') {
     $list = [];
     foreach ($acc as $login => $a) $list[] = ['login' => (string)$login, 'userId' => (string)$a['userId'],
                                              'created' => $a['created'] ?? null, 'lastLogin' => $a['lastLogin'] ?? null];
-    out(200, ['accounts' => $list]);
+    $invites = [];
+    foreach (invites_read($INV) as $i) $invites[] = ['userId' => (string)$i['userId'], 'created' => $i['created'] ?? null,
+                                                    'expires' => $i['expires'] ?? null, 'by' => $i['by'] ?? null];
+    out(200, ['accounts' => $list, 'invites' => $invites]);
+}
+
+/* --- administrateurs : inviter une personne à créer son accès --- */
+if ($action === 'invite') {
+    $in = body_json();
+    $uid = (string)($in['userId'] ?? '');
+    flock($lock, LOCK_EX);
+    $doc = read_doc($FILE);
+    if (!is_admin($doc, $me['userId'])) out(403, ['error' => 'Réservé aux administrateurs']);
+    $u = find_user($doc, $uid);
+    if (!$u) out(404, ['error' => 'Personne introuvable : enregistrez d’abord sa fiche.']);
+    if (($u['active'] ?? true) === false) out(400, ['error' => 'Ce compte est désactivé : réactivez-le avant de l’inviter.']);
+    foreach (read_json($ACC) as $a) if ((string)($a['userId'] ?? '') === $uid)
+        out(409, ['error' => 'Cette personne a déjà un accès. Réinitialisez-le d’abord si elle a perdu son mot de passe.']);
+    // une seule invitation valable par personne : la nouvelle annule les précédentes
+    $inv = array_filter(invites_read($INV), function ($i) use ($uid) { return (string)$i['userId'] !== $uid; });
+    $token = bin2hex(random_bytes(20));
+    $expires = date('c', time() + $INVITE_DAYS * 86400);
+    $inv[hash('sha256', $token)] = ['userId' => $uid, 'created' => date('c'), 'expires' => $expires, 'by' => cut((string)$me['name'], 80)];
+    if (!write_json($INV, $inv)) out(500, ['error' => 'Écriture impossible']);
+    flock($lock, LOCK_UN);
+    out(200, ['token' => $token, 'expires' => $expires, 'name' => user_label($u)]);
 }
 
 /* --- administrateurs : réinitialiser l'accès d'une personne --- */
@@ -369,6 +420,10 @@ if ($action === 'reset') {
     $n = count($acc);
     $acc = array_filter($acc, function ($a) use ($uid) { return (string)($a['userId'] ?? '') !== $uid; });
     if (count($acc) !== $n && !write_json($ACC, $acc)) out(500, ['error' => 'Écriture impossible']);
+    $inv = invites_read($INV);
+    $m = count($inv);
+    $inv = array_filter($inv, function ($i) use ($uid) { return (string)$i['userId'] !== $uid; });
+    if (count($inv) !== $m) write_json($INV, $inv);
     flock($lock, LOCK_UN);
     out(200, ['ok' => true, 'removed' => $n - count($acc)]);
 }

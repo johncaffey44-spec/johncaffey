@@ -420,25 +420,6 @@ expose_php = Off
     [IO.File]::WriteAllText($Fichier, $base + $bloc, (New-Object System.Text.UTF8Encoding $false))
 }
 
-# Code à saisir pour créer son accès au planning ($SIGNUP_CODE d'api.php).
-# Vide : on en tire un au hasard et on l'écrit dans api.php. Déjà défini : on le garde.
-function Definir-CodeAcces([string]$Api, [string]$DossierData) {
-    $contenu = [IO.File]::ReadAllText($Api)
-    $motif = '(?m)^(\s*\$SIGNUP_CODE\s*=\s*)''([^'']*)'''
-    $trouve = [regex]::Match($contenu, $motif)
-    if (-not $trouve.Success) { return '' }
-    if ($trouve.Groups[2].Value) { return $trouve.Groups[2].Value }
-    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'   # sans 0/O ni 1/I : se dicte sans erreur
-    $octets = New-Object byte[] 8
-    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($octets)
-    $code = -join ($octets | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
-    Copy-Item -Path $Api -Destination (Join-Path $DossierData 'api.php.precedent') -Force
-    $contenu = $contenu.Substring(0, $trouve.Groups[2].Index) + $code + $contenu.Substring($trouve.Groups[2].Index)
-    # UTF-8 sans BOM : un BOM devant <?php casserait les en-têtes HTTP d'api.php.
-    [IO.File]::WriteAllText($Api, $contenu, (New-Object System.Text.UTF8Encoding $false))
-    return $code
-}
-
 function Afficher-Diagnostic($Reponse) {
     Attention "Réponse du serveur : HTTP $($Reponse.Code)"
     $corps = [string]$Reponse.Corps
@@ -718,7 +699,6 @@ try {
 
     # Autres applications PHP du même site (dossiers simples sous la racine du site).
     $autresActivees = @()
-    $codesAcces = @{}
     $racineSite = [Environment]::ExpandEnvironmentVariables(
         (AppCmd @('list', 'vdir', "$Site/", '/text:physicalPath') -SansErreur).Sortie.Trim())
     foreach ($nomAutre in $AutresApplications) {
@@ -746,17 +726,21 @@ try {
                  '/commit:apphost') | Out-Null
         $dataAutre = Join-Path $dossierAutre 'data'
         New-Item -ItemType Directory -Force -Path $dataAutre | Out-Null
+        # Nouvelle version livrée dans le kit (dossier du même nom) : copiée, l'ancienne gardée dans data\.
+        $livraison = Join-Path $PSScriptRoot $nomAutre
+        if (Test-Path $livraison) {
+            foreach ($f in Get-ChildItem -Path $livraison -File) {
+                try { Unblock-File -Path $f.FullName } catch { }
+                $cible = Join-Path $dossierAutre $f.Name
+                if ((Test-Path $cible) -and (Get-FileHash $cible).Hash -eq (Get-FileHash $f.FullName).Hash) { continue }
+                if (Test-Path $cible) { Copy-Item -Path $cible -Destination (Join-Path $dataAutre "$($f.Name).precedent") -Force }
+                Copy-Item -Path $f.FullName -Destination $cible -Force
+                Ok "$nomAutre : $($f.Name) mis à jour"
+            }
+        }
         Definir-Droits $dossierAutre @('/grant', "${IUSR}:(OI)(CI)RX", "${IIS_IUSRS}:(OI)(CI)RX")
         Proteger-Dossier $dataAutre -EcritureIIS
         Ok "$nomAutre : PHP activé, data\ en écriture pour IIS et masqué du navigateur"
-        $api = Join-Path $dossierAutre 'api.php'
-        if (Test-Path $api) {
-            $code = Definir-CodeAcces $api $dataAutre
-            if ($code) {
-                $codesAcces[$nomAutre] = $code
-                Ok "$nomAutre : code de création d'accès défini dans api.php"
-            }
-        }
         $autresActivees += $nomAutre
     }
 
@@ -896,10 +880,6 @@ try {
     Write-Host "   Vérification de l'installation    : ${adresse}index.php?page=verification"
     foreach ($nomAutre in $autresActivees) {
         Write-Host "   PHP activé aussi pour             : http://$nomServeur$suffixePort/$nomAutre/"
-        if ($codesAcces.ContainsKey($nomAutre)) {
-            Write-Host "   Code pour créer son accès ($nomAutre) : $($codesAcces[$nomAutre])" -ForegroundColor Yellow
-            Write-Host '   (à communiquer de vive voix ; modifiable dans api.php, ligne $SIGNUP_CODE)'
-        }
     }
     Write-Host ''
     if ($codeInstallation) {

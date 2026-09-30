@@ -39,7 +39,7 @@ récent, 64 bits, compte administrateur, accès Internet (sinon voir
 | IIS | Application `/ticketing` avec son propre pool `D8Support`. PHP est branché **sur cette application seulement** : les autres sites du serveur ne changent pas. Les messages d'erreur de l'application sont transmis tels quels (sinon IIS les remplace par ses pages HTML). |
 | Sécurité | `web.config` rend le dossier `data\` (base, pièces jointes, journaux) inaccessible depuis le navigateur ; l'installateur le vérifie. |
 | Pare-feu | Ouvre le port HTTP du site en entrée. |
-| Planning D8 | Active aussi PHP pour `planning_prod_d8` (même site) : `api.php` fonctionne, le planning passe en **base partagée**, son dossier `data\` (planning, comptes, sessions) est accessible en écriture pour IIS et masqué du navigateur. Si `$SIGNUP_CODE` est vide dans `api.php`, un code aléatoire y est écrit (ancienne version gardée dans `data\api.php.precedent`) et affiché à la fin : il faut le saisir pour créer son accès. Rien n'est fait si le dossier n'existe pas. |
+| Planning D8 | Active aussi PHP pour `planning_prod_d8` (même site) : `api.php` fonctionne, le planning passe en **base partagée**, son dossier `data\` (planning, comptes, sessions) est accessible en écriture pour IIS et masqué du navigateur. Si le kit contient un dossier `planning_prod_d8` (c'est le cas du zip livré), sa version du planning (`index.html`, `api.php`) est copiée sur le serveur ; l'ancienne est gardée dans `data\*.precedent`. |
 | Vérification | Interroge l'application, contrôle que la base n'est pas téléchargeable, affiche le code d'installation. |
 | Sauvegarde | Tâche planifiée quotidienne (22 h 00, compte SYSTEM) dans `C:\Sauvegardes\D8Support`, 14 archives gardées, et une sauvegarde d'essai tout de suite. |
 
@@ -107,6 +107,19 @@ et le pool `D8Support`. Dans le Planificateur de tâches : supprimer
 « D8 Support - sauvegarde quotidienne ». Puis supprimer les dossiers
 `C:\inetpub\wwwroot\ticketing` (**les données sont dans `data\`**) et, si
 rien d'autre ne s'en sert, `C:\PHP`.
+
+## Planning D8 : accès sur invitation
+
+- **Premier administrateur** : à la toute première ouverture du planning sur le
+  serveur, l'écran « Première mise en service » lui fait choisir son nom, son
+  identifiant et son mot de passe.
+- **Tous les autres** (administrateurs compris) : *Paramétrage › Utilisateurs*,
+  bouton **enveloppe**. Après la création d'une fiche, la page propose aussi
+  l'invitation tout de suite. Le lien obtenu est personnel, ne sert qu'une fois
+  et expire au bout de 7 jours. On l'envoie par courriel ou on le copie dans
+  une messagerie. En l'ouvrant, la personne choisit son identifiant et son mot
+  de passe.
+- Sans invitation, le serveur refuse toute création d'accès.
 
 ## Planning D8 : passage en base partagée
 
