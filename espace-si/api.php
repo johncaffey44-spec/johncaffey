@@ -20,10 +20,10 @@
  * Adapté à une équipe de quelques dizaines de personnes au plus.
  *
  * SÉCURITÉ — à lire avant la mise en service :
- *   1. HTTPS est fortement recommandé. Sans HTTPS, les navigateurs BLOQUENT
- *      la caméra, le micro, le partage d'écran et les notifications Windows
- *      (appels vidéo, messages vidéo/vocaux), et les mots de passe circulent
- *      en clair sur le réseau. Voir LISEZMOI.md.
+ *   1. En http (ex. http://192.168.1.174/espace-si/), tout fonctionne sauf
+ *      ce que les navigateurs réservent au HTTPS : caméra, micro, partage
+ *      d'écran, notifications Windows. L'application masque alors ces
+ *      fonctions. Les mots de passe circulent en clair sur le réseau local.
  *   2. $ALLOWED_NETS limite l'accès aux plages IP internes : ajustez-le.
  *   3. Le dossier « data » contient tout (comptes, messages, fichiers) :
  *      placez-le hors de la racine web si possible ($DATA_DIR) et incluez-le

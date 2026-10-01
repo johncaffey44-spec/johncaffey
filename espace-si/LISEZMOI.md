@@ -28,28 +28,29 @@ Rien de ce qui est saisi en démonstration n'est partagé, et vider les données
 1. **Prérequis** : un serveur web interne avec **PHP 7.4 ou plus**. Cela peut être IIS + PHP, Apache ou nginx, ou un NAS Synology ou QNAP avec Web Station. Aucune base de données n'est nécessaire.
 2. Copiez le dossier `espace-si` sur le serveur, par exemple sous `C:\inetpub\wwwroot\espace-si`.
 3. Donnez au compte du serveur web le droit d'**écrire** dans ce dossier. Sous IIS, c'est `IIS AppPool\<nom du pool>` ou `IUSR`. `api.php` y crée le sous-dossier `data`.
-4. Ouvrez `https://serveur/espace-si/`. En cas d'erreur, le message indique la cause, le plus souvent un droit d'écriture manquant.
+4. Ouvrez **`http://192.168.1.174/espace-si/`**. En cas d'erreur, le message indique la cause, le plus souvent un droit d'écriture manquant.
 5. **Codes de première connexion** : ouvrez sur le serveur le fichier `data\PREMIERE-CONNEXION.txt`. Il contient un code à usage unique par personne. Transmettez-les **de vive voix**.
 6. Chacun ouvre la même adresse et saisit son identifiant (`prenom.nom`, sans accent). À la première connexion, il saisit ensuite son code et choisit son mot de passe. Le mot de passe doit faire 10 caractères minimum et mélanger 3 types parmi minuscules, majuscules, chiffres et caractères spéciaux.
 
 **Recommandé** : `$ALLOWED_NETS` (en tête d'`api.php`) limite l'accès aux adresses du réseau interne. Ajustez-le à vos plages IP.
 
-## 3. HTTPS : indispensable pour la vidéo
+## 3. Utilisation en http (serveur 192.168.1.174)
 
-Sur une adresse en `http://`, les navigateurs **bloquent** la caméra, le micro, le partage d'écran et les notifications Windows. Ils bloquent donc les appels vidéo et les messages vidéo et vocaux enregistrés. Ce n'est pas réglable dans l'application.
+L'Espace SI fonctionne en `http://192.168.1.174/espace-si/` sans aucun réglage sur les postes.
 
-Ce qui reste disponible en `http://` :
+Sur une adresse `http://`, les navigateurs interdisent la caméra, le micro, le partage d'écran et les notifications Windows. L'application le détecte et **masque d'elle-même** ce qui en dépend :
 
-- la messagerie et les photos ou vidéos envoyées comme fichiers ;
-- les alertes sonores et le reste de l'outil.
+- appels audio et vidéo, visio d'équipe ;
+- messages vidéo et vocaux, capture d'écran ;
+- notifications Windows.
 
-Les mots de passe circulent alors en clair sur le réseau.
+Tout le reste fonctionne normalement : messagerie, photos, vidéos et fichiers joints (le bouton photo ouvre le sélecteur de fichiers, ou l'appareil photo sur un téléphone), alertes sonores, projets, Gantt, tâches, notes, calendrier, rappels, problèmes, planning, congés, retards et heures.
 
-**Solutions, de la meilleure à la plus rapide :**
+- **Alertes sonores** : le navigateur exige un clic dans la page après chaque ouverture. Un bandeau le rappelle, puis disparaît au premier clic.
+- **Mots de passe** : en http, ils circulent en clair sur le réseau local. N'utilisez pas pour l'Espace SI un mot de passe qui sert ailleurs.
+- **Accès** : `$ALLOWED_NETS` (en tête d'`api.php`) autorise déjà toutes les adresses `192.168.x.x`. Si tous les postes sont en `192.168.1.x`, vous pouvez le restreindre à `'192.168.1.0/24'` (en gardant `'127.0.0.0/8'` et `'::1/128'`).
 
-1. **Certificat interne** : demandez un certificat à votre autorité de certification Active Directory (AD CS). Ajoutez une liaison HTTPS au site dans IIS. Les postes du domaine font déjà confiance à cette autorité.
-2. **NAS Synology** : *Panneau de configuration › Sécurité › Certificat*. Utilisez Let's Encrypt si le nom est public, sinon importez un certificat interne.
-3. **Dépannage temporaire** : par stratégie de groupe (Edge et Chrome), activez `OverrideSecurityRestrictionsOnInsecureOrigin` en y listant `http://serveur`. Le navigateur traite alors cette adresse comme sécurisée. Les mots de passe restent toutefois en clair.
+Si le serveur passe un jour en HTTPS, appels et notifications réapparaissent automatiquement, sans rien changer aux fichiers.
 
 ## 4. Rôles et droits
 
@@ -81,8 +82,8 @@ Ces droits sont **vérifiés par le serveur**, pas seulement masqués dans l'int
 | Menu | Pour quoi faire |
 |---|---|
 | **Accueil** | La journée en un coup d'œil : qui est là, absent, en retard ou d'astreinte ; mes tâches et événements du jour ; projets ; urgences ; échéances ; annonces à lire. |
-| **Messagerie** | Canaux (Général, Urgences, Projets, Veille), messages directs et de groupe. Vous pouvez joindre photos, vidéos et fichiers, par glisser-déposer ou en collant une capture avec Ctrl+V. Messages vidéo et vocaux, réactions, réponses, mentions @prénom et @tous, épinglage, « vu par », recherche dans tout l'historique. |
-| **Appels** | Appel audio ou vidéo depuis une conversation, ou visio d'équipe (bouton caméra en haut). Partage d'écran, fenêtre réduite pour continuer à travailler. |
+| **Messagerie** | Canaux (Général, Urgences, Projets, Veille), messages directs et de groupe. Vous pouvez joindre photos, vidéos et fichiers, par glisser-déposer ou en collant une capture avec Ctrl+V. Messages vidéo et vocaux (en HTTPS), réactions, réponses, mentions @prénom et @tous, épinglage, « vu par », recherche dans tout l'historique. |
+| **Appels** | *Uniquement si le serveur est en HTTPS.* Appel audio ou vidéo depuis une conversation, ou visio d'équipe (bouton caméra en haut). Partage d'écran, fenêtre réduite pour continuer à travailler. |
 | **Annonces** | Informations importantes avec accusé de lecture (« J'ai lu », lu par 3/4). |
 | **Projets** | En cours, à venir, en stand-by (avec raison et date de reprise), terminés. Tableau à glisser-déposer ou liste, étapes, jalons, tâches liées, commentaires, documents, canal de discussion dédié. |
 | **Diagramme de Gantt** | Étapes et jalons de tous les projets. On déplace ou allonge une barre à la souris. Dépendances signalées en rouge si elles se chevauchent. Zoom semaine, mois, trimestre ou année ; impression. |
@@ -108,9 +109,9 @@ Ces droits sont **vérifiés par le serveur**, pas seulement masqués dans l'int
 
 - Les sons sont générés par le navigateur : aucun fichier audio n'est nécessaire. Ils se règlent par type : message, mention, rappel, urgence, retard ou absence, appel. Volume et plage « ne pas déranger » sont réglables ; les urgences et les appels sonnent toujours.
 - **Il faut un onglet ouvert** : un site web ne peut pas sonner quand le navigateur est fermé. Astuce : dans Edge, *Applications › Installer ce site en tant qu'application*. L'Espace SI s'ouvre alors dans sa propre fenêtre et peut démarrer avec Windows.
-- Les **notifications Windows** (en HTTPS) préviennent quand l'onglet est en arrière-plan. Le titre de l'onglet et l'icône affichent aussi le nombre de non-lus.
+- En HTTPS seulement, les **notifications Windows** préviennent quand l'onglet est en arrière-plan. Le titre de l'onglet et l'icône affichent aussi le nombre de non-lus.
 
-## 7. Appels vidéo
+## 7. Appels vidéo (en HTTPS uniquement)
 
 - Les appels passent directement de poste à poste sur le réseau local. Le serveur ne sert qu'à les mettre en relation, et aucune vidéo n'y transite.
 - Prévu pour 2 à 5 participants. Au-delà, préférez Teams ou un outil équivalent.

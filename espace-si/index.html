@@ -1029,6 +1029,8 @@ const NOTE_COLORS = ['', '#f6c344', '#7fc97f', '#6fb4e6', '#e58fb6', '#b493e0', 
 const EMOJI_QUICK = ['👍', '✅', '👀', '🙏', '😂', '❤️'];
 const EMOJIS = ['👍', '👎', '✅', '❌', '👀', '🙏', '👏', '💪', '🔥', '🎉', '😂', '😅', '🙂', '😉', '😎', '🤔', '😮', '😢', '😡', '❤️', '💡', '⚠️', '🚨', '🛠️',
   '🖥️', '💻', '🖨️', '📞', '📧', '📎', '📌', '⏰', '☕', '🍕', '🤝', '🚀', '🐛', '🔒', '🔑', '📦', '📅', '✏️', '👌', '🙌', '😴', '🤷', '🆗', '⏳'];
+/** caméra, micro, appels, capture d'écran : le navigateur ne les autorise qu'en HTTPS (ou en local) */
+const CAN_AV = !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.RTCPeerConnection);
 const pill = (lbl, color) => `<span class="pill" style="${cvar(color)}"><i></i>${esc(lbl)}</span>`;
 const tagc = (lbl, color) => `<span class="tag" style="${cvar(color)}">${esc(lbl)}</span>`;
 const prioB = p => { const x = PRIO[p] || PRIO[3]; return `<span class="prio" style="--c:${x[2]}" title="Priorité ${esc(x[1])}">${x[0]}</span>`; };
@@ -1999,7 +2001,7 @@ const App = {
     $('#stbtn').innerHTML = `<i style="--c:${p[1]}"></i><span>${esc(pres(D.me).tx || p[0])}</span>`;
     const n = D.all('inbox').filter(i => !i.read).length;
     $('#btn-inbox').innerHTML = ic('bell') + (n ? `<span class="cnt">${n > 99 ? '99+' : n}</span>` : '');
-    $('#btn-teamcall').innerHTML = ic('video'); $('#btn-teamcall').classList.toggle('on', !!Call.cur);
+    $('#btn-teamcall').innerHTML = ic('video'); $('#btn-teamcall').classList.toggle('on', !!Call.cur); $('#btn-teamcall').classList.toggle('hide', !CAN_AV);
     $('#btn-theme').innerHTML = ic(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon');
     $('#who').innerHTML = `${av(D.me, 'sm')}<span class="trunc">${esc(me.firstName || '')}</span>`;
     $('[data-act=mini]').innerHTML = ic(document.body.classList.contains('mini') ? 'right' : 'left');
@@ -2053,7 +2055,7 @@ function applyTheme() {
 const Notif = {
   ok() { return 'Notification' in window && Notification.permission === 'granted'; },
   async ask() {
-    if (!('Notification' in window) || !isSecureContext) return toast('Notifications Windows indisponibles : elles exigent une connexion HTTPS (voir LISEZMOI).', 'warn', null, 9000);
+    if (!('Notification' in window) || !isSecureContext) return toast('Notifications Windows indisponibles dans ce navigateur.', 'warn');
     const p = await Notification.requestPermission();
     toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées par le navigateur', p === 'granted' ? 'ok' : 'warn');
     App.render();
@@ -2276,6 +2278,7 @@ const ACT = {
 };
 document.addEventListener('click', e => {
   Snd.unlock();
+  const sb = $('#banner [data-key="sound"]'); if (sb) setTimeout(() => { if (Snd.ctx && Snd.ctx.state === 'running') sb.remove(); }, 80);
   const a = e.target.closest('[data-act]');
   if (a && ACT[a.dataset.act] && !a.closest('#auth')) { e.preventDefault(); ACT[a.dataset.act](a, e); return; }
   const o = e.target.closest('[data-open]');
@@ -2361,7 +2364,7 @@ V[''] = {
         <button class="btn" data-act="q-late">${ic('clock')} Signaler un retard</button>
         <button class="btn" data-act="q-prob">${ic('alert')} Signaler un problème</button>
         <button class="btn" data-act="q-task">${ic('checksq')} Nouvelle tâche</button>
-        <button class="btn pri" data-act="team-call">${ic('video')} Visio d’équipe</button></div></div>
+        ${CAN_AV ? `<button class="btn pri" data-act="team-call">${ic('video')} Visio d’équipe</button>` : ''}</div></div>
       ${anns.map(a => annCard(a, true)).join('')}
       <div class="kpis">
         ${kpi(byS('encours').length, 'projets en cours', 'play', PSTAT.encours[1], '#/projets?s=encours')}
@@ -2572,8 +2575,7 @@ const Chat = {
       ${c.kind === 'public' ? `<span class="sq" style="${cvar('#1487c9')}">${ic(c.projectId ? 'layers' : c.id === 'ch_urgences' ? 'flame' : 'hash')}</span>` : o.length === 1 ? av(o[0], 'md', true) : `<span class="sq" style="${cvar('#8a4fc7')}">${ic('users')}</span>`}
       <div style="min-width:0;flex:1"><h2 class="trunc">${esc(this.label(c))}${this.muted(c.id) ? ' ' + ic('volumex', 'sm') : ''}</h2><p class="trunc">${sub}</p></div>
       <input class="in" style="width:170px;padding:5px 9px" placeholder="Filtrer…" id="ch-search" data-live="1" value="${esc(this.chSearch)}">
-      <button class="ibtn" data-act="call-audio" title="Appel audio">${ic('phone')}</button>
-      <button class="ibtn" data-act="call-video" title="Appel vidéo">${ic('video')}</button>
+      ${CAN_AV ? `<button class="ibtn" data-act="call-audio" title="Appel audio">${ic('phone')}</button><button class="ibtn" data-act="call-video" title="Appel vidéo">${ic('video')}</button>` : ''}
       <button class="ibtn ${this.infoOn ? 'on' : ''}" data-act="chat-info" title="Détails, fichiers, épinglés">${ic('info')}</button>`;
   },
   msgHtml(m, prev, c) {
@@ -2694,10 +2696,10 @@ V.chat = {
           <textarea id="ta" rows="1" data-live="1" placeholder="Écrire ${c.kind === 'public' ? 'dans #' + esc(c.name) : 'à ' + esc(Chat.label(c))}…  (Entrée : envoyer · Maj+Entrée : nouvelle ligne · @ : mentionner)">${esc(Chat.drafts[id] || '')}</textarea>
           <div class="tools">
             <button class="ibtn" data-act="chat-attach" title="Joindre des fichiers, photos ou vidéos">${ic('paperclip')}</button>
-            <button class="ibtn" data-act="chat-photo" title="Prendre une photo">${ic('camera')}</button>
-            <button class="ibtn" data-act="chat-vmsg" title="Enregistrer un message vidéo">${ic('video')}</button>
+            <button class="ibtn" data-act="chat-photo" title="${CAN_AV ? 'Prendre une photo' : 'Joindre une photo (appareil photo sur téléphone)'}">${ic('camera')}</button>
+            ${CAN_AV ? `<button class="ibtn" data-act="chat-vmsg" title="Enregistrer un message vidéo">${ic('video')}</button>
             <button class="ibtn" data-act="chat-amsg" title="Enregistrer un message vocal">${ic('mic')}</button>
-            <button class="ibtn" data-act="chat-shot" title="Capture d’écran">${ic('screen')}</button>
+            <button class="ibtn" data-act="chat-shot" title="Capture d’écran">${ic('screen')}</button>` : ''}
             <button class="ibtn" data-act="chat-emoji" title="Émoji">${ic('smile')}</button>
             <button class="ibtn" data-act="chat-at" title="Mentionner quelqu’un">${ic('at')}</button>
             <span class="spacer"></span><span class="mut sm-t" style="margin-right:6px">Glissez-déposez ou collez (Ctrl+V) une capture</span>
@@ -2866,10 +2868,10 @@ const Media = {
   can() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); },
   why() {
     return isSecureContext ? 'Caméra ou micro introuvable, ou accès refusé par le navigateur.'
-      : 'Le navigateur bloque la caméra et le micro sur une connexion non sécurisée (http). Passez l’Espace SI en HTTPS (voir LISEZMOI), ou déployez la stratégie Edge/Chrome « OverrideSecurityRestrictionsOnInsecureOrigin ».';
+      : 'Caméra et micro indisponibles sur une adresse http.';
   },
   async photo(cb) {
-    if (!this.can()) { const f = await pickFiles('image/*', false, 'environment'); if (f[0]) cb(f[0]); if (!isSecureContext) toast(this.why(), 'warn', null, 9000); return; }
+    if (!this.can()) { const f = await pickFiles('image/*', false, 'environment'); if (f[0]) cb(f[0]); return; }
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'environment' } }); }
     catch (e) { toast(this.why(), 'warn', null, 8000); const f = await pickFiles('image/*', false, 'environment'); if (f[0]) cb(f[0]); return; }
@@ -4462,7 +4464,7 @@ V.parametres = {
           <div class="fld span2"><label>Signature / présentation</label><textarea class="in" name="signature" rows="2">${esc(me.signature || '')}</textarea></div></form>
         <div class="row" style="margin-top:14px"><span class="spacer"></span><button class="btn pri" data-act="profile-save">Enregistrer</button></div></div></div>`;
     else if (tab === 'sons') {
-      const notifState = !('Notification' in window) || !isSecureContext ? 'indisponibles (connexion http)' : Notification.permission === 'granted' ? 'activées' : Notification.permission === 'denied' ? 'bloquées dans le navigateur' : 'non activées';
+      const notifState = !('Notification' in window) || !isSecureContext ? '' : Notification.permission === 'granted' ? 'activées' : Notification.permission === 'denied' ? 'bloquées dans le navigateur' : 'non activées';
       body = `<div class="card" style="max-width:720px"><div class="card-b col" style="gap:14px">
         <div class="fld"><label>Volume des alertes</label><div class="row"><span>${ic('volumex')}</span><input type="range" min="0" max="1" step=".05" value="${p.volume ?? .7}" data-pref="volume" style="flex:1"><span>${ic('volume')}</span></div></div>
         <label class="sw"><input type="checkbox" data-pref="mute"${p.mute ? ' checked' : ''}><i></i>Couper tous les sons</label>
@@ -4472,12 +4474,12 @@ V.parametres = {
         <div class="row wrap"><label class="sw"><input type="checkbox" data-dnd-on${obj(p.dnd).on ? ' checked' : ''}><i></i>Silence de</label><input class="in" type="time" style="width:auto" data-dnd-from value="${esc(obj(p.dnd).from || '19:00')}"> à <input class="in" type="time" style="width:auto" data-dnd-to value="${esc(obj(p.dnd).to || '08:00')}"></div>
         <label class="sw"><input type="checkbox" data-pref="dndBusy"${p.dndBusy !== false ? ' checked' : ''}><i></i>Silence aussi quand mon statut est « Occupé »</label>
         <p class="mut sm-t" style="margin:0">Les urgences (P1, annonces urgentes) et les appels sonnent toujours.</p>
-        <div class="mhd" style="padding-left:0">Notifications Windows</div>
-        <div class="row wrap"><span>État : <b>${notifState}</b></span>${'Notification' in window && isSecureContext && Notification.permission === 'default' ? `<button class="btn sm pri" data-act="notif-ask">Activer</button>` : ''}</div>
-        <p class="mut sm-t" style="margin:0">Elles s’affichent quand l’Espace SI est en arrière-plan. Gardez un onglet ouvert (ou installez la page comme application : menu du navigateur › Applications › Installer ce site).</p></div></div>`;
+        ${isSecureContext && 'Notification' in window ? `<div class="mhd" style="padding-left:0">Notifications Windows</div>
+        <div class="row wrap"><span>État : <b>${notifState}</b></span>${Notification.permission === 'default' ? `<button class="btn sm pri" data-act="notif-ask">Activer</button>` : ''}</div>` : ''}
+        <p class="mut sm-t" style="margin:0">Les alertes sonnent tant qu’un onglet Espace SI est ouvert : gardez-le ouvert (ou installez la page comme application : menu du navigateur › Applications › Installer ce site).</p></div></div>`;
     } else if (tab === 'securite') body = `<div class="card" style="max-width:720px"><div class="card-b col" style="gap:12px">
         <p style="margin:0">Identifiant : <b>${esc(Auth.user.login)}</b></p><div><button class="btn pri" data-act="pwd">${ic('key')} Changer mon mot de passe</button></div>
-        <div class="bnr ${location.protocol === 'https:' ? 'ok' : B.mode === 'local' ? 'info' : 'warn'}">${ic('shield')}<span>${location.protocol === 'https:' ? 'Connexion chiffrée (HTTPS).' : B.mode === 'local' ? 'Mode démonstration : données stockées dans ce navigateur uniquement.' : 'Connexion non chiffrée (http) : les mots de passe circulent en clair sur le réseau, et caméra, micro et notifications sont bloqués. Passez en HTTPS (LISEZMOI).'}</span></div>
+        <div class="bnr ${location.protocol === 'https:' ? 'ok' : 'info'}">${ic('shield')}<span>${location.protocol === 'https:' ? 'Connexion chiffrée (HTTPS).' : B.mode === 'local' ? 'Mode démonstration : données stockées dans ce navigateur uniquement.' : 'Connexion http : n’utilisez pas ici un mot de passe qui sert ailleurs.'}</span></div>
         <p class="mut sm-t" style="margin:0">Mot de passe : 10 caractères minimum, 3 types de caractères. Après 8 erreurs depuis un poste, la connexion est bloquée 15 minutes. Changer son mot de passe déconnecte ses autres sessions.</p></div></div>`;
     else if (tab === 'equipe' && adm) {
       if (!this.acc) { this.acc = 'loading'; B.access().then(r => { this.acc = Object.fromEntries(arr(r.accounts).map(a => [a.userId, a])); this.needCode = r.needCode; App.render(); }).catch(e => { this.acc = {}; toast(e.message, 'danger'); }); }
@@ -4513,7 +4515,7 @@ V.parametres = {
         <li><b>Problème qui revient ?</b> Ouvrez sa fiche et cliquez « Ça recommence (+1) » : les récurrences sont comptées et l’équipe est alertée.</li>
         <li><b>Tâches et notes</b> : privées par défaut, partageables avec un collègue ou toute l’équipe.</li>
         <li><b>Retard</b> : bouton sur l’accueil ; l’équipe reçoit une alerte et le retard peut aller au compteur d’heures.</li>
-        <li><b>Appels vidéo</b> : bouton caméra en haut (visio d’équipe) ou dans une conversation. Exige HTTPS.</li>
+        ${CAN_AV ? '<li><b>Appels vidéo</b> : bouton caméra en haut (visio d’équipe) ou dans une conversation.</li>' : ''}
         <li><b>Mots de passe</b> : ne jamais les écrire dans l’Espace SI ; utilisez le coffre-fort de l’entreprise.</li></ul>
         <p class="mut sm-t">Espace SI v${APP_VERSION} · ${B.mode === 'local' ? 'démonstration locale' : 'serveur PHP ' + esc(Auth.info.php || '')}</p></div></div></div>`;
     return `<div class="phead"><div><h1>Paramètres</h1></div></div><div class="tabs">${tabs.map(([k, l, i]) => `<a class="${tab === k ? 'on' : ''}" href="#/parametres/${k}">${ic(i, 'sm')} ${l}</a>`).join('')}</div>${body}`;
@@ -4594,7 +4596,7 @@ const Call = {
   members(ch) { const c = D.get('channels', ch); return !c ? [] : (c.kind === 'public' ? D.users().map(u => u.id) : arr(c.members)).filter(u => u !== D.me); },
   async start(ch, video) {
     if (this.cur) return this.show();
-    if (!window.RTCPeerConnection) return toast('Ce navigateur ne gère pas les appels (WebRTC).', 'danger');
+    if (!CAN_AV) return toast('Appels indisponibles sur une adresse http.', 'warn');
     const members = this.members(ch);
     if (!members.length) return toast('Personne à appeler dans cette conversation.', 'warn');
     const online = members.filter(u => pres(u).online);
@@ -4747,7 +4749,7 @@ const Call = {
   async toggleScreen() {
     const c = this.cur;
     if (c.screen) { c.screen.getTracks().forEach(t => t.stop()); return this.endScreen(); }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return toast(isSecureContext ? 'Partage d’écran non pris en charge par ce navigateur.' : 'Partage d’écran impossible en http : passez en HTTPS.', 'warn', null, 8000);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return toast(isSecureContext ? 'Partage d’écran non pris en charge par ce navigateur.' : 'Partage d’écran indisponible.', 'warn', null, 8000);
     try { c.screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }); } catch (e) { return; }
     const st = c.screen.getVideoTracks()[0];
     st.onended = () => this.endScreen();
@@ -4903,11 +4905,11 @@ function fatal(msg) {
     <p class="auth-note">Vérifiez que le serveur web peut écrire dans le dossier de l’application (sous-dossier <code>data</code>). Voir LISEZMOI.md.</p>
     <button class="btn pri" style="margin-top:12px" onclick="location.reload()">Réessayer</button></div></div></div>`;
 }
-function banner(type, html, key) {
-  try { if (key && sessionStorage.getItem(KEY + '-bn-' + key)) return; } catch (e) { }
-  const el = document.createElement('div'); el.className = 'bnr ' + type;
+function banner(type, html, key, remember = true) {
+  try { if (key && remember && sessionStorage.getItem(KEY + '-bn-' + key)) return; } catch (e) { }
+  const el = document.createElement('div'); el.className = 'bnr ' + type; if (key) el.dataset.key = key;
   el.innerHTML = html + `<span class="spacer"></span><button class="ibtn" style="width:24px;height:24px" title="Masquer">${ic('x', 'sm')}</button>`;
-  $('button:last-child', el).onclick = () => { el.remove(); try { key && sessionStorage.setItem(KEY + '-bn-' + key, '1'); } catch (e) { } };
+  $('button:last-child', el).onclick = () => { el.remove(); try { key && remember && sessionStorage.setItem(KEY + '-bn-' + key, '1'); } catch (e) { } };
   $('#banner').appendChild(el);
 }
 async function start() {
@@ -4928,8 +4930,9 @@ async function start() {
   $('#app').classList.remove('hide');
   App.team();
   if (B === Local) banner('info', `${ic('info')}<span><b>Mode démonstration</b> : données d’exemple stockées dans ce navigateur uniquement${why ? ' (' + esc(why) + ')' : ''}. Pour une utilisation en équipe, déposez le dossier sur un serveur web avec PHP (voir LISEZMOI.md).</span>`, 'demo');
-  else if (!isSecureContext) banner('warn', `${ic('shield')}<span><b>Connexion http</b> : le navigateur bloque caméra, micro, partage d’écran et notifications Windows. Messagerie, fichiers et alertes sonores fonctionnent. Passez en HTTPS pour les appels vidéo (LISEZMOI.md).</span>`, 'http');
-  else if ('Notification' in window && Notification.permission === 'default') banner('info', `${ic('bell')}<span>Activez les notifications Windows pour être prévenu même quand l’onglet est en arrière-plan.</span><button class="btn sm pri" data-act="notif-ask">Activer</button>`, 'notif');
+  else if (isSecureContext && 'Notification' in window && Notification.permission === 'default') banner('info', `${ic('bell')}<span>Activez les notifications Windows pour être prévenu même quand l’onglet est en arrière-plan.</span><button class="btn sm pri" data-act="notif-ask">Activer</button>`, 'notif');
+  Snd.unlock();
+  setTimeout(() => { if (!Snd.ctx || Snd.ctx.state !== 'running') banner('info', `${ic('volume')}<span>Cliquez une fois n’importe où dans la page pour activer les <b>alertes sonores</b> (le navigateur l’exige après chaque ouverture).</span>`, 'sound', false); }, 700);
   setNet('ok');
   Ticker.start(() => { Sync.tick(); Alerts.tick(); });
   if (B === Remote) B.presence({ st: myStatus() });
