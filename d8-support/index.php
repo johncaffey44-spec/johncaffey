@@ -1911,6 +1911,73 @@ kbd {
   .rac-ligne { grid-template-columns: 96px 1fr; }
 }
 
+/* ------------------------------------------------ exports et graphiques */
+
+.stat-resolu { border-left-color: #1B8A5F; }
+.stat-resolu .stat-num { color: #13654A; }
+
+.export-groupe { display: inline-flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.export-lbl { display: inline-flex; align-items: center; gap: .3rem; color: var(--muted); font-weight: 600; font-size: .93rem; margin-right: .1rem; }
+.export-lbl .ico svg { width: 16px; height: 16px; }
+.export-groupe .btn { min-height: 36px; padding: .25rem .7rem; }
+
+.filtres-stats { grid-template-columns: repeat(auto-fit, minmax(170px, 220px)); }
+.stats-periode { margin: 0 0 .8rem; }
+
+.viz-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 1rem; align-items: start; }
+.viz-grille .card { margin: 0; min-width: 0; }
+.viz-large { grid-column: 1 / -1; }
+.viz { width: 100%; overflow: hidden; }
+.viz-svg { display: block; max-width: 100%; height: auto; font-family: inherit; }
+.viz-axe { font-size: 11px; fill: #626C74; font-variant-numeric: tabular-nums; }
+.viz-lbl { font-size: 12.5px; fill: #1C2A31; }
+.viz-val { font-size: 12px; fill: #3F4A57; font-weight: 600; font-variant-numeric: tabular-nums; }
+.viz-lien { fill: #2A41A6; }
+a:hover > .viz-lien { text-decoration: underline; }
+.viz-zone { fill: transparent; cursor: default; }
+.viz-zone:hover { fill: rgba(28, 42, 49, .045); }
+.viz-legende { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; margin: 0 0 .6rem; font-size: .9rem; color: var(--muted); }
+.viz-legende span { display: inline-flex; align-items: center; gap: .4rem; }
+.viz-legende i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.viz-legende i.viz-tiret { width: 16px; height: 0; border-top: 2px dashed #eb6834; border-radius: 0; }
+.viz-options { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.2rem; margin: -.3rem 0 .7rem; }
+.viz-donnees { margin-top: .6rem; }
+.viz-donnees summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+.viz-donnees .tbl-wrap { margin-top: .5rem; max-height: 320px; overflow: auto; }
+.viz-tip {
+  position: fixed; z-index: 90; pointer-events: none; max-width: 320px;
+  background: #16303A; color: #F1F4F5; border-radius: 6px; padding: .45rem .6rem;
+  font-size: .86rem; line-height: 1.4; box-shadow: var(--ombre-flottant);
+}
+.viz-tip b { color: #FFFFFF; }
+@media (max-width: 620px) { .viz-grille { grid-template-columns: 1fr; } }
+
+/* Document préparé pour l'impression / le PDF (Export.pdf) : seul lui est imprimé. */
+#zone-impression { display: none; }
+@media print {
+  @page { margin: 12mm; }
+  body.impression > *:not(#zone-impression) { display: none !important; }
+  body.impression #zone-impression { display: block; color: #000; font-size: 10.5pt; }
+  .imp-tete { border-bottom: 2px solid #16303A; padding-bottom: .4rem; margin-bottom: .9rem; }
+  .imp-app { font-weight: 700; color: #16303A; }
+  .imp-tete h1 { font-size: 17pt; margin: .2rem 0; }
+  .imp-tete p { margin: .1rem 0; }
+  .imp-date { color: #555; font-size: 9pt; }
+  #zone-impression h2 { font-size: 12pt; margin: 1rem 0 .4rem; }
+  #zone-impression .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+  #zone-impression .stat { border: 1px solid #ccc; border-left-width: 4px; padding: .4rem .6rem; }
+  .imp-bloc { break-inside: avoid; page-break-inside: avoid; }
+  .imp-saut { break-after: page; page-break-after: always; }
+  .imp-tbl { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .imp-tbl th, .imp-tbl td { border: 1px solid #bbb; padding: 3px 5px; text-align: left; vertical-align: top; }
+  .imp-tbl th { background: #E9EEF0; }
+  .imp-tbl .nw { white-space: nowrap; }
+  #zone-impression .viz-svg { width: 100%; height: auto; }
+  .imp-tbl thead { display: table-header-group; }
+  .imp-tbl tr { break-inside: avoid; page-break-inside: avoid; }
+  .viz-tip { display: none !important; }
+}
+
 CSS_D8_9f3a7c21;
 }
 
@@ -2161,6 +2228,7 @@ const ICONES = {
   liste:  I('<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>'),
   loupe:  I('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>'),
   chevron: I('<path d="M9 6l6 6-6 6"/>'),
+  telecharger: I('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>'),
   hand:   I('<path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V15a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4.4-2.6L5 13.5a1.5 1.5 0 0 1 2.4-1.8L9 13.5V11"/>'),
 };
 function ico(nom) { return '<span class="ico">' + (ICONES[nom] || '') + '</span>'; }
@@ -3105,62 +3173,629 @@ function brancherLignes(scope) {
   });
 }
 
+/* ================================================ exports : CSV, Excel, PDF */
+
+/*
+ * Tout est produit dans le navigateur, sans bibliothèque ni service externe :
+ *  - CSV  : séparateur « ; » et virgule décimale, ce qu'attend Excel en français ;
+ *  - Excel : un vrai classeur .xlsx (une feuille par tableau, en-têtes en gras,
+ *    filtres, première ligne figée, dates reconnues comme dates) ;
+ *  - PDF  : mise en page dédiée puis impression, avec « Enregistrer au format
+ *    PDF » ou « Microsoft Print to PDF » comme imprimante ; les graphiques
+ *    sont conservés en vectoriel.
+ * Une « feuille » : { nom, colonnes: ['Libellé', …], lignes: [[valeur, …], …] }.
+ */
+const Export = {
+  nom(base, ext) {
+    const d = new Date();
+    const j = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    return base + '_' + j + '.' + ext;
+  },
+
+  telecharger(blob, nom) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nom;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  },
+
+  csv(feuilles, base) {
+    const cellule = (v) => {
+      if (v == null) return '';
+      let s = typeof v === 'number' ? String(v).replace('.', ',') : String(v);
+      // Une valeur commençant par = + - @ serait exécutée comme formule par le tableur.
+      if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const blocs = feuilles.map(f =>
+      (feuilles.length > 1 ? cellule(f.nom) + '\r\n' : '') +
+      [f.colonnes].concat(f.lignes).map(l => l.map(cellule).join(';')).join('\r\n'));
+    this.telecharger(new Blob(['﻿' + blocs.join('\r\n\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' }),
+      this.nom(base, 'csv'));
+  },
+
+  xlsx(feuilles, base) {
+    const x = (s) => String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const col = (n) => { let s = ''; n++; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
+    const reDate = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/;
+    const serie = (m) => (Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) - Date.UTC(1899, 11, 30)) / 86400000;
+    const pris = new Set();
+    const noms = feuilles.map(f => {
+      let n = String(f.nom || 'Feuille').replace(/[\\/?*\[\]:]/g, ' ').trim().slice(0, 31) || 'Feuille';
+      let k = 2; const racine = n;
+      while (pris.has(n.toLowerCase())) n = racine.slice(0, 28) + ' ' + (k++);
+      pris.add(n.toLowerCase());
+      return n;
+    });
+    const NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    const tete = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+
+    const feuillesXml = feuilles.map((f) => {
+      const lignes = [f.colonnes].concat(f.lignes);
+      const nbCol = Math.max(1, ...lignes.map(l => l.length));
+      const larg = new Array(nbCol).fill(8);
+      const rows = lignes.map((l, i) => {
+        const cells = l.map((v, j) => {
+          const ref = col(j) + (i + 1);
+          if (v == null || v === '') return '';
+          if (i === 0) { larg[j] = Math.max(larg[j], String(v).length + 2); return '<c r="' + ref + '" t="inlineStr" s="1"><is><t xml:space="preserve">' + x(v) + '</t></is></c>'; }
+          if (typeof v === 'number' && isFinite(v)) { larg[j] = Math.max(larg[j], String(v).length + 2); return '<c r="' + ref + '"><v>' + v + '</v></c>'; }
+          const m = typeof v === 'string' ? reDate.exec(v) : null;
+          if (m && v.length <= 19) {
+            larg[j] = Math.max(larg[j], m[4] ? 17 : 11);
+            return '<c r="' + ref + '" s="' + (m[4] ? 2 : 3) + '"><v>' + serie(m) + '</v></c>';
+          }
+          larg[j] = Math.max(larg[j], Math.min(60, String(v).length + 2));
+          return '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + x(v) + '</t></is></c>';
+        }).join('');
+        return '<row r="' + (i + 1) + '">' + cells + '</row>';
+      }).join('');
+      const plage = 'A1:' + col(nbCol - 1) + lignes.length;
+      return tete + '<worksheet ' + NS + '>' +
+        '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+        '<cols>' + larg.map((w, j) => '<col min="' + (j + 1) + '" max="' + (j + 1) + '" width="' + Math.min(60, w) + '" customWidth="1"/>').join('') + '</cols>' +
+        '<sheetData>' + rows + '</sheetData>' +
+        (f.lignes.length ? '<autoFilter ref="' + plage + '"/>' : '') +
+        '</worksheet>';
+    });
+
+    const filtres = feuilles.map((f, i) => f.lignes.length
+      ? '<definedName name="_xlnm._FilterDatabase" localSheetId="' + i + '" hidden="1">\'' + x(noms[i].replace(/'/g, "''")) + '\'!$A$1:$' +
+        col(Math.max(1, ...[f.colonnes].concat(f.lignes).map(l => l.length)) - 1) + '$' + (f.lignes.length + 1) + '</definedName>' : '').join('');
+    const fichiers = [
+      ['[Content_Types].xml', tete + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+        feuilles.map((f, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('') +
+        '</Types>'],
+      ['_rels/.rels', tete + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+      ['xl/workbook.xml', tete + '<workbook ' + NS + '><bookViews><workbookView/></bookViews><sheets>' +
+        noms.map((n, i) => '<sheet name="' + x(n) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join('') + '</sheets>' +
+        (filtres ? '<definedNames>' + filtres + '</definedNames>' : '') + '</workbook>'],
+      ['xl/_rels/workbook.xml.rels', tete + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        feuilles.map((f, i) => '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join('') +
+        '<Relationship Id="rId' + (feuilles.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+      ['xl/styles.xml', tete + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<numFmts count="2"><numFmt numFmtId="164" formatCode="dd/mm/yyyy hh:mm"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy"/></numFmts>' +
+        '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+        '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+        '<fill><patternFill patternType="solid"><fgColor rgb="FFE9EEF0"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+        '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+        '<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+        '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' +
+        '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+        '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>' +
+        '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
+    ].concat(feuillesXml.map((s, i) => ['xl/worksheets/sheet' + (i + 1) + '.xml', s]));
+
+    this.telecharger(new Blob([zipSansCompression(fichiers)],
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), this.nom(base, 'xlsx'));
+  },
+
+  tableHtml(f) {
+    const v = (c) => c == null ? '' : typeof c === 'number' ? String(c).replace('.', ',')
+      : /^\d{4}-\d{2}-\d{2}/.test(String(c)) ? fmtDate(c) : String(c);
+    return '<h2>' + esc(f.nom) + '</h2><table class="imp-tbl"><thead><tr>' +
+      f.colonnes.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr></thead><tbody>' +
+      (f.lignes.length ? f.lignes.map(l => '<tr>' + l.map(c => {
+        const t = v(c);
+        return '<td' + (typeof c === 'number' || t.length <= 16 && !/\s\S+\s/.test(t) ? ' class="nw"' : '') + '>' + esc(t) + '</td>';
+      }).join('') + '</tr>').join('')
+        : '<tr><td colspan="' + f.colonnes.length + '">Aucune donnée.</td></tr>') + '</tbody></table>';
+  },
+
+  /* PDF : la page imprimée ne contient que le document préparé ici. */
+  pdf(titre, sousTitre, html, paysage) {
+    let zone = $('#zone-impression');
+    if (!zone) { zone = document.createElement('div'); zone.id = 'zone-impression'; document.body.appendChild(zone); }
+    const maint = new Date();
+    zone.innerHTML = '<div class="imp-tete"><div class="imp-app">' + esc(S.appName) + '</div>' +
+      '<h1>' + esc(titre) + '</h1>' + (sousTitre ? '<p>' + esc(sousTitre) + '</p>' : '') +
+      '<p class="imp-date">Document édité le ' + maint.toLocaleDateString('fr-FR') + ' à ' +
+      maint.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + '</p></div>' + html;
+    document.body.classList.add('impression');
+    const page = document.createElement('style');
+    page.textContent = '@page { size: A4 ' + (paysage ? 'landscape' : 'portrait') + '; margin: ' + (paysage ? '9mm' : '12mm') + '; }';
+    document.head.appendChild(page);
+    const fin = () => { document.body.classList.remove('impression'); zone.innerHTML = ''; page.remove(); window.removeEventListener('afterprint', fin); };
+    window.addEventListener('afterprint', fin);
+    toast('Pour un PDF : choisissez « Enregistrer au format PDF » ou « Microsoft Print to PDF » comme imprimante.');
+    setTimeout(() => window.print(), 80);
+  },
+};
+
+/* Archive ZIP sans compression (format d'un .xlsx), écrite à la main. */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function zipSansCompression(fichiers) {
+  const enc = new TextEncoder();
+  const crc32 = (d) => { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC_TABLE[(c ^ d[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  const now = new Date();
+  const heure = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const jour = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const morceaux = [], central = [];
+  let pos = 0;
+  for (const [nom, contenu] of fichiers) {
+    const n = enc.encode(nom), d = enc.encode(contenu), crc = crc32(d);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, heure, true); h.setUint16(12, jour, true); h.setUint32(14, crc, true);
+    h.setUint32(18, d.length, true); h.setUint32(22, d.length, true); h.setUint16(26, n.length, true); h.setUint16(28, 0, true);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint16(10, 0, true); c.setUint16(12, heure, true); c.setUint16(14, jour, true); c.setUint32(16, crc, true);
+    c.setUint32(20, d.length, true); c.setUint32(24, d.length, true); c.setUint16(28, n.length, true);
+    c.setUint32(42, pos, true);
+    morceaux.push(new Uint8Array(h.buffer), n, d);
+    central.push(new Uint8Array(c.buffer), n);
+    pos += 30 + n.length + d.length;
+  }
+  const tailleCentral = central.reduce((s, a) => s + a.length, 0);
+  const fin = new DataView(new ArrayBuffer(22));
+  fin.setUint32(0, 0x06054b50, true); fin.setUint16(8, fichiers.length, true); fin.setUint16(10, fichiers.length, true);
+  fin.setUint32(12, tailleCentral, true); fin.setUint32(16, pos, true);
+  return new Blob(morceaux.concat(central, [new Uint8Array(fin.buffer)]));
+}
+
+/* Boutons « Exporter : CSV · Excel · PDF ». fournir() renvoie
+   { base, titre, sousTitre, feuilles, html? } (html : contenu du PDF, sinon les tableaux). */
+function boutonsExport(id) {
+  return '<div class="export-groupe" role="group" aria-label="Exporter" id="' + id + '">' +
+    '<span class="export-lbl">' + ico('telecharger') + 'Exporter</span>' +
+    '<button type="button" class="btn" data-format="csv">CSV</button>' +
+    '<button type="button" class="btn" data-format="xlsx">Excel</button>' +
+    '<button type="button" class="btn" data-format="pdf">PDF</button></div>';
+}
+function brancherExport(id, fournir) {
+  const zone = $('#' + id);
+  if (!zone) return;
+  zone.addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-format]');
+    if (!b || b.disabled) return;
+    b.disabled = true;
+    try {
+      const d = await fournir(b.dataset.format);
+      if (!d) return;
+      if (b.dataset.format === 'csv') Export.csv(d.feuilles, d.base);
+      else if (b.dataset.format === 'xlsx') Export.xlsx(d.feuilles, d.base);
+      else Export.pdf(d.titre, d.sousTitre, d.html || d.feuilles.map(f => Export.tableHtml(f)).join(''), d.paysage);
+    } catch (err) {
+      if (err && err.message !== 'api') toast('Export impossible : ' + (err.message || err), true);
+    } finally { b.disabled = false; }
+  });
+}
+
+/* ================================================ graphiques (SVG) */
+
+/*
+ * Graphiques dessinés en SVG, sans bibliothèque. Palette vérifiée (contraste,
+ * daltonisme) : bleu et orange pour deux séries, nuances d'un même bleu pour
+ * les priorités (de « basse », clair, à « critique », foncé). Les valeurs et
+ * libellés restent dans les couleurs du texte ; chaque graphique a son tableau.
+ */
+const VIZ = {
+  serie1: '#2a78d6', serie2: '#eb6834',
+  prio: { basse: '#86b6ef', normale: '#3987e5', haute: '#1c5cab', critique: '#0d366b' },
+  grille: '#E6E9E6', axe: '#626C74', texte: '#1C2A31',
+};
+const MOIS_COURTS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+function moisLbl(m) { const [a, mo] = String(m).split('-'); return MOIS_COURTS[Number(mo) - 1] + ' ' + a.slice(2); }
+function dateLocale(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(s || ''));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : null;
+}
+function joursLbl(j) {
+  if (j == null || isNaN(j)) return '—';
+  j = Number(j);
+  return j < 1 ? Math.max(1, Math.round(j * 24)) + ' h' : (Math.round(j * 10) / 10).toString().replace('.', ',') + ' j';
+}
+function echelleMax(v) {
+  if (v <= 4) return Math.max(1, Math.ceil(v));
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const k of [1, 2, 2.5, 5, 10]) if (k * p >= v) return k * p;
+  return 10 * p;
+}
+/* Barre au bout arrondi (4 px), posée sur sa ligne de base. */
+function barreV(x, y, w, h) {
+  if (h <= 0) return '';
+  const r = Math.min(4, w / 2, h);
+  return 'M' + x + ',' + (y + h) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y +
+    'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + h) + 'Z';
+}
+function barreH(x, y, w, h) {
+  if (w <= 0) return '';
+  const r = Math.min(4, h / 2, w);
+  return 'M' + x + ',' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) +
+    'V' + (y + h - r) + 'Q' + (x + w) + ',' + (y + h) + ' ' + (x + w - r) + ',' + (y + h) + 'H' + x + 'Z';
+}
+function svgOuvre(w, h, titre) {
+  return '<svg class="viz-svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(titre) + '">';
+}
+function legende(series) {
+  return series.length < 2 ? '' : '<div class="viz-legende">' + series.map(s =>
+    '<span><i style="background:' + s.couleur + '"></i>' + esc(s.lbl) + '</span>').join('') + '</div>';
+}
+
+/* Colonnes groupées : une colonne par série et par période. */
+function graphColonnes(W, points, series, fmt) {
+  fmt = fmt || (v => String(v));
+  const H = 230, g = 44, d = 8, haut = 10, bas = 28;
+  const max = echelleMax(Math.max(1, ...points.flatMap(p => series.map(s => Number(p[s.cle]) || 0))));
+  const ph = H - haut - bas, pw = W - g - d;
+  const bande = pw / Math.max(1, points.length);
+  const bw = Math.max(3, Math.min(26, (bande * .72 - 2 * (series.length - 1)) / series.length));
+  const pas = Math.max(1, Math.ceil(46 / bande));
+  let s = svgOuvre(W, H, series.map(x => x.lbl).join(', '));
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4, y = haut + ph - ph * i / 4;
+    s += '<line x1="' + g + '" x2="' + (W - d) + '" y1="' + y + '" y2="' + y + '" stroke="' + VIZ.grille + '"' + (i ? ' stroke-dasharray="2 3"' : '') + '/>' +
+      '<text x="' + (g - 6) + '" y="' + (y + 4) + '" text-anchor="end" class="viz-axe">' + esc(fmt(Math.round(v * 10) / 10)) + '</text>';
+  }
+  points.forEach((p, i) => {
+    const x0 = g + i * bande, larg = series.length * bw + (series.length - 1) * 2, xb = x0 + (bande - larg) / 2;
+    series.forEach((sr, k) => {
+      const v = Number(p[sr.cle]) || 0, h = ph * v / max;
+      s += '<path d="' + barreV(xb + k * (bw + 2), haut + ph - h, bw, h) + '" fill="' + sr.couleur + '"/>';
+    });
+    if (i % pas === 0) s += '<text x="' + (x0 + bande / 2) + '" y="' + (H - 9) + '" text-anchor="middle" class="viz-axe">' + esc(p.lbl) + '</text>';
+    s += '<rect class="viz-zone" x="' + x0 + '" y="' + haut + '" width="' + bande + '" height="' + ph + '" data-tip="' +
+      esc('<b>' + esc(p.lbl) + '</b><br>' + series.map(sr => esc(sr.lbl) + ' : ' + esc(fmt(Number(p[sr.cle]) || 0))).join('<br>')) + '"/>';
+  });
+  return legende(series) + s + '</svg>';
+}
+
+/* Barres horizontales : une ligne par libellé, valeur en bout de barre. */
+function graphBarres(W, lignes, opts) {
+  opts = opts || {};
+  const fmt = opts.fmt || (v => String(v));
+  if (!lignes.length) return '<p class="sous-titre">Aucune donnée sur la période.</p>';
+  const rh = 26, H = lignes.length * rh + 6;
+  const lw = Math.min(220, Math.round(W * .36)), vw = 58, pw = Math.max(40, W - lw - vw - 12);
+  const max = Math.max(1e-9, ...lignes.map(l => Number(l.val) || 0));
+  const nbCar = Math.max(6, Math.floor(lw / 7.2));
+  let s = svgOuvre(W, H, opts.titre || '');
+  lignes.forEach((l, i) => {
+    const y = 3 + i * rh, v = Number(l.val) || 0, w = pw * v / max;
+    const lbl = String(l.lbl || '(non précisé)');
+    s += '<text x="' + (lw - 8) + '" y="' + (y + rh / 2 + 4) + '" text-anchor="end" class="viz-lbl">' +
+      esc(lbl.length > nbCar ? lbl.slice(0, nbCar - 1) + '…' : lbl) + '</text>' +
+      '<rect x="' + lw + '" y="' + (y + 6) + '" width="' + pw + '" height="' + (rh - 12) + '" rx="3" fill="#F1F3F1"/>' +
+      '<path d="' + barreH(lw, y + 6, Math.max(v ? 2 : 0, w), rh - 12) + '" fill="' + (l.couleur || opts.couleur || VIZ.serie1) + '"/>' +
+      '<text x="' + (lw + pw + 8) + '" y="' + (y + rh / 2 + 4) + '" class="viz-val">' + esc(fmt(v)) + '</text>' +
+      '<rect class="viz-zone" x="0" y="' + y + '" width="' + W + '" height="' + rh + '" data-tip="' +
+      esc('<b>' + esc(lbl) + '</b><br>' + esc(opts.nomVal || 'Valeur') + ' : ' + esc(fmt(v)) + (l.extra ? '<br>' + esc(l.extra) : '')) + '"/>';
+  });
+  return s + '</svg>';
+}
+
+/* Diagramme de Gantt : une barre par ticket, de sa création à sa clôture
+   (ou à aujourd'hui s'il est encore ouvert), couleur = priorité. */
+function graphGantt(W, tickets, du, au, maintenant) {
+  const t0 = dateLocale(du + ' 00:00:00').getTime();
+  const t1 = Math.max(t0 + 864e5, dateLocale(au + ' 23:59:59').getTime());
+  const now = (dateLocale(maintenant) || new Date()).getTime();
+  if (!tickets.length) return '<p class="sous-titre">Aucun ticket sur la période.</p>';
+  const lw = Math.min(300, Math.round(W * .34)), d = 14, haut = 30, rh = 22;
+  const H = haut + tickets.length * rh + 8, pw = W - lw - d;
+  const X = (t) => lw + (Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0) * pw;
+  const nbCar = Math.max(8, Math.floor(lw / 6.8));
+  let s = svgOuvre(W, H, 'Chronologie des tickets');
+
+  // Graduations : semaines sur une courte période, sinon mois (un sur deux ou trois si besoin).
+  const jours = (t1 - t0) / 864e5, ticks = [];
+  if (jours <= 62) {
+    const c = new Date(t0); c.setDate(c.getDate() + ((8 - c.getDay()) % 7));
+    for (; c.getTime() <= t1; c.setDate(c.getDate() + 7)) ticks.push([c.getTime(), String(c.getDate()).padStart(2, '0') + '/' + String(c.getMonth() + 1).padStart(2, '0')]);
+  } else {
+    const c = new Date(t0); c.setDate(1); if (c.getTime() < t0) c.setMonth(c.getMonth() + 1);
+    const pas = Math.max(1, Math.ceil((jours / 30) / Math.max(1, pw / 70)));
+    for (let k = 0; c.getTime() <= t1; c.setMonth(c.getMonth() + 1), k++) if (k % pas === 0) ticks.push([c.getTime(), MOIS_COURTS[c.getMonth()] + ' ' + String(c.getFullYear()).slice(2)]);
+  }
+  ticks.forEach(([t, lbl]) => {
+    const x = X(t);
+    s += '<line x1="' + x + '" x2="' + x + '" y1="' + (haut - 6) + '" y2="' + (H - 6) + '" stroke="' + VIZ.grille + '"/>' +
+      '<text x="' + x + '" y="' + (haut - 12) + '" text-anchor="middle" class="viz-axe">' + esc(lbl) + '</text>';
+  });
+
+  tickets.forEach((t, i) => {
+    const y = haut + i * rh;
+    const deb = dateLocale(t.created_at).getTime();
+    const finT = t.closed_at ? dateLocale(t.closed_at).getTime() : now;
+    const x1 = X(deb), x2 = Math.max(X(finT), x1 + 3);
+    const ouvert = !t.closed_at, coul = VIZ.prio[t.priority] || VIZ.serie1;
+    const lbl = (t.ref || '#' + t.id) + ' · ' + t.title;
+    if (i % 2) s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + rh + '" fill="#F7F8F5"/>';
+    s += '<a href="#/ticket/' + Number(t.id) + '"><text x="6" y="' + (y + rh / 2 + 4) + '" class="viz-lbl viz-lien">' +
+      esc(lbl.length > nbCar ? lbl.slice(0, nbCar - 1) + '…' : lbl) + '</text></a>' +
+      '<rect x="' + x1 + '" y="' + (y + 5) + '" width="' + (x2 - x1) + '" height="' + (rh - 10) + '" rx="3" fill="' + coul + '"/>';
+    if (ouvert) s += '<path d="M' + x2 + ',' + (y + 4) + 'l6,' + ((rh - 8) / 2) + 'l-6,' + ((rh - 8) / 2) + 'Z" fill="' + coul + '"/>';
+    const duree = ((finT - deb) / 864e5);
+    s += '<rect class="viz-zone" x="' + lw + '" y="' + y + '" width="' + pw + '" height="' + rh + '" data-tip="' + esc(
+      '<b>' + esc(t.ref || '#' + t.id) + '</b> ' + esc(t.title) +
+      '<br>Priorité : ' + esc(PRIORITES[t.priority] ? PRIORITES[t.priority].lbl : t.priority) +
+      ' · Statut : ' + esc(STATUTS[t.status] ? STATUTS[t.status].lbl : t.status) +
+      (t.assignee ? '<br>Technicien : ' + esc(t.assignee) : '<br>Non assigné') +
+      '<br>Créé le ' + esc(fmtDate(t.created_at)) +
+      (ouvert ? '<br>Toujours ouvert (' + esc(joursLbl(duree)) + ')' : '<br>Clos le ' + esc(fmtDate(t.closed_at)) + ' (' + esc(joursLbl(duree)) + ')')) + '"/>';
+  });
+  if (now >= t0 && now <= t1) {
+    const x = X(now);
+    s += '<line x1="' + x + '" x2="' + x + '" y1="' + (haut - 4) + '" y2="' + (H - 4) + '" stroke="' + VIZ.serie2 + '" stroke-width="2" stroke-dasharray="4 3"/>' +
+      '<text x="' + Math.min(x + 4, W - 4) + '" y="' + (H - 2) + '" text-anchor="' + (x > W - 80 ? 'end' : 'start') + '" class="viz-axe">aujourd\'hui</text>';
+  }
+  return '<div class="viz-legende">' + Object.keys(VIZ.prio).map(k =>
+    '<span><i style="background:' + VIZ.prio[k] + '"></i>' + esc(PRIORITES[k].lbl) + '</span>').join('') +
+    '<span>▶ encore ouvert</span><span><i class="viz-tiret"></i>aujourd\'hui</span></div>' + s + '</svg>';
+}
+
+/* Info-bulles des graphiques (un seul écouteur pour toute l'application). */
+function brancherInfobulles() {
+  if (S.infobulles) return;
+  S.infobulles = true;
+  const tip = document.createElement('div');
+  tip.className = 'viz-tip'; tip.hidden = true;
+  document.body.appendChild(tip);
+  const place = (e) => {
+    const r = tip.getBoundingClientRect();
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+    tip.style.left = Math.max(4, x) + 'px'; tip.style.top = Math.max(4, y) + 'px';
+  };
+  document.addEventListener('mouseover', (e) => {
+    const z = e.target.closest && e.target.closest('[data-tip]');
+    if (!z) { tip.hidden = true; return; }
+    tip.innerHTML = z.getAttribute('data-tip');   // contenu déjà échappé à la construction
+    tip.hidden = false; place(e);
+  });
+  document.addEventListener('mousemove', (e) => { if (!tip.hidden) place(e); });
+  document.addEventListener('scroll', () => { tip.hidden = true; }, true);
+}
+
 /* ================================================ statistiques */
+
+function jourIso(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+/* Périodes proposées ; « personnalisée » quand les dates sont saisies à la main. */
+function periodeStats(cle) {
+  const a = new Date(), y = a.getFullYear(), m = a.getMonth();
+  switch (cle) {
+    case '3m':  return { du: jourIso(new Date(y, m - 2, 1)), au: jourIso(a) };
+    case '6m':  return { du: jourIso(new Date(y, m - 5, 1)), au: jourIso(a) };
+    case 'an':  return { du: y + '-01-01', au: jourIso(a) };
+    case 'an1': return { du: (y - 1) + '-01-01', au: (y - 1) + '-12-31' };
+    case 'mois': return { du: jourIso(new Date(y, m, 1)), au: jourIso(a) };
+    case 'mois1': return { du: jourIso(new Date(y, m - 1, 1)), au: jourIso(new Date(y, m, 0)) };
+    default:    return { du: jourIso(new Date(y, m - 11, 1)), au: jourIso(a) };
+  }
+}
 
 async function vueStats() {
   const token = S.vueToken;
+  brancherInfobulles();
+  if (!S.statsPeriode) S.statsPeriode = Object.assign({ cle: '12m' }, periodeStats('12m'));
+  const P = S.statsPeriode;
   const main = $('#main');
+  const choix = [['mois', 'Ce mois-ci'], ['mois1', 'Mois dernier'], ['3m', '3 derniers mois'], ['6m', '6 derniers mois'],
+                 ['12m', '12 derniers mois'], ['an', 'Cette année'], ['an1', 'Année dernière'], ['perso', 'Personnalisée']];
   main.innerHTML =
     '<div class="page-head"><div><h1>Statistiques</h1>' +
     "<p class=\"sous-titre\">Activité du service informatique — utile pour un point mensuel</p></div>" +
-    '<div class="page-actions"><button type="button" class="btn" id="btn-print">' + ico('print') + 'Imprimer</button></div></div>' +
+    '<div class="page-actions">' + boutonsExport('exp-stats') + '</div></div>' +
+    '<div class="filtres filtres-stats">' +
+    '<div class="field"><label for="st-per">Période</label><select id="st-per" class="input">' +
+    choix.map(([k, l]) => '<option value="' + k + '"' + (P.cle === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>' +
+    '<div class="field"><label for="st-du">Du</label><input id="st-du" class="input" type="date" value="' + P.du + '"></div>' +
+    '<div class="field"><label for="st-au">Au</label><input id="st-au" class="input" type="date" value="' + P.au + '"></div>' +
+    '</div>' +
     '<div id="stats">' + chargement() + '</div>';
-  $('#btn-print').addEventListener('click', () => window.print());
+
+  $('#st-per').addEventListener('change', () => {
+    P.cle = $('#st-per').value;
+    if (P.cle !== 'perso') Object.assign(P, periodeStats(P.cle));
+    vueStats();
+  });
+  ['#st-du', '#st-au'].forEach(sel => $(sel).addEventListener('change', () => {
+    if (!$('#st-du').value || !$('#st-au').value) return;
+    P.cle = 'perso'; P.du = $('#st-du').value; P.au = $('#st-au').value;
+    vueStats();
+  }));
 
   let d;
-  try { d = await api('stats'); } catch (e) { return; }
+  try { d = await api('stats', { du: P.du, au: P.au }); } catch (e) { return; }
   if (!encoreValide(token)) return;
+  S.statsDonnees = d;
 
-  const barres = (lignes, cleLbl, cleVal) => {
-    const max = Math.max(1, ...lignes.map(l => Number(l[cleVal]) || 0));
-    return '<div class="barres">' + lignes.map(l =>
-      '<div class="barre-ligne"><div class="barre-lbl">' + esc(l[cleLbl] || '(non précisé)') + '</div>' +
-      '<div class="barre-piste"><div class="barre-jauge" style="width:' +
-      Math.round((Number(l[cleVal]) || 0) / max * 100) + '%"></div></div>' +
-      '<div class="barre-val">' + (Number(l[cleVal]) || 0) + '</div></div>').join('') + '</div>';
-  };
-
-  const moisLbl = (m) => {
-    const [a, mo] = String(m).split('-');
-    return ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août',
-            'sept.', 'oct.', 'nov.', 'déc.'][Number(mo) - 1] + ' ' + a.slice(2);
-  };
-  const mois = (d.par_mois || []).map(m => ({ lbl: moisLbl(m.m), c: m.c }));
-
-  const delai = d.delai_moyen == null ? '—'
-    : (d.delai_moyen < 1
-        ? Math.round(d.delai_moyen * 24) + ' h'
-        : String(d.delai_moyen).replace('.', ',') + ' jours');
-
+  const k = d.kpi;
+  const perLbl = 'du ' + fmtDate(d.du) + ' au ' + fmtDate(d.au);
+  const lbl = (l) => l || '(non précisé)';
+  const prioLignes = Object.keys(PRIORITES).map(p => {
+    const r = (d.par_priorite || []).find(x => x.libelle === p);
+    return { lbl: PRIORITES[p].lbl, val: r ? Number(r.total) : 0, couleur: VIZ.prio[p] };
+  });
+  const statutLignes = Object.keys(STATUTS).map(s => {
+    const r = (d.par_statut || []).find(x => x.libelle === s);
+    return { lbl: STATUTS[s].lbl, val: r ? Number(r.total) : 0 };
+  });
   const ages = d.ages || {};
-  const agesLignes = [
-    { lbl: "Moins d'un jour", c: ages.j0 || 0 },
-    { lbl: '1 à 3 jours',     c: ages.j1 || 0 },
-    { lbl: '3 à 7 jours',     c: ages.j3 || 0 },
-    { lbl: 'Plus de 7 jours', c: ages.j7 || 0 },
-  ];
+  const agesLignes = [["Moins d'un jour", ages.j0], ['1 à 3 jours', ages.j1], ['3 à 7 jours', ages.j3], ['Plus de 7 jours', ages.j7]]
+    .map(([l, v]) => ({ lbl: l, val: Number(v) || 0 }));
+  const mois = d.par_mois.map(m => ({ lbl: moisLbl(m.m), crees: m.crees, clos: m.clos, heures: Math.round(m.minutes / 6) / 10 }));
 
+  // Données tabulaires : servent aux exports et au « tableau des données » sous chaque graphique.
+  const feuilles = {
+    synthese: { nom: 'Synthèse', colonnes: ['Indicateur', 'Valeur'], lignes: [
+      ['Période', perLbl], ['Tickets créés', k.crees], ['Tickets clos', k.clos],
+      ['Délai moyen de résolution (jours)', k.delai == null ? '' : k.delai],
+      ['Tickets ouverts actuellement', k.ouverts], ['Tickets critiques créés', k.critiques],
+      ['Temps passé (heures)', Math.round(k.minutes / 6) / 10]] },
+    mois: { nom: 'Par mois', colonnes: ['Mois', 'Créés', 'Clos', 'Temps passé (h)'],
+      lignes: d.par_mois.map(m => [moisLbl(m.m), m.crees, m.clos, Math.round(m.minutes / 6) / 10]) },
+    cat: { nom: 'Par catégorie', colonnes: ['Catégorie', 'Tickets', 'Clos', 'Délai moyen (j)', 'Temps passé (h)'],
+      lignes: d.par_categorie.map(r => [lbl(r.libelle), +r.total, +r.clos, r.delai == null ? '' : +r.delai, Math.round(r.minutes / 6) / 10]) },
+    site: { nom: 'Par site', colonnes: ['Site', 'Tickets', 'Clos', 'Délai moyen (j)', 'Temps passé (h)'],
+      lignes: d.par_site.map(r => [lbl(r.libelle), +r.total, +r.clos, r.delai == null ? '' : +r.delai, Math.round(r.minutes / 6) / 10]) },
+    prio: { nom: 'Par priorité', colonnes: ['Priorité', 'Tickets'], lignes: prioLignes.map(r => [r.lbl, r.val]) },
+    statut: { nom: 'Par statut', colonnes: ['Statut actuel', 'Tickets'], lignes: statutLignes.map(r => [r.lbl, r.val]) },
+    tech: { nom: 'Par technicien', colonnes: ['Technicien', 'Tickets', 'Clos', 'Délai moyen (j)', 'Temps passé (h)'],
+      lignes: d.techniciens.map(r => [r.libelle, +r.total, +r.clos, r.delai == null ? '' : +r.delai, Math.round(r.minutes / 6) / 10]) },
+    dem: { nom: 'Demandeurs', colonnes: ['Demandeur', 'Tickets'], lignes: d.demandeurs.map(r => [r.libelle, +r.total]) },
+    ages: { nom: 'Ancienneté (ouverts)', colonnes: ['Ancienneté', 'Tickets ouverts'], lignes: agesLignes.map(r => [r.lbl, r.val]) },
+    chrono: { nom: 'Chronologie', colonnes: ['Référence', 'Titre', 'Priorité', 'Statut', 'Catégorie', 'Site', 'Technicien', 'Créé le', 'Clos le', 'Durée (jours)'],
+      lignes: d.chronologie.map(t => {
+        const fin = t.closed_at ? dateLocale(t.closed_at) : dateLocale(d.maintenant);
+        return [t.ref, t.title, PRIORITES[t.priority] ? PRIORITES[t.priority].lbl : t.priority,
+          STATUTS[t.status] ? STATUTS[t.status].lbl : t.status, t.category, t.site, t.assignee,
+          t.created_at, t.closed_at || '', Math.round((fin - dateLocale(t.created_at)) / 864e4) / 10];
+      }) },
+  };
+  const tableau = (f) => '<details class="viz-donnees"><summary>Tableau des données</summary>' +
+    '<div class="tbl-wrap"><table class="tbl"><thead><tr>' + f.colonnes.map(c => '<th>' + esc(c) + '</th>').join('') +
+    '</tr></thead><tbody>' + (f.lignes.length ? f.lignes.map(l => '<tr>' + l.map(c => '<td>' +
+      esc(typeof c === 'number' ? String(c).replace('.', ',') : /^\d{4}-\d{2}-\d{2}/.test(String(c)) ? fmtDate(c) : c) + '</td>').join('') + '</tr>').join('')
+      : '<tr><td colspan="' + f.colonnes.length + '">Aucune donnée.</td></tr>') + '</tbody></table></div></details>';
+  const carte = (id, titre, f, large) => '<div class="card viz-carte' + (large ? ' viz-large' : '') + '"><h2>' + esc(titre) + '</h2>' +
+    '<div class="viz" id="' + id + '"></div>' + (f ? tableau(f) : '') + '</div>';
+
+  const tile = (cls, v, l) => '<div class="stat ' + cls + '"><div class="stat-num">' + v + '</div><div class="stat-lbl">' + l + '</div></div>';
   $('#stats').innerHTML =
+    '<p class="sous-titre stats-periode">Période : <b>' + esc(perLbl) + '</b> — tickets créés sur la période, sauf mention contraire.</p>' +
     '<div class="stats">' +
-    '<div class="stat stat-nouveau"><div class="stat-num">' + d.total + '</div><div class="stat-lbl">Tickets au total</div></div>' +
-    '<div class="stat stat-moi"><div class="stat-num">' + d.nb_clos + '</div><div class="stat-lbl">Tickets clos</div></div>' +
-    '<div class="stat stat-en_cours"><div class="stat-num">' + delai + '</div><div class="stat-lbl">Délai moyen de résolution</div></div>' +
+    tile('stat-nouveau', k.crees, 'Tickets créés') +
+    tile('stat-resolu', k.clos, 'Tickets clos') +
+    tile('stat-en_cours', joursLbl(k.delai), 'Délai moyen de résolution') +
+    tile('stat-moi', k.ouverts, 'Ouverts actuellement') +
+    tile('stat-critique', k.critiques, 'Critiques créés') +
+    tile('stat-en_attente', fmtDuree(k.minutes), 'Temps passé') +
     '</div>' +
-    '<div class="card"><h2>Tickets créés par mois</h2>' + barres(mois, 'lbl', 'c') + '</div>' +
-    '<div class="card"><h2>Ancienneté des tickets ouverts</h2>' + barres(agesLignes, 'lbl', 'c') + '</div>' +
-    '<div class="card"><h2>Par catégorie</h2>' + barres(d.par_categorie || [], 'category', 'total') + '</div>' +
-    '<div class="card"><h2>Par site</h2>' + barres(d.par_site || [], 'site', 'total') + '</div>' +
-    '<div class="card"><h2>Principaux demandeurs</h2>' + barres(d.demandeurs || [], 'name', 'total') + '</div>';
+    '<div class="viz-grille">' +
+    carte('g-mois', 'Tickets créés et clos par mois', feuilles.mois, true) +
+    carte('g-gantt', 'Chronologie des tickets (diagramme de Gantt)', null, true) +
+    carte('g-cat', 'Tickets par catégorie', feuilles.cat) +
+    carte('g-delai', 'Délai moyen de résolution par catégorie', feuilles.cat) +
+    carte('g-tech', 'Tickets par technicien', feuilles.tech) +
+    carte('g-site', 'Tickets par site', feuilles.site) +
+    carte('g-prio', 'Tickets par priorité', feuilles.prio) +
+    carte('g-statut', 'Statut actuel des tickets de la période', feuilles.statut) +
+    carte('g-ages', 'Ancienneté des tickets encore ouverts (toutes périodes)', feuilles.ages) +
+    carte('g-dem', 'Principaux demandeurs', feuilles.dem) +
+    carte('g-temps', 'Temps passé par mois (heures)', null, true) +
+    '</div>';
+
+  // Options du Gantt : filtre et nombre de lignes.
+  const G = S.ganttOpts || (S.ganttOpts = { ouverts: false, tout: false });
+  const ganttCarte = $('#g-gantt').parentElement;
+  ganttCarte.querySelector('h2').insertAdjacentHTML('afterend',
+    '<div class="viz-options"><label class="check"><input type="checkbox" id="gt-ouv"' + (G.ouverts ? ' checked' : '') + '> Tickets encore ouverts seulement</label>' +
+    '<span class="sous-titre" id="gt-info"></span></div>');
+
+  // Chaque graphique est fabriqué pour une largeur donnée : celle de l'écran,
+  // ou celle de la page pour le PDF (sinon le texte serait réduit à l'illisible).
+  const GRAPHES = {
+    'g-mois': (W) => graphColonnes(W, mois,
+      [{ cle: 'crees', lbl: 'Créés', couleur: VIZ.serie1 }, { cle: 'clos', lbl: 'Clos', couleur: VIZ.serie2 }]),
+    'g-cat': (W) => graphBarres(W, d.par_categorie.map(r => ({ lbl: lbl(r.libelle), val: +r.total,
+      extra: (+r.clos) + ' clos' })), { nomVal: 'Tickets' }),
+    'g-delai': (W) => graphBarres(W, d.par_categorie.filter(r => r.delai != null)
+      .map(r => ({ lbl: lbl(r.libelle), val: +r.delai, extra: (+r.clos) + ' ticket(s) clos' })), { nomVal: 'Délai moyen', fmt: joursLbl }),
+    'g-tech': (W) => graphBarres(W, d.techniciens.map(r => ({ lbl: r.libelle, val: +r.total,
+      extra: (+r.clos) + ' clos · délai moyen ' + joursLbl(r.delai) + ' · ' + fmtDuree(r.minutes) })), { nomVal: 'Tickets' }),
+    'g-site': (W) => graphBarres(W, d.par_site.map(r => ({ lbl: lbl(r.libelle), val: +r.total })), { nomVal: 'Tickets' }),
+    'g-prio': (W) => graphBarres(W, prioLignes, { nomVal: 'Tickets' }),
+    'g-statut': (W) => graphBarres(W, statutLignes, { nomVal: 'Tickets' }),
+    'g-ages': (W) => graphBarres(W, agesLignes, { nomVal: 'Tickets ouverts' }),
+    'g-dem': (W) => graphBarres(W, d.demandeurs.map(r => ({ lbl: r.libelle, val: +r.total })), { nomVal: 'Tickets' }),
+    'g-temps': (W) => graphColonnes(W, mois, [{ cle: 'heures', lbl: 'Heures', couleur: VIZ.serie1 }], v => String(v).replace('.', ',')),
+  };
+  const LIMITE = 60;
+  const ticketsGantt = () => {
+    let liste = d.chronologie.filter(t => !G.ouverts || !t.closed_at);
+    const total = liste.length;
+    if (!G.tout) liste = liste.slice(0, LIMITE);
+    return { total, liste: liste.slice().reverse() };   // plus récents retenus, affichés dans l'ordre chronologique
+  };
+
+  const dessiner = () => {
+    const larg = (id) => Math.max(280, Math.floor($('#' + id).clientWidth));
+    Object.keys(GRAPHES).forEach(id => { $('#' + id).innerHTML = GRAPHES[id](larg(id)); });
+    const { total, liste } = ticketsGantt();
+    $('#g-gantt').innerHTML = graphGantt(larg('g-gantt'), liste, d.du, d.au, d.maintenant);
+    $('#gt-info').innerHTML = total > LIMITE
+      ? (G.tout ? total + ' tickets affichés. <button type="button" class="btn btn-mini" id="gt-tout">Limiter aux ' + LIMITE + ' plus récents</button>'
+                : 'Les ' + LIMITE + ' plus récents sur ' + total + '. <button type="button" class="btn btn-mini" id="gt-tout">Tout afficher</button>')
+      : total + ' ticket(s).';
+    const bt = $('#gt-tout');
+    if (bt) bt.addEventListener('click', () => { G.tout = !G.tout; dessiner(); });
+  };
+
+  // PDF (A4 portrait, ≈ 700 px utiles) : graphiques redessinés à la largeur de la page,
+  // Gantt découpé en blocs de 34 lignes pour ne jamais être coupé par un saut de page.
+  const htmlPdf = () => {
+    const W = 700, titres = {};
+    document.querySelectorAll('#stats .viz-carte').forEach(c => { titres[c.querySelector('.viz').id] = c.querySelector('h2').textContent; });
+    const bloc = (id, contenu) => '<div class="imp-bloc"><h2>' + esc(titres[id]) + '</h2>' + contenu + '</div>';
+    const { total, liste } = ticketsGantt();
+    let gantt = '';
+    for (let i = 0; i < liste.length; i += 34) {
+      gantt += '<div class="imp-bloc">' + (i ? '' : '<h2>' + esc(titres['g-gantt']) + '</h2><p>' +
+        (G.ouverts ? 'Tickets encore ouverts — ' : '') + liste.length + ' ticket(s)' + (total > liste.length ? ' sur ' + total + ' (les plus récents)' : '') + '</p>') +
+        graphGantt(W, liste.slice(i, i + 34), d.du, d.au, d.maintenant) + '</div>';
+    }
+    return '<div class="stats">' + $('#stats .stats').innerHTML + '</div>' +
+      bloc('g-mois', GRAPHES['g-mois'](W)) + gantt +
+      ['g-cat', 'g-delai', 'g-tech', 'g-site', 'g-prio', 'g-statut', 'g-ages', 'g-dem', 'g-temps'].map(id => bloc(id, GRAPHES[id](W))).join('') +
+      '<div class="imp-saut"></div>' +
+      [feuilles.synthese, feuilles.mois, feuilles.cat, feuilles.tech, feuilles.chrono].map(f => Export.tableHtml(f)).join('');
+  };
+  dessiner();
+  $('#gt-ouv').addEventListener('change', () => { G.ouverts = $('#gt-ouv').checked; dessiner(); });
+
+  // Redessin à la bonne largeur si la fenêtre change de taille.
+  let minuteur = null;
+  const auRedim = () => {
+    if (!encoreValide(token)) { window.removeEventListener('resize', auRedim); return; }
+    clearTimeout(minuteur); minuteur = setTimeout(dessiner, 200);
+  };
+  window.addEventListener('resize', auRedim);
+
+  brancherExport('exp-stats', () => ({
+    base: 'statistiques_' + d.du + '_' + d.au,
+    titre: 'Statistiques du service informatique',
+    sousTitre: 'Période ' + perLbl,
+    feuilles: Object.values(feuilles),
+    html: htmlPdf(),
+  }));
 }
 
 /* ================================================ liste des tickets */
@@ -3188,7 +3823,7 @@ function vueTickets() {
     '<div class="page-head"><div><h1>' + (staff ? 'Tickets' : 'Mes demandes') + '</h1>' +
     '<p class="sous-titre">' + (staff ? 'Toutes les demandes du personnel' : 'Vos demandes auprès du service informatique') + '</p></div>' +
     '<div class="page-actions">' +
-    (staff ? '<button type="button" class="btn" id="btn-export">Exporter en CSV</button>' : '') +
+    (staff ? boutonsExport('exp-tickets') : '') +
     '<button type="button" class="btn" id="btn-maj">' + ico('maj') + 'Actualiser</button>' +
     '<a class="btn btn-primary" href="#/nouveau">' + ico('plus') + 'Nouveau ticket</a>' +
     '</div></div>' +
@@ -3236,15 +3871,38 @@ function vueTickets() {
     $('#fl-assigne').addEventListener('change', () => { f.assigned = $('#fl-assigne').value; relire(); });
     $('#fl-ouverts').addEventListener('change', () => { f.open_only = $('#fl-ouverts').checked; relire(); });
     $('#fl-dormants').addEventListener('change', () => { f.stale_only = $('#fl-dormants').checked; relire(); });
-    $('#btn-export').addEventListener('click', () => {
-      // L'export doit contenir exactement ce que l'écran affiche : on reprend
-      // tous les filtres, y compris « assigné à » et « sans réponse ».
-      const p = new URLSearchParams();
-      ['status', 'priority', 'category', 'site', 'q', 'assigned'].forEach(k => { if (f[k]) p.set(k, f[k]); });
-      if (f.open_only) p.set('open_only', '1');
-      if (f.stale_only) p.set('stale_only', '1');
-      if (f.unread_only) p.set('unread_only', '1');
-      window.location.href = '' + D8_APP + '?action=export_csv&' + p.toString();
+    // L'export contient exactement ce que l'écran affiche : tous les filtres
+    // sont repris (« assigné à », « sans réponse »…), sur toutes les pages.
+    brancherExport('exp-tickets', async (format) => {
+      const filtres = {};
+      ['status', 'priority', 'category', 'site', 'q', 'assigned'].forEach(k => { if (f[k]) filtres[k] = f[k]; });
+      if (f.open_only) filtres.open_only = '1';
+      if (f.stale_only) filtres.stale_only = '1';
+      if (f.unread_only) filtres.unread_only = '1';
+      if (format === 'csv') {           // CSV : produit par le serveur, sans limite de taille
+        window.location.href = '' + D8_APP + '?action=export_csv&' + new URLSearchParams(filtres).toString();
+        return null;
+      }
+      const d = await api('export_rows', filtres);
+      const desc = [];
+      if (f.q) desc.push('recherche « ' + f.q + ' »');
+      if (f.status) desc.push('statut ' + STATUTS[f.status].lbl);
+      if (f.priority) desc.push('priorité ' + PRIORITES[f.priority].lbl);
+      if (f.category) desc.push(f.category);
+      if (f.site) desc.push(f.site);
+      if (f.open_only) desc.push('ouverts uniquement');
+      if (f.stale_only) desc.push('sans réponse depuis ' + S.staleDays + ' j');
+      const feuille = { nom: 'Tickets', colonnes: ['Référence', 'Titre', 'Statut', 'Priorité', 'Catégorie', 'Site', 'Demandeur',
+        'Assigné à', 'Créé le', 'Mis à jour le', 'Fermé le', 'Durée (jours)', 'Temps passé (min)'],
+        lignes: d.lignes.map(r => [r.ref, r.title, r.status_label, r.priority_label, r.category, r.site, r.creator_name,
+          r.assignee_name || '', r.created_at, String(r.updated_at || '').slice(0, 19), r.closed_at || '', Number(r.jours), Number(r.time_spent)]) };
+      if (format === 'pdf') {           // PDF : colonnes utiles à la lecture, le reste est dans Excel
+        const pdfF = { nom: d.lignes.length + ' ticket(s)', colonnes: ['Réf.', 'Titre', 'Statut', 'Priorité', 'Catégorie', 'Site', 'Demandeur', 'Assigné à', 'Créé le', 'Durée'],
+          lignes: d.lignes.map(r => [r.ref, r.title, r.status_label, r.priority_label, r.category, r.site, r.creator_name, r.assignee_name || '',
+            String(r.created_at).slice(0, 10), joursLbl(r.jours)]) };
+        return { titre: 'Liste des tickets', sousTitre: desc.length ? 'Filtres : ' + desc.join(', ') : 'Tous les tickets', html: Export.tableHtml(pdfF), paysage: true };
+      }
+      return { base: 'tickets', feuilles: [feuille] };
     });
   }
   $('#fl-raz').addEventListener('click', () => { S.filtres = filtresDefaut(); vueTickets(); });
@@ -3467,7 +4125,7 @@ async function vueTicket(id) {
 
   main.innerHTML =
     '<p class="no-print"><a class="btn btn-ghost" href="#/tickets">' + ico('retour') + 'Retour à la liste</a>' +
-    '<button type="button" class="btn btn-ghost" id="tk-print">' + ico('print') + 'Imprimer</button></p>' +
+    '<button type="button" class="btn btn-ghost" id="tk-print">' + ico('print') + 'Imprimer / PDF</button></p>' +
 
     '<div class="card"><div class="ticket-entete"><div>' +
     '<span class="ticket-ref">' + esc(t.ref) + '</span>' +
@@ -3730,7 +4388,7 @@ async function vueUtilisateurs() {
   main.innerHTML =
     '<div class="page-head"><div><h1>Utilisateurs</h1>' +
     "<p class=\"sous-titre\">Comptes du personnel ayant accès à l'outil</p></div>" +
-    '<div class="page-actions">' +
+    '<div class="page-actions">' + boutonsExport('exp-users') +
     '<button type="button" class="btn" id="btn-journal">Journal des connexions</button>' +
     '<button type="button" class="btn btn-primary" id="btn-ajout">' + ico('plus') + 'Ajouter un utilisateur</button></div></div>' +
     '<div id="zone-u">' + chargement() + '</div>';
@@ -3741,6 +4399,16 @@ async function vueUtilisateurs() {
   let rows;
   try { rows = await api('users_list'); } catch (e) { return; }
   if (!encoreValide(token)) return;
+
+  // Export : utile pour la revue des accès (comptes jamais utilisés, anciens salariés).
+  brancherExport('exp-users', () => ({
+    base: 'utilisateurs', titre: 'Utilisateurs', sousTitre: rows.length + ' compte(s)', paysage: true,
+    feuilles: [{ nom: 'Utilisateurs', colonnes: ['Nom', 'Identifiant', 'Email', 'Téléphone', 'Rôle', 'Type de compte',
+      'Tickets créés', 'Dernière connexion', 'Créé le', 'Compte'],
+      lignes: rows.map(u => [u.name, u.login || '', u.email || '', u.phone || '', ROLES[u.role] || u.role,
+        u.auth === 'annuaire' ? 'Annuaire (Windows)' : 'Local', Number(u.ticket_count), u.last_login || 'jamais',
+        u.created_at || '', Number(u.active) ? 'Actif' : 'Désactivé']) }],
+  }));
 
   const lignes = rows.map(u =>
     '<tr class="' + (Number(u.active) ? '' : 'u-inactif') + '">' +
@@ -4212,7 +4880,8 @@ async function vueJournaux() {
   main.innerHTML =
     '<div class="page-head"><div><h1>Journaux</h1>' +
     '<p class="sous-titre">Ce qu\'il faut regarder en premier quand quelque chose cloche.</p></div>' +
-    '<div class="page-actions"><button type="button" class="btn" id="btn-maj">' + ico('maj') + 'Actualiser</button></div></div>' +
+    '<div class="page-actions">' + boutonsExport('exp-journaux') +
+    '<button type="button" class="btn" id="btn-maj">' + ico('maj') + 'Actualiser</button></div></div>' +
 
     '<div class="card"><h2>Incidents techniques</h2>' +
     (lignesErr
@@ -4229,6 +4898,14 @@ async function vueJournaux() {
     (lignesCo || '<tr><td colspan="4">Aucune connexion enregistrée.</td></tr>') +
     '</tbody></table></div></div>';
   $('#btn-maj').addEventListener('click', vueJournaux);
+  brancherExport('exp-journaux', () => ({
+    base: 'journaux', titre: 'Journaux', sousTitre: 'Connexions et incidents techniques', paysage: true,
+    feuilles: [
+      { nom: 'Connexions', colonnes: ['Date', 'Compte', 'Résultat', 'Poste (adresse IP)'],
+        lignes: connexions.map(r => [r.created_at, r.name || r.email || '', Number(r.success) ? 'Réussie' : 'Échouée', r.ip || '']) },
+      { nom: 'Incidents', colonnes: ['Incident'], lignes: (erreurs.lignes || []).map(l => [l]) },
+    ],
+  }));
 }
 
 /* ================================================ informations */
@@ -5378,6 +6055,64 @@ function auto_close(): void
  * l'export suffirait alors à exécuter ce qu'un utilisateur a écrit dans le
  * titre de son ticket. L'apostrophe force la lecture en texte.
  */
+/**
+ * Tickets correspondant aux filtres de la liste, pour les exports (CSV, Excel,
+ * PDF) : l'export rend exactement ce que l'écran affiche.
+ */
+function requete_export(array $src, array $me): PDOStatement
+{
+    $where  = [];
+    $params = [];
+    foreach (['status' => 't.status', 'priority' => 't.priority', 'category' => 't.category', 'site' => 't.site'] as $key => $col) {
+        $v = trim((string) ($src[$key] ?? ''));
+        if ($v !== '') {
+            $where[]  = "$col = ?";
+            $params[] = $v;
+        }
+    }
+    if (!empty($src['open_only'])) {
+        $where[] = "t.status NOT IN ('resolu','ferme')";
+    }
+    $assigned = (string) ($src['assigned'] ?? '');
+    if ($assigned === 'none') {
+        $where[] = 't.assigned_to IS NULL';
+    } elseif ($assigned !== '' && ctype_digit($assigned)) {
+        $where[]  = 't.assigned_to = ?';
+        $params[] = (int) $assigned;
+    }
+    if (!empty($src['stale_only'])) {
+        $seuilExport = (int) setting_get('stale_days', '3');
+        $where[] = "t.status NOT IN ('resolu','ferme')
+                    AND julianday(" . db()->quote(now()) . ") - julianday(t.updated_at) > " . $seuilExport;
+    }
+    if (!empty($src['unread_only'])) {
+        $where[]  = "((SELECT seen_at FROM views v WHERE v.ticket_id = t.id AND v.user_id = ?) IS NULL
+                     OR (SELECT seen_at FROM views v WHERE v.ticket_id = t.id AND v.user_id = ?) < t.updated_at)";
+        $params[] = (int) $me['id'];
+        $params[] = (int) $me['id'];
+    }
+    $q = trim((string) ($src['q'] ?? ''));
+    if ($q !== '') {
+        $where[] = "(t.ref LIKE ? ESCAPE '\\' OR t.title LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\')";
+        $like    = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+        array_push($params, $like, $like, $like);
+    }
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+    $st = db()->prepare(
+        "SELECT t.id, t.ref, t.title, t.status, t.priority, t.category, t.site,
+                c.name AS creator_name, a.name AS assignee_name,
+                t.created_at, t.updated_at, t.closed_at, t.time_spent,
+                ROUND(julianday(COALESCE(t.closed_at, " . db()->quote(now()) . ")) - julianday(t.created_at), 2) AS jours
+         FROM tickets t
+         JOIN users c ON c.id = t.created_by
+         LEFT JOIN users a ON a.id = t.assigned_to
+         $whereSql ORDER BY t.created_at DESC"
+    );
+    $st->execute($params);
+    return $st;
+}
+
 function csv_sur($valeur): string
 {
     $v = (string) $valeur;
@@ -5937,61 +6672,94 @@ case 'dashboard': {
 case 'stats': {
     $me = require_auth();
     require_role($me, ['admin']);
+    $b = body();
 
-    $mois = db()->query(
-        "SELECT strftime('%Y-%m', created_at) m, COUNT(*) c,
-                SUM(CASE WHEN status IN ('resolu','ferme') THEN 1 ELSE 0 END) fermes
-         FROM tickets GROUP BY m ORDER BY m DESC LIMIT 6"
-    )->fetchAll();
+    // Période : du 1er jour d'il y a 11 mois à aujourd'hui (12 mois) par défaut.
+    $jour = static function ($v): ?string {
+        $v = (string) $v;
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) !== false ? $v : null;
+    };
+    $au = $jour($b['au'] ?? '') ?? date('Y-m-d');
+    $du = $jour($b['du'] ?? '') ?? date('Y-m-01', strtotime('first day of -11 months'));
+    if ($du > $au) { [$du, $au] = [$au, $du]; }
+    $debut = $du . ' 00:00:00';
+    $fin   = $au . ' 23:59:59';
+    $mnt   = now();
+    $q = static function (string $sql, array $p = []): array {
+        $st = db()->prepare($sql);
+        $st->execute($p);
+        return $st->fetchAll();
+    };
+    $crees = 'created_at BETWEEN ? AND ?';
+    $P = [$debut, $fin];
 
-    $delai = db()->query(
-        "SELECT AVG(julianday(closed_at) - julianday(created_at)) d, COUNT(*) n
-         FROM tickets WHERE closed_at IS NOT NULL"
-    )->fetch();
+    // Mois de la période, y compris ceux sans aucun ticket (sinon le graphique ment).
+    $mois = [];
+    for ($m = substr($du, 0, 7); $m <= substr($au, 0, 7); $m = date('Y-m', strtotime($m . '-01 +1 month'))) {
+        $mois[$m] = ['m' => $m, 'crees' => 0, 'clos' => 0, 'minutes' => 0];
+        if (count($mois) > 120) { break; }
+    }
+    foreach ($q("SELECT strftime('%Y-%m', created_at) m, COUNT(*) c, COALESCE(SUM(time_spent), 0) t
+                 FROM tickets WHERE $crees GROUP BY m", $P) as $r) {
+        if (isset($mois[$r['m']])) { $mois[$r['m']]['crees'] = (int) $r['c']; $mois[$r['m']]['minutes'] = (int) $r['t']; }
+    }
+    foreach ($q("SELECT strftime('%Y-%m', closed_at) m, COUNT(*) c FROM tickets
+                 WHERE closed_at BETWEEN ? AND ? GROUP BY m", $P) as $r) {
+        if (isset($mois[$r['m']])) { $mois[$r['m']]['clos'] = (int) $r['c']; }
+    }
 
-    $parCat = db()->query(
-        "SELECT category, COUNT(*) total,
-                SUM(CASE WHEN status NOT IN ('resolu','ferme') THEN 1 ELSE 0 END) ouverts
-         FROM tickets GROUP BY category ORDER BY total DESC"
-    )->fetchAll();
+    $kpi = $q("SELECT COUNT(*) crees, COALESCE(SUM(time_spent), 0) minutes,
+                      SUM(CASE WHEN priority = 'critique' THEN 1 ELSE 0 END) critiques
+               FROM tickets WHERE $crees", $P)[0];
+    $clos = $q("SELECT COUNT(*) n, AVG(julianday(closed_at) - julianday(created_at)) d
+                FROM tickets WHERE closed_at BETWEEN ? AND ?", $P)[0];
 
-    $parSite = db()->query(
-        "SELECT site, COUNT(*) total FROM tickets GROUP BY site ORDER BY total DESC"
-    )->fetchAll();
-
-    $demandeurs = db()->query(
-        "SELECT u.name, COUNT(*) total FROM tickets t JOIN users u ON u.id = t.created_by
-         GROUP BY u.id ORDER BY total DESC LIMIT 8"
-    )->fetchAll();
-
-    $mnt = db()->quote(now());
-    $ages = db()->query(
-        "SELECT
-           SUM(CASE WHEN julianday($mnt) - julianday(created_at) < 1 THEN 1 ELSE 0 END) j0,
-           SUM(CASE WHEN julianday($mnt) - julianday(created_at) >= 1 AND julianday($mnt) - julianday(created_at) < 3 THEN 1 ELSE 0 END) j1,
-           SUM(CASE WHEN julianday($mnt) - julianday(created_at) >= 3 AND julianday($mnt) - julianday(created_at) < 7 THEN 1 ELSE 0 END) j3,
-           SUM(CASE WHEN julianday($mnt) - julianday(created_at) >= 7 THEN 1 ELSE 0 END) j7
-         FROM tickets WHERE status NOT IN ('resolu','ferme')"
-    )->fetch();
-
-    $prio = db()->query(
-        "SELECT priority, COUNT(*) c FROM tickets WHERE status NOT IN ('resolu','ferme') GROUP BY priority"
-    )->fetchAll();
+    $groupe = static function (string $col, string $alias) use ($q, $crees, $P): array {
+        return $q("SELECT COALESCE(NULLIF($col, ''), '(non précisé)') $alias, COUNT(*) total,
+                          SUM(CASE WHEN closed_at IS NOT NULL THEN 1 ELSE 0 END) clos,
+                          ROUND(AVG(CASE WHEN closed_at IS NOT NULL
+                                THEN julianday(closed_at) - julianday(created_at) END), 2) delai,
+                          COALESCE(SUM(time_spent), 0) minutes
+                   FROM tickets WHERE $crees GROUP BY $alias ORDER BY total DESC", $P);
+    };
 
     ok([
-        'par_mois'      => array_reverse($mois),
-        'delai_moyen'   => $delai && $delai['n'] ? round((float) $delai['d'], 2) : null,
-        'nb_clos'       => $delai ? (int) $delai['n'] : 0,
-        'par_categorie' => $parCat,
-        'par_site'      => $parSite,
-        'demandeurs'    => $demandeurs,
-        'ages'          => $ages ?: [],
-        'par_priorite'  => $prio,
-        'total'         => (int) db()->query('SELECT COUNT(*) FROM tickets')->fetchColumn(),
-        'temps_total'   => (int) db()->query('SELECT COALESCE(SUM(time_spent), 0) FROM tickets')->fetchColumn(),
-        'temps_par_mois' => db()->query(
-            "SELECT strftime('%Y-%m', created_at) m, COALESCE(SUM(time_spent), 0) minutes
-             FROM tickets GROUP BY m ORDER BY m DESC LIMIT 6")->fetchAll(),
+        'du' => $du, 'au' => $au,
+        'kpi' => [
+            'crees'    => (int) $kpi['crees'],
+            'clos'     => (int) $clos['n'],
+            'delai'    => $clos['n'] ? round((float) $clos['d'], 2) : null,
+            'minutes'  => (int) $kpi['minutes'],
+            'critiques' => (int) $kpi['critiques'],
+            'ouverts'  => (int) db()->query("SELECT COUNT(*) FROM tickets WHERE status NOT IN ('resolu','ferme')")->fetchColumn(),
+        ],
+        'par_mois'      => array_values($mois),
+        'par_categorie' => $groupe('category', 'libelle'),
+        'par_site'      => $groupe('site', 'libelle'),
+        'par_priorite'  => $q("SELECT priority libelle, COUNT(*) total FROM tickets WHERE $crees GROUP BY priority", $P),
+        'par_statut'    => $q("SELECT status libelle, COUNT(*) total FROM tickets WHERE $crees GROUP BY status", $P),
+        'techniciens'   => $q("SELECT COALESCE(a.name, '(non assigné)') libelle, COUNT(*) total,
+                                      SUM(CASE WHEN t.closed_at IS NOT NULL THEN 1 ELSE 0 END) clos,
+                                      ROUND(AVG(CASE WHEN t.closed_at IS NOT NULL
+                                            THEN julianday(t.closed_at) - julianday(t.created_at) END), 2) delai,
+                                      COALESCE(SUM(t.time_spent), 0) minutes
+                               FROM tickets t LEFT JOIN users a ON a.id = t.assigned_to
+                               WHERE t.created_at BETWEEN ? AND ? GROUP BY libelle ORDER BY total DESC", $P),
+        'demandeurs'    => $q("SELECT u.name libelle, COUNT(*) total FROM tickets t JOIN users u ON u.id = t.created_by
+                               WHERE t.created_at BETWEEN ? AND ? GROUP BY u.id ORDER BY total DESC LIMIT 10", $P),
+        'ages' => $q("SELECT
+               SUM(CASE WHEN julianday(?) - julianday(created_at) < 1 THEN 1 ELSE 0 END) j0,
+               SUM(CASE WHEN julianday(?) - julianday(created_at) >= 1 AND julianday(?) - julianday(created_at) < 3 THEN 1 ELSE 0 END) j1,
+               SUM(CASE WHEN julianday(?) - julianday(created_at) >= 3 AND julianday(?) - julianday(created_at) < 7 THEN 1 ELSE 0 END) j3,
+               SUM(CASE WHEN julianday(?) - julianday(created_at) >= 7 THEN 1 ELSE 0 END) j7
+             FROM tickets WHERE status NOT IN ('resolu','ferme')", [$mnt, $mnt, $mnt, $mnt, $mnt, $mnt])[0],
+        // Chronologie (diagramme de Gantt) : tickets ouverts pendant la période.
+        'chronologie' => $q("SELECT t.id, t.ref, t.title, t.status, t.priority, t.category, t.site,
+                                    t.created_at, t.closed_at, COALESCE(a.name, '') assignee
+                             FROM tickets t LEFT JOIN users a ON a.id = t.assigned_to
+                             WHERE t.created_at <= ? AND (t.closed_at IS NULL OR t.closed_at >= ?)
+                             ORDER BY t.created_at DESC LIMIT 500", [$fin, $debut]),
+        'maintenant' => $mnt,
     ]);
 }
 
@@ -7078,58 +7846,7 @@ case 'system_info': {
 case 'export_csv': {
     $me = require_auth();
     require_role($me, ['admin']);
-
-    // L'export doit rendre exactement ce que l'écran affiche : tous les
-    // filtres de la liste sont donc repris, pas seulement une partie.
-    $where  = [];
-    $params = [];
-    foreach (['status' => 't.status', 'priority' => 't.priority', 'category' => 't.category', 'site' => 't.site'] as $key => $col) {
-        $v = trim((string) ($_GET[$key] ?? ''));
-        if ($v !== '') {
-            $where[]  = "$col = ?";
-            $params[] = $v;
-        }
-    }
-    if (!empty($_GET['open_only'])) {
-        $where[] = "t.status NOT IN ('resolu','ferme')";
-    }
-    $assigned = (string) ($_GET['assigned'] ?? '');
-    if ($assigned === 'none') {
-        $where[] = 't.assigned_to IS NULL';
-    } elseif ($assigned !== '' && ctype_digit($assigned)) {
-        $where[]  = 't.assigned_to = ?';
-        $params[] = (int) $assigned;
-    }
-    if (!empty($_GET['stale_only'])) {
-        $seuilExport = (int) setting_get('stale_days', '3');
-        $where[] = "t.status NOT IN ('resolu','ferme')
-                    AND julianday(" . db()->quote(now()) . ") - julianday(t.updated_at) > " . $seuilExport;
-    }
-    if (!empty($_GET['unread_only'])) {
-        $where[]  = "(SELECT seen_at FROM views v WHERE v.ticket_id = t.id AND v.user_id = ?) IS NULL
-                     OR (SELECT seen_at FROM views v WHERE v.ticket_id = t.id AND v.user_id = ?) < t.updated_at";
-        $params[] = (int) $me['id'];
-        $params[] = (int) $me['id'];
-    }
-    $q = trim((string) ($_GET['q'] ?? ''));
-    if ($q !== '') {
-        $where[] = "(t.ref LIKE ? ESCAPE '\\' OR t.title LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\')";
-        $like    = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
-        array_push($params, $like, $like, $like);
-    }
-    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-
-    $st = db()->prepare(
-        "SELECT t.ref, t.title, t.status, t.priority, t.category, t.site,
-                c.name AS creator_name, a.name AS assignee_name,
-                t.created_at, t.updated_at, t.closed_at, t.time_spent,
-                ROUND(julianday(COALESCE(t.closed_at, " . db()->quote(now()) . ")) - julianday(t.created_at), 2) AS jours
-         FROM tickets t
-         JOIN users c ON c.id = t.created_by
-         LEFT JOIN users a ON a.id = t.assigned_to
-         $whereSql ORDER BY t.created_at DESC"
-    );
-    $st->execute($params);
+    $st = requete_export($_GET, $me);
 
     while (ob_get_level() > 0) { ob_end_clean(); }
     header('Content-Type: text/csv; charset=utf-8');
@@ -7150,6 +7867,21 @@ case 'export_csv': {
     }
     fclose($out);
     exit;
+}
+
+/* Mêmes tickets que l'export CSV, en JSON : le navigateur en fait un fichier
+   Excel ou un PDF (impression). Limité à 20 000 lignes. */
+case 'export_rows': {
+    $me = require_auth();
+    require_role($me, ['admin']);
+    $lignes = [];
+    foreach (requete_export(body(), $me) as $r) {
+        $r['status_label']   = status_label($r['status']);
+        $r['priority_label'] = priority_label($r['priority']);
+        $lignes[] = $r;
+        if (count($lignes) >= 20000) { break; }
+    }
+    ok(['lignes' => $lignes]);
 }
 
 case 'backup': {
