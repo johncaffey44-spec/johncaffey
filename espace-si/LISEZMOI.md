@@ -11,6 +11,7 @@ Comptes prévus : **Mohamed Zidani**, **Tafré Mefré**, **Ludovic Gasp**, **Vic
 | `web.config` | Réglages IIS (page d'accueil, dossier `data` protégé, pas de cache) |
 | `.htaccess` | Les mêmes réglages pour Apache |
 | `.user.ini` | Réglages PHP du dossier (FastCGI) |
+| `Activer-PHP.cmd` / `.ps1` | IIS : active PHP pour ce dossier et règle les droits (à lancer une fois sur le serveur) |
 | `data/` | Créé au premier lancement : toutes les données. **À sauvegarder.** |
 
 ---
@@ -27,7 +28,14 @@ Rien de ce qui est saisi en démonstration n'est partagé, et vider les données
 
 1. **Prérequis** : un serveur web interne avec **PHP 7.4 ou plus**. Cela peut être IIS + PHP, Apache ou nginx, ou un NAS Synology ou QNAP avec Web Station. Aucune base de données n'est nécessaire.
 2. Copiez le dossier `espace-si` sur le serveur, par exemple sous `C:\inetpub\wwwroot\espace-si`.
-3. Donnez au compte du serveur web le droit d'**écrire** dans ce dossier. Sous IIS, c'est `IIS AppPool\<nom du pool>` ou `IUSR`. `api.php` y crée le sous-dossier `data`.
+3. **Sous IIS**, double-cliquez une fois, sur le serveur, sur `C:\inetpub\wwwroot\espace-si\Activer-PHP.cmd`. Il :
+   - donne aux comptes IIS le droit d'écrire dans le dossier (où `api.php` crée le sous-dossier `data`) ;
+   - vérifie que PHP répond pour ce dossier. Si ce n'est pas le cas, il active le même PHP que vos autres sites (Planning, Ticketing…), pour ce dossier uniquement ;
+   - affiche « PHP est actif pour l'Espace SI » quand tout est bon.
+
+   Options : `Activer-PHP.cmd -PhpCgi "C:\PHP\php-cgi.exe"` pour imposer un PHP précis, `Activer-PHP.cmd -Annuler` pour retirer le mappage ajouté. Lancez-les depuis une invite de commandes en administrateur.
+
+   Sur un autre serveur web, donnez simplement au compte du serveur le droit d'écrire dans le dossier.
 4. Ouvrez **`http://192.168.1.174/espace-si/`**. En cas d'erreur, le message indique la cause, le plus souvent un droit d'écriture manquant.
 5. **Codes de première connexion** : ouvrez sur le serveur le fichier `data\PREMIERE-CONNEXION.txt`. Il contient un code à usage unique par personne. Transmettez-les **de vive voix**.
 6. Chacun ouvre la même adresse et saisit son identifiant (`prenom.nom`, sans accent). À la première connexion, il saisit ensuite son code et choisit son mot de passe. Le mot de passe doit faire 10 caractères minimum et mélanger 3 types parmi minuscules, majuscules, chiffres et caractères spéciaux.
