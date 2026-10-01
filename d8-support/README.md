@@ -46,6 +46,31 @@ récent, 64 bits, compte administrateur, accès Internet (sinon voir
 Le détail de chaque exécution est écrit dans `installation-iis.log`, à côté
 du script.
 
+## Imports et exports (D8 Support)
+
+| Menu | Importer | Exporter | Graphiques |
+|---|---|---|---|
+| Tableau de bord | — | Excel, CSV, PDF, HTML, JSON, XML, Markdown | plan de charge (Gantt par technicien), ouverts par technicien et par priorité |
+| Tickets / Recherche avancée | historique d'un autre outil (GLPI, Excel…) | tous formats, mêmes filtres que l'écran | — |
+| Statistiques | — | tous formats, + chaque graphique en PNG ou SVG | 10 graphiques + Gantt |
+| Utilisateurs | création / mise à jour des comptes | tous formats | — |
+| Listes | catégories et sites | tous formats | — |
+| Procédures | fiches d'aide et réponses types | tous formats (PDF, HTML, Markdown lisibles) | — |
+| Journaux | — | tous formats | — |
+
+- **Fichiers lus à l'import :** Excel `.xlsx`, CSV (séparateur deviné, UTF-8 ou
+  Windows-1252), TSV, TXT, JSON, XML. L'outil associe seul les colonnes
+  (« E-mail », « Courriel », « Mail »…), montre un aperçu avec les erreurs
+  ligne par ligne, puis fournit un rapport Excel. Chaque fenêtre propose un
+  modèle à remplir.
+- **Non lus :** PDF (mise en page, pas des données), `.xls` et `.ods`
+  (« Enregistrer sous » `.xlsx` ou CSV).
+- **Tickets importés :** nouvelle référence (l'ancienne est notée dans la
+  description), aucun courriel envoyé, doublons ignorés si l'on relance le
+  même fichier.
+- **Comptes importés :** mot de passe provisoire listé dans le rapport, à
+  transmettre individuellement puis à supprimer.
+
 ## Mettre à jour
 
 Remplacer `index.php` dans le dossier d'installation, puis relancer

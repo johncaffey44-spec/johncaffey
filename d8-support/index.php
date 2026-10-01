@@ -1913,6 +1913,26 @@ kbd {
 
 /* ------------------------------------------------ exports et graphiques */
 
+.menu-deroulant { position: relative; display: inline-block; }
+.menu-deroulant > .btn .ico svg { width: 18px; height: 18px; }
+.menu-liste {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; min-width: 260px;
+  background: var(--surface); border: 1px solid var(--ligne); border-radius: 10px;
+  box-shadow: var(--ombre-flottant); padding: .35rem; display: flex; flex-direction: column;
+}
+.menu-liste[hidden] { display: none; }
+.menu-liste button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .05rem; text-align: left;
+  background: transparent; border: 0; border-radius: 7px; padding: .5rem .7rem; cursor: pointer; color: var(--encre); font: inherit;
+}
+.menu-liste button:hover, .menu-liste button:focus-visible { background: var(--surface-2); outline: none; }
+.menu-liste small { color: var(--muted); font-size: .84rem; }
+.viz-tete { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
+.viz-tete h2 { margin-bottom: .6rem; }
+.viz-img { display: inline-flex; gap: .3rem; flex: 0 0 auto; }
+.viz-img .btn-mini { margin-left: 0; }
+@media print { .viz-img { display: none; } }
+
 .stat-resolu { border-left-color: #1B8A5F; }
 .stat-resolu .stat-num { color: #13654A; }
 
@@ -1951,6 +1971,38 @@ a:hover > .viz-lien { text-decoration: underline; }
 }
 .viz-tip b { color: #FFFFFF; }
 @media (max-width: 620px) { .viz-grille { grid-template-columns: 1fr; } }
+
+/* Fenêtre d'import */
+.modal.modal-large { max-width: 980px; }
+.modal h3 { font-size: 1rem; margin: 1.1rem 0 .5rem; }
+.imp-depot {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem; text-align: center;
+  border: 2px dashed var(--ligne); border-radius: 12px; padding: 1.6rem 1rem; margin: .8rem 0; cursor: pointer;
+  background: var(--surface-2); transition: border-color .15s, background .15s;
+}
+.imp-depot:hover, .imp-depot.survol, .imp-depot:focus-within { border-color: var(--primaire); background: #EEF1FB; }
+.imp-depot .ico svg { width: 28px; height: 28px; transform: rotate(180deg); }
+.imp-depot span, .imp-depot small { color: var(--muted); }
+.imp-erreur { background: #FAE6E4; color: #8E1F16; border: 1px solid #F0C0BA; border-radius: 8px; padding: .6rem .8rem; margin: .6rem 0; }
+.imp-attention { background: #FDF4E7; color: #6E3706; border-color: #F0CB9C; }
+.imp-assoc { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .5rem 1rem; }
+.imp-assoc label { display: grid; grid-template-columns: 1fr 1.2fr; align-items: center; gap: .5rem; }
+.imp-assoc label > span { font-weight: 600; font-size: .93rem; display: flex; flex-direction: column; }
+.imp-assoc small { color: var(--muted); font-weight: 400; font-size: .8rem; }
+.imp-req { color: var(--danger); }
+.imp-options { margin-top: .8rem; }
+.imp-bilan { font-weight: 600; }
+.imp-ok { color: #13654A; } .imp-ko { color: #8E1F16; } .imp-ign { color: var(--muted); } .imp-av { color: #96490A; font-size: .88rem; }
+.imp-apercu { max-height: 330px; overflow: auto; }
+.imp-apercu td { font-size: .9rem; vertical-align: top; }
+.imp-prog { font-weight: 600; }
+.imp-barre { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.imp-barre > div { height: 100%; width: 0; background: var(--primaire); transition: width .2s; }
+.imp-stats { grid-template-columns: repeat(4, 1fr); }
+.btn-lien { background: none; border: 0; padding: 0; color: var(--primaire); text-decoration: underline; cursor: pointer; font: inherit; }
+.input-mini { display: inline-block; width: auto; min-height: 32px; padding: .1rem .4rem; }
+.dash-charge { margin-bottom: 1rem; }
+@media (max-width: 620px) { .imp-assoc label { grid-template-columns: 1fr; } .imp-stats { grid-template-columns: repeat(2, 1fr); } }
 
 /* Document préparé pour l'impression / le PDF (Export.pdf) : seul lui est imprimé. */
 #zone-impression { display: none; }
@@ -2229,6 +2281,7 @@ const ICONES = {
   loupe:  I('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>'),
   chevron: I('<path d="M9 6l6 6-6 6"/>'),
   telecharger: I('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>'),
+  importer: I('<path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M5 19h14"/>'),
   hand:   I('<path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V15a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4.4-2.6L5 13.5a1.5 1.5 0 0 1 2.4-1.8L9 13.5V11"/>'),
 };
 function ico(nom) { return '<span class="ico">' + (ICONES[nom] || '') + '</span>'; }
@@ -3000,7 +3053,8 @@ async function vueDashboard() {
   main.innerHTML =
     '<div class="page-head"><div><h1>Tableau de bord</h1>' +
     "<p class=\"sous-titre\">Vue d'ensemble des demandes en cours</p></div>" +
-    '<div class="page-actions"><button type="button" class="btn" id="btn-maj">' + ico('maj') + 'Actualiser</button></div></div>' +
+    '<div class="page-actions">' + boutonsExport('exp-dash') +
+    '<button type="button" class="btn" id="btn-maj">' + ico('maj') + 'Actualiser</button></div></div>' +
     '<div id="dash">' + chargement() + '</div>';
   $('#btn-maj').addEventListener('click', vueDashboard);
 
@@ -3055,6 +3109,14 @@ async function vueDashboard() {
     '<div class="stats stats-cles">' + principaux.map(i => carte(stats[i], i, false)).join('') + '</div>' +
     '<div class="stats stats-suite">' +
       stats.map((s, i) => principaux.includes(i) ? '' : carte(s, i, true)).join('') + '</div>' +
+    ((d.ouverts || []).length
+      ? '<div class="viz-grille dash-charge">' +
+        '<div class="card viz-carte viz-large"><div class="viz-tete"><h2>Plan de charge : tickets ouverts par technicien</h2></div>' +
+        '<p class="sous-titre">Chaque barre va de la création du ticket à aujourd\'hui ; plus elle est longue, plus la demande attend.</p>' +
+        '<div class="viz" id="g-charge"></div></div>' +
+        '<div class="card viz-carte"><div class="viz-tete"><h2>Tickets ouverts par technicien</h2></div><div class="viz" id="g-charge-tech"></div></div>' +
+        '<div class="card viz-carte"><div class="viz-tete"><h2>Tickets ouverts par priorité</h2></div><div class="viz" id="g-charge-prio"></div></div>' +
+        '</div>' : '') +
     '<div class="card"><h2>Charge du mois</h2>' +
     '<p><b>' + esc(charge) + '</b> de temps enregistré sur les tickets créés ce mois-ci.' +
     (d.charge_mois ? '' : ' Renseignez le temps passé au moment d\'enregistrer un ticket : ' +
@@ -3073,6 +3135,54 @@ async function vueDashboard() {
     });
   });
   brancherLignes('#dash');
+
+  // Plan de charge : Gantt des tickets ouverts, regroupés par technicien.
+  const ouverts = d.ouverts || [];
+  const tech = (t) => t.assignee || 'Non assigné';
+  const parTech = {};
+  ouverts.forEach(t => { parTech[tech(t)] = (parTech[tech(t)] || 0) + 1; });
+  const dessinerCharge = () => {
+    if (!ouverts.length || !$('#g-charge')) return;
+    brancherInfobulles();
+    const larg = (id) => Math.max(280, Math.floor($('#' + id).clientWidth));
+    const plusAncien = ouverts.reduce((m, t) => t.created_at < m ? t.created_at : m, d.maintenant);
+    const limite = jourIso(new Date(Date.now() - 365 * 864e5));
+    const du = plusAncien.slice(0, 10) < limite ? limite : plusAncien.slice(0, 10);
+    $('#g-charge').innerHTML = graphGantt(larg('g-charge'), ouverts, du, d.maintenant.slice(0, 10), d.maintenant, { groupe: tech });
+    $('#g-charge-tech').innerHTML = graphBarres(larg('g-charge-tech'), Object.keys(parTech).sort((a, b) => parTech[b] - parTech[a])
+      .map(k => ({ lbl: k, val: parTech[k] })), { nomVal: 'Tickets ouverts' });
+    $('#g-charge-prio').innerHTML = graphBarres(larg('g-charge-prio'), Object.keys(PRIORITES).map(p => ({
+      lbl: PRIORITES[p].lbl, val: ouverts.filter(t => t.priority === p).length, couleur: VIZ.prio[p] })), { nomVal: 'Tickets ouverts' });
+  };
+  dessinerCharge();
+  let minuteur = null;
+  const auRedim = () => {
+    if (!encoreValide(token)) { window.removeEventListener('resize', auRedim); return; }
+    clearTimeout(minuteur); minuteur = setTimeout(dessinerCharge, 200);
+  };
+  window.addEventListener('resize', auRedim);
+
+  brancherExport('exp-dash', () => {
+    const maint = dateLocale(d.maintenant);
+    const feuilles = [
+      { nom: 'Indicateurs', colonnes: ['Indicateur', 'Valeur'], lignes: stats.map(x => [x.lbl, Number(x.num) || 0]) },
+      { nom: 'Tickets ouverts', colonnes: ['Technicien', 'Référence', 'Titre', 'Priorité', 'Statut', 'Catégorie', 'Site', 'Demandeur', 'Créé le', 'Ouvert depuis (jours)'],
+        lignes: ouverts.map(t => [tech(t), t.ref, t.title, PRIORITES[t.priority] ? PRIORITES[t.priority].lbl : t.priority,
+          STATUTS[t.status] ? STATUTS[t.status].lbl : t.status, t.category, t.site, t.creator_name, t.created_at,
+          Math.round((maint - dateLocale(t.created_at)) / 864e4) / 10]) },
+    ];
+    let html = '<div class="stats">' + stats.map(x => '<div class="stat ' + x.cls + '"><div class="stat-num">' + (Number(x.num) || 0) +
+      '</div><div class="stat-lbl">' + esc(x.lbl) + '</div></div>').join('') + '</div>';
+    if (ouverts.length) {
+      const plusAncien = ouverts.reduce((m, t) => t.created_at < m ? t.created_at : m, d.maintenant).slice(0, 10);
+      for (let i = 0; i < ouverts.length; i += 34) {
+        html += '<div class="imp-bloc">' + (i ? '' : '<h2>Plan de charge : tickets ouverts par technicien</h2>') +
+          graphGantt(700, ouverts.slice(i, i + 34), plusAncien, d.maintenant.slice(0, 10), d.maintenant, { groupe: tech }) + '</div>';
+      }
+    }
+    html += '<div class="imp-saut"></div>' + feuilles.map(f => Export.tableHtml(f)).join('');
+    return { base: 'tableau_de_bord', titre: 'Tableau de bord', sousTitre: ouverts.length + ' ticket(s) ouvert(s)', feuilles, html };
+  });
 }
 
 /* Sélection multiple : la barre d'actions n'apparaît qu'une fois au moins
@@ -3182,7 +3292,10 @@ function brancherLignes(scope) {
  *    filtres, première ligne figée, dates reconnues comme dates) ;
  *  - PDF  : mise en page dédiée puis impression, avec « Enregistrer au format
  *    PDF » ou « Microsoft Print to PDF » comme imprimante ; les graphiques
- *    sont conservés en vectoriel.
+ *    sont conservés en vectoriel ;
+ *  - JSON et XML : pour les scripts, Power BI, ou un réimport dans l'outil ;
+ *  - HTML : page autonome (graphiques compris) à joindre à un courriel ;
+ *  - Markdown : tableaux à coller dans un wiki, Teams ou un ticket.
  * Une « feuille » : { nom, colonnes: ['Libellé', …], lignes: [[valeur, …], …] }.
  */
 const Export = {
@@ -3299,6 +3412,101 @@ const Export = {
       { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), this.nom(base, 'xlsx'));
   },
 
+  /* Lignes en objets { colonne: valeur } : la forme la plus simple à relire ou à réimporter. */
+  objets(f) {
+    return f.lignes.map(l => { const o = {}; f.colonnes.forEach((c, i) => { o[c] = l[i] == null ? '' : l[i]; }); return o; });
+  },
+
+  json(feuilles, base, titre) {
+    const d = { source: S.appName, export: titre || base, exporte_le: new Date().toISOString() };
+    if (feuilles.length === 1) { d.colonnes = feuilles[0].colonnes; d.lignes = this.objets(feuilles[0]); }
+    else { d.feuilles = {}; feuilles.forEach(f => { d.feuilles[f.nom] = this.objets(f); }); }
+    this.telecharger(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json;charset=utf-8' }), this.nom(base, 'json'));
+  },
+
+  xml(feuilles, base, titre) {
+    const x = (s) => String(s == null ? '' : s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const corps = feuilles.map(f => '  <feuille nom="' + x(f.nom) + '">\n' + f.lignes.map(l =>
+      '    <ligne>' + f.colonnes.map((c, i) => '<champ nom="' + x(c) + '">' + x(l[i]) + '</champ>').join('') + '</ligne>').join('\n') +
+      '\n  </feuille>').join('\n');
+    this.telecharger(new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n<export source="' + x(S.appName) + '" titre="' + x(titre || base) +
+      '" date="' + new Date().toISOString() + '">\n' + corps + '\n</export>\n'], { type: 'application/xml;charset=utf-8' }), this.nom(base, 'xml'));
+  },
+
+  markdown(feuilles, base, titre, sousTitre) {
+    const c = (v) => String(v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',')
+      : /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? fmtDate(v) : v).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+    const md = '# ' + (titre || base) + '\n\n' + (sousTitre ? sousTitre + '\n\n' : '') + feuilles.map(f =>
+      (feuilles.length > 1 ? '## ' + f.nom + '\n\n' : '') +
+      '| ' + f.colonnes.map(c).join(' | ') + ' |\n|' + f.colonnes.map(() => ' --- |').join('') + '\n' +
+      f.lignes.map(l => '| ' + f.colonnes.map((_, i) => c(l[i])).join(' | ') + ' |').join('\n')).join('\n\n') + '\n';
+    this.telecharger(new Blob([md], { type: 'text/markdown;charset=utf-8' }), this.nom(base, 'md'));
+  },
+
+  /* Page HTML autonome : styles intégrés, graphiques en SVG, aucune dépendance. */
+  html(titre, sousTitre, contenu, base) {
+    const maint = new Date();
+    const page = '<!doctype html>\n<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>' + esc(titre) + '</title><style>' + Export.styleAutonome() +
+      'body{max-width:1100px;margin:0 auto;padding:24px 18px;background:#fff;color:#1C2A31}' +
+      '.imp-tete{border-bottom:2px solid #16303A;padding-bottom:6px;margin-bottom:14px}.imp-app{font-weight:700;color:#16303A}' +
+      'h1{font-size:24px;margin:4px 0}h2{font-size:16px;margin:22px 0 8px}.imp-date{color:#555;font-size:13px}' +
+      '.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}.stat{border:1px solid #ccc;border-left-width:4px;border-radius:6px;padding:8px 10px}' +
+      '.stat-num{font-size:24px;font-weight:700}.stat-lbl{color:#626C74;font-weight:600;font-size:13px}' +
+      '.imp-tbl{width:100%;border-collapse:collapse;font-size:13px}.imp-tbl th,.imp-tbl td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}' +
+      '.imp-tbl th{background:#E9EEF0;position:sticky;top:0}.nw{white-space:nowrap}.viz-svg{width:100%;height:auto}' +
+      '.viz-legende{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 8px;font-size:13px;color:#626C74}.viz-legende span{display:inline-flex;align-items:center;gap:6px}' +
+      '.viz-legende i{width:12px;height:12px;border-radius:3px;display:inline-block}.viz-legende i.viz-tiret{width:16px;height:0;border-top:2px dashed #eb6834}' +
+      '</style></head><body><div class="imp-tete"><div class="imp-app">' + esc(S.appName) + '</div><h1>' + esc(titre) + '</h1>' +
+      (sousTitre ? '<p>' + esc(sousTitre) + '</p>' : '') + '<p class="imp-date">Document édité le ' + maint.toLocaleDateString('fr-FR') + ' à ' +
+      maint.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + '</p></div>' + contenu + '</body></html>\n';
+    this.telecharger(new Blob([page], { type: 'text/html;charset=utf-8' }), this.nom(base, 'html'));
+  },
+
+  /* Règles nécessaires aux graphiques hors de l'application (HTML autonome, images). */
+  styleAutonome() {
+    return 'svg{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif}' +
+      '.viz-axe{font-size:11px;fill:#626C74}.viz-lbl{font-size:12.5px;fill:#1C2A31}' +
+      '.viz-val{font-size:12px;fill:#3F4A57;font-weight:600}.viz-lien{fill:#2A41A6}.viz-zone{fill:transparent}';
+  },
+
+  /* Graphique seul en image (SVG ou PNG), titre et légende compris : pour PowerPoint ou un courriel. */
+  image(carte, format) {
+    const svg = carte.querySelector('.viz svg');
+    if (!svg) return;
+    const W = Number(svg.getAttribute('width')), H0 = Number(svg.getAttribute('height'));
+    const titre = carte.querySelector('h2').textContent;
+    const leg = Array.from(carte.querySelectorAll('.viz .viz-legende > span')).map(sp => {
+      const i = sp.querySelector('i');
+      return { coul: i ? (i.classList.contains('viz-tiret') ? '#eb6834' : i.style.background) : '', txt: sp.textContent.trim(), tiret: !!(i && i.classList.contains('viz-tiret')) };
+    });
+    let x = 16, legSvg = '';
+    leg.forEach(l => {
+      if (l.coul) legSvg += l.tiret ? '<line x1="' + x + '" x2="' + (x + 14) + '" y1="44" y2="44" stroke="' + l.coul + '" stroke-width="2" stroke-dasharray="4 3"/>'
+        : '<rect x="' + x + '" y="38" width="12" height="12" rx="3" fill="' + l.coul + '"/>';
+      legSvg += '<text x="' + (x + (l.coul ? 18 : 0)) + '" y="48" class="viz-axe" style="font-size:12px">' + esc(l.txt) + '</text>';
+      x += (l.coul ? 18 : 0) + l.txt.length * 7 + 18;
+    });
+    const haut = 26 + (leg.length ? 30 : 6);
+    const corps = svg.innerHTML;
+    const out = '<svg xmlns="http://www.w3.org/2000/svg" width="' + (W + 32) + '" height="' + (H0 + haut + 16) + '" viewBox="0 0 ' + (W + 32) + ' ' + (H0 + haut + 16) + '">' +
+      '<style>' + Export.styleAutonome() + '</style><rect width="100%" height="100%" fill="#ffffff"/>' +
+      '<text x="16" y="24" style="font-size:15px;font-weight:700" fill="#1C2A31">' + esc(titre) + '</text>' + legSvg +
+      '<g transform="translate(16,' + haut + ')">' + corps + '</g></svg>';
+    const base = 'graphique_' + titre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+    if (format === 'svg') { this.telecharger(new Blob([out], { type: 'image/svg+xml' }), this.nom(base, 'svg')); return; }
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'), k = 2;
+      c.width = (W + 32) * k; c.height = (H0 + haut + 16) * k;
+      const g = c.getContext('2d'); g.scale(k, k); g.drawImage(img, 0, 0);
+      c.toBlob(b => b ? this.telecharger(b, this.nom(base, 'png')) : toast('Image PNG impossible dans ce navigateur : utilisez SVG.', true), 'image/png');
+    };
+    img.onerror = () => toast('Image PNG impossible dans ce navigateur : utilisez SVG.', true);
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(out)));
+  },
+
   tableHtml(f) {
     const v = (c) => c == null ? '' : typeof c === 'number' ? String(c).replace('.', ',')
       : /^\d{4}-\d{2}-\d{2}/.test(String(c)) ? fmtDate(c) : String(c);
@@ -3367,32 +3575,769 @@ function zipSansCompression(fichiers) {
   return new Blob(morceaux.concat(central, [new Uint8Array(fin.buffer)]));
 }
 
-/* Boutons « Exporter : CSV · Excel · PDF ». fournir() renvoie
-   { base, titre, sousTitre, feuilles, html? } (html : contenu du PDF, sinon les tableaux). */
+/* Menu « Exporter » : un bouton, la liste des formats en dessous. fournir(format) renvoie
+   { base, titre, sousTitre, feuilles, html?, paysage? } (html : contenu du PDF / de la page HTML). */
+const FORMATS_EXPORT = [
+  ['xlsx', 'Excel (.xlsx)', 'tableur, une feuille par tableau'],
+  ['csv', 'CSV (.csv)', 'tableur ou autre logiciel'],
+  ['pdf', 'PDF', 'à imprimer ou à envoyer'],
+  ['html', 'Page web (.html)', 'à joindre à un courriel'],
+  ['json', 'JSON (.json)', 'scripts, Power BI, réimport'],
+  ['xml', 'XML (.xml)', 'échange avec un autre logiciel'],
+  ['md', 'Markdown (.md)', 'wiki, Teams, documentation'],
+];
 function boutonsExport(id) {
-  return '<div class="export-groupe" role="group" aria-label="Exporter" id="' + id + '">' +
-    '<span class="export-lbl">' + ico('telecharger') + 'Exporter</span>' +
-    '<button type="button" class="btn" data-format="csv">CSV</button>' +
-    '<button type="button" class="btn" data-format="xlsx">Excel</button>' +
-    '<button type="button" class="btn" data-format="pdf">PDF</button></div>';
+  return '<div class="menu-deroulant" id="' + id + '">' +
+    '<button type="button" class="btn" aria-haspopup="menu" aria-expanded="false">' + ico('telecharger') + 'Exporter <span aria-hidden="true">▾</span></button>' +
+    '<div class="menu-liste" role="menu" hidden>' + FORMATS_EXPORT.map(([f, l, d]) =>
+      '<button type="button" role="menuitem" data-format="' + f + '"><b>' + l + '</b><small>' + d + '</small></button>').join('') +
+    '</div></div>';
+}
+/* Ouverture / fermeture d'un menu déroulant (clic, Échap, clic ailleurs). */
+function brancherMenu(zone) {
+  const bouton = zone.querySelector(':scope > button'), liste = zone.querySelector('.menu-liste');
+  const fermer = () => { liste.hidden = true; bouton.setAttribute('aria-expanded', 'false'); document.removeEventListener('mousedown', dehors); document.removeEventListener('keydown', clavier); };
+  const dehors = (e) => { if (!zone.contains(e.target)) fermer(); };
+  const clavier = (e) => { if (e.key === 'Escape') { fermer(); bouton.focus(); } };
+  bouton.addEventListener('click', () => {
+    if (!liste.hidden) { fermer(); return; }
+    liste.hidden = false; bouton.setAttribute('aria-expanded', 'true');
+    document.addEventListener('mousedown', dehors); document.addEventListener('keydown', clavier);
+    const premier = liste.querySelector('button'); if (premier) premier.focus();
+  });
+  return fermer;
 }
 function brancherExport(id, fournir) {
   const zone = $('#' + id);
   if (!zone) return;
-  zone.addEventListener('click', async (e) => {
+  const fermer = brancherMenu(zone);
+  zone.querySelector('.menu-liste').addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-format]');
     if (!b || b.disabled) return;
+    fermer();
+    const format = b.dataset.format;
     b.disabled = true;
     try {
-      const d = await fournir(b.dataset.format);
+      const d = await fournir(format);
       if (!d) return;
-      if (b.dataset.format === 'csv') Export.csv(d.feuilles, d.base);
-      else if (b.dataset.format === 'xlsx') Export.xlsx(d.feuilles, d.base);
-      else Export.pdf(d.titre, d.sousTitre, d.html || d.feuilles.map(f => Export.tableHtml(f)).join(''), d.paysage);
+      const tables = () => d.feuilles.map(f => Export.tableHtml(f)).join('');
+      if (format === 'csv') Export.csv(d.feuilles, d.base);
+      else if (format === 'xlsx') Export.xlsx(d.feuilles, d.base);
+      else if (format === 'json') Export.json(d.feuilles, d.base, d.titre);
+      else if (format === 'xml') Export.xml(d.feuilles, d.base, d.titre);
+      else if (format === 'md') {
+        if (d.markdown) Export.telecharger(new Blob([d.markdown], { type: 'text/markdown;charset=utf-8' }), Export.nom(d.base, 'md'));
+        else Export.markdown(d.feuilles, d.base, d.titre, d.sousTitre);
+      }
+      else if (format === 'html') Export.html(d.titre, d.sousTitre, d.html || tables(), d.base);
+      else Export.pdf(d.titre, d.sousTitre, d.html || tables(), d.paysage);
     } catch (err) {
       if (err && err.message !== 'api') toast('Export impossible : ' + (err.message || err), true);
     } finally { b.disabled = false; }
   });
+}
+
+/* ================================================ imports : CSV, Excel, JSON, XML */
+
+/*
+ * Le fichier est lu dans le navigateur (rien n'est envoyé tant que l'on n'a
+ * pas confirmé), puis :
+ *   1. les colonnes sont associées automatiquement aux champs de l'outil
+ *      (« Nom », « Name », « Nom complet »…), modifiables à la main ;
+ *   2. chaque ligne est vérifiée et l'aperçu montre ce qui sera fait ;
+ *   3. l'import se fait par les mêmes contrôles que la saisie à l'écran ;
+ *   4. un rapport ligne par ligne est téléchargeable (Excel).
+ * Formats lus : CSV / TSV / TXT (séparateur deviné, UTF-8 ou Windows-1252),
+ * Excel .xlsx (et .xlsm), JSON, XML. Le PDF n'est pas un format de données :
+ * il n'est pas importable de façon fiable (voir lireFichierImport).
+ */
+const Import = {
+  norm(s) { return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ''); },
+
+  texte(buf) {
+    const octets = new Uint8Array(buf);
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(octets).replace(/^﻿/, ''); }
+    catch (e) { return new TextDecoder('windows-1252').decode(octets); }   // CSV enregistré par un ancien Excel
+  },
+
+  csv(t) {
+    const lignesBrutes = t.split(/\r?\n/);
+    let debut = 0, sep = null;
+    const indice = /^sep=(.)\s*$/i.exec(lignesBrutes[0] || '');       // « sep=; » écrit par Excel
+    if (indice) { sep = indice[1]; debut = 1; }
+    if (!sep) {
+      const ech = lignesBrutes.slice(0, 20).filter(l => l.trim()).join('\n');
+      let meilleur = ';', max = -1;
+      for (const c of [';', '\t', ',', '|']) {
+        let n = 0, guill = false;
+        for (const ch of ech) { if (ch === '"') guill = !guill; else if (ch === c && !guill) n++; }
+        if (n > max) { max = n; meilleur = c; }
+      }
+      sep = meilleur;
+    }
+    const src = lignesBrutes.slice(debut).join('\n');
+    const rows = []; let row = [], cell = '', guill = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (guill) {
+        if (ch === '"') { if (src[i + 1] === '"') { cell += '"'; i++; } else guill = false; }
+        else cell += ch;
+      } else if (ch === '"') guill = true;
+      else if (ch === sep) { row.push(cell); cell = ''; }
+      else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+      else if (ch !== '\r') cell += ch;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return [this.tableau('Données', rows.map(r => r.map(c => c.trim())))];
+  },
+
+  /* Première ligne non vide = en-têtes ; lignes entièrement vides ignorées. */
+  tableau(nom, rows) {
+    rows = rows.filter(r => r.some(c => String(c == null ? '' : c).trim() !== ''));
+    const entetes = (rows.shift() || []).map((c, i) => String(c == null ? '' : c).trim() || 'Colonne ' + (i + 1));
+    return { nom, colonnes: entetes, lignes: rows.map(r => entetes.map((_, i) => r[i] == null ? '' : r[i])) };
+  },
+
+  objetsVersTableau(nom, liste) {
+    const cols = [];
+    liste.forEach(o => { if (o && typeof o === 'object' && !Array.isArray(o)) Object.keys(o).forEach(k => { if (!cols.includes(k)) cols.push(k); }); });
+    const val = (v) => v == null ? '' : Array.isArray(v) ? v.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(', ')
+      : typeof v === 'object' ? (v.name || v.nom || v.email || v.title || JSON.stringify(v)) : v;
+    return { nom, colonnes: cols, lignes: liste.map(o => cols.map(c => val(o ? o[c] : ''))) };
+  },
+
+  json(t) {
+    const d = JSON.parse(t);
+    const deListe = (nom, l) => Array.isArray(l[0]) ? this.tableau(nom, l) : this.objetsVersTableau(nom, l);
+    if (Array.isArray(d)) return [deListe('Données', d)];
+    if (d && d.feuilles && typeof d.feuilles === 'object') {                 // export multi-tableaux de l'outil
+      return Object.keys(d.feuilles).filter(k => Array.isArray(d.feuilles[k])).map(k => deListe(k, d.feuilles[k]));
+    }
+    for (const k of ['lignes', 'data', 'items', 'value', 'records', 'rows', 'results']) {
+      if (d && Array.isArray(d[k])) return [deListe(k, d[k])];
+    }
+    const tableaux = Object.keys(d || {}).filter(k => Array.isArray(d[k]) && d[k].length).map(k => deListe(k, d[k]));
+    if (tableaux.length) return tableaux;
+    throw new Error('Aucun tableau de données trouvé dans ce fichier JSON.');
+  },
+
+  xml(t) {
+    const doc = new DOMParser().parseFromString(t, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('Fichier XML illisible (mal formé).');
+    const enfants = (e) => Array.from(e.children);
+    const feuillesOutil = Array.from(doc.getElementsByTagName('feuille'));
+    if (feuillesOutil.length && feuillesOutil[0].getElementsByTagName('champ').length) {   // export XML de l'outil
+      return feuillesOutil.map(f => this.objetsVersTableau(f.getAttribute('nom') || 'Données',
+        Array.from(f.getElementsByTagName('ligne')).map(l => {
+          const o = {}; Array.from(l.getElementsByTagName('champ')).forEach(c => { o[c.getAttribute('nom')] = c.textContent; }); return o;
+        })));
+    }
+    // XML quelconque : le groupe d'éléments frères de même nom le plus nombreux = les lignes.
+    let meilleur = null;
+    doc.querySelectorAll('*').forEach(e => {
+      const parNom = {};
+      enfants(e).forEach(c => { (parNom[c.tagName] = parNom[c.tagName] || []).push(c); });
+      Object.values(parNom).forEach(g => {
+        if (g.length >= 1 && (g[0].children.length || g[0].attributes.length) && (!meilleur || g.length > meilleur.length)) meilleur = g;
+      });
+    });
+    if (!meilleur) throw new Error('Aucune liste d\'enregistrements trouvée dans ce fichier XML.');
+    return [this.objetsVersTableau(meilleur[0].tagName, meilleur.map(r => {
+      const o = {};
+      Array.from(r.attributes).forEach(a => { o[a.name] = a.value; });
+      enfants(r).forEach(c => { o[c.tagName] = c.children.length ? c.textContent.trim().replace(/\s+/g, ' ') : c.textContent.trim(); });
+      return o;
+    }))];
+  },
+
+  /* Lecture d'une archive ZIP (format interne d'un .xlsx), décompression native du navigateur. */
+  async dezipper(buf) {
+    const v = new DataView(buf), u8 = new Uint8Array(buf);
+    let fin = -1;
+    for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 70000); i--) { if (v.getUint32(i, true) === 0x06054b50) { fin = i; break; } }
+    if (fin < 0) throw new Error('Ce fichier n\'est pas un classeur Excel .xlsx valide.');
+    const nb = v.getUint16(fin + 10, true);
+    let p = v.getUint32(fin + 16, true);
+    const fichiers = {};
+    const dec = new TextDecoder();
+    for (let k = 0; k < nb; k++) {
+      if (v.getUint32(p, true) !== 0x02014b50) break;
+      const methode = v.getUint16(p + 10, true), taille = v.getUint32(p + 20, true);
+      const ln = v.getUint16(p + 28, true), le = v.getUint16(p + 30, true), lc = v.getUint16(p + 32, true);
+      const local = v.getUint32(p + 42, true), nom = dec.decode(u8.subarray(p + 46, p + 46 + ln));
+      fichiers[nom] = { methode, taille, local };
+      p += 46 + ln + le + lc;
+    }
+    const lire = async (nom) => {
+      const f = fichiers[nom];
+      if (!f) return null;
+      const debut = f.local + 30 + v.getUint16(f.local + 26, true) + v.getUint16(f.local + 28, true);
+      const brut = u8.subarray(debut, debut + f.taille);
+      if (f.methode === 0) return dec.decode(brut);
+      if (f.methode !== 8) throw new Error('Compression Excel non prise en charge.');
+      if (typeof DecompressionStream === 'undefined') throw new Error('Navigateur trop ancien pour lire un .xlsx : enregistrez le fichier en CSV.');
+      const flux = new Blob([brut]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return await new Response(flux).text();
+    };
+    return { noms: Object.keys(fichiers), lire };
+  },
+
+  async xlsx(buf) {
+    const z = await this.dezipper(buf);
+    const P = (t) => new DOMParser().parseFromString(t, 'application/xml');
+    const wb = await z.lire('xl/workbook.xml');
+    if (!wb) throw new Error('Ce fichier n\'est pas un classeur Excel .xlsx valide.');
+    const rels = {};
+    const relsXml = await z.lire('xl/_rels/workbook.xml.rels');
+    if (relsXml) Array.from(P(relsXml).getElementsByTagName('Relationship')).forEach(r => { rels[r.getAttribute('Id')] = r.getAttribute('Target'); });
+    const partages = [];
+    const ss = await z.lire('xl/sharedStrings.xml');
+    if (ss) Array.from(P(ss).getElementsByTagName('si')).forEach(si => {
+      // Texte de la cellule, sans les indications phonétiques (rPh) qu'Excel ajoute parfois.
+      partages.push(Array.from(si.getElementsByTagName('t')).filter(t => t.parentNode.localName !== 'rPh').map(t => t.textContent).join(''));
+    });
+    // Styles : quelles cellules sont des dates (Excel les stocke en nombres).
+    const estDate = [];
+    const st = await z.lire('xl/styles.xml');
+    if (st) {
+      const d = P(st), formats = {};
+      Array.from(d.getElementsByTagName('numFmt')).forEach(f => { formats[f.getAttribute('numFmtId')] = f.getAttribute('formatCode') || ''; });
+      const xfs = d.getElementsByTagName('cellXfs')[0];
+      if (xfs) Array.from(xfs.getElementsByTagName('xf')).forEach(xf => {
+        const id = Number(xf.getAttribute('numFmtId') || 0), code = (formats[id] || '').replace(/"[^"]*"|\[[^\]]*\]/g, '');
+        estDate.push((id >= 14 && id <= 22) || (id >= 45 && id <= 47) || (id >= 164 && /[dmyhs]/i.test(code) && !/^[#0.,%\s]*$/.test(code)));
+      });
+    }
+    const serieVersDate = (n) => {
+      const ms = Math.round((n - 25569) * 864e5), d = new Date(ms), p = (x) => String(x).padStart(2, '0');
+      const j = d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate());
+      return (n % 1) ? j + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) : j;
+    };
+    const colIdx = (ref) => { let n = 0; for (const c of ref.replace(/\d+/g, '')) n = n * 26 + c.charCodeAt(0) - 64; return n - 1; };
+    const feuilles = [];
+    for (const sh of Array.from(P(wb).getElementsByTagName('sheet'))) {
+      const rid = sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+      let cible = rels[rid] || '';
+      cible = cible.startsWith('/') ? cible.slice(1) : 'xl/' + cible.replace(/^\.\//, '');
+      const xml = await z.lire(cible);
+      if (!xml) continue;
+      const rows = [];
+      Array.from(P(xml).getElementsByTagName('row')).forEach(r => {
+        const ligne = [];
+        Array.from(r.getElementsByTagName('c')).forEach(c => {
+          const ref = c.getAttribute('r'), t = c.getAttribute('t'), s = Number(c.getAttribute('s') || 0);
+          const vEl = c.getElementsByTagName('v')[0];
+          let val = vEl ? vEl.textContent : '';
+          if (t === 's') val = partages[Number(val)] || '';
+          else if (t === 'inlineStr') val = Array.from(c.getElementsByTagName('t')).map(x => x.textContent).join('');
+          else if (t === 'b') val = val === '1' ? 'oui' : 'non';
+          else if (t === 'e') val = '';
+          else if (t !== 'str' && val !== '') { const n = Number(val); val = estDate[s] ? serieVersDate(n) : n; }
+          ligne[ref ? colIdx(ref) : ligne.length] = val;
+        });
+        rows.push(Array.from(ligne, x => x == null ? '' : x));
+      });
+      feuilles.push(this.tableau(sh.getAttribute('name') || 'Feuille', rows));
+    }
+    if (!feuilles.length) throw new Error('Classeur vide.');
+    return feuilles;
+  },
+
+  async lireFichier(fichier) {
+    const ext = (fichier.name.split('.').pop() || '').toLowerCase();
+    if (fichier.size > 15 * 1048576) throw new Error('Fichier trop volumineux (15 Mo maximum).');
+    if (ext === 'pdf') throw new Error('Un PDF est une mise en page, pas un tableau de données : son contenu ne peut pas être relu de façon fiable. ' +
+      'Exportez plutôt la source en Excel ou en CSV (depuis le logiciel d\'origine, ou « Enregistrer sous » dans Excel).');
+    if (ext === 'xls') throw new Error('Ancien format Excel (.xls) : ouvrez-le dans Excel puis « Enregistrer sous » au format .xlsx ou CSV.');
+    if (ext === 'ods') throw new Error('Format LibreOffice (.ods) : dans LibreOffice, « Enregistrer sous » au format .xlsx ou CSV.');
+    const buf = await fichier.arrayBuffer();
+    if (ext === 'xlsx' || ext === 'xlsm') return this.xlsx(buf);
+    const t = this.texte(buf);
+    if (ext === 'json' || /^\s*[\[{]/.test(t) && ext !== 'csv') return this.json(t);
+    if (ext === 'xml' || /^\s*<\?xml/.test(t)) return this.xml(t);
+    return this.csv(t);
+  },
+};
+
+/* --- valeurs saisies dans un fichier, ramenées à ce qu'attend l'outil --- */
+
+/* Date « 2026-03-05 14:30 », « 05/03/2026 », « 5/3/26 14h30 »… → « 2026-03-05 14:30:00 » (null si illisible). */
+function dateImport(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') {                              // nombre de jours façon Excel
+    if (v < 20000 || v > 80000) return null;
+    v = new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 19).replace('T', ' ');
+  }
+  const s = String(v).trim(), p = (x) => String(x).padStart(2, '0');
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2})[:h](\d{2})(?::(\d{2}))?)?/.exec(s);
+  let a, mo, j, h = 0, mi = 0, se = 0;
+  if (m) { [a, mo, j] = [m[1], m[2], m[3]]; h = m[4] || 0; mi = m[5] || 0; se = m[6] || 0; }
+  else if ((m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})(?:[ T,]+(\d{1,2})[:h](\d{2})(?::(\d{2}))?)?/.exec(s))) {
+    [j, mo, a] = [m[1], m[2], m[3].length === 2 ? '20' + m[3] : m[3]]; h = m[4] || 0; mi = m[5] || 0; se = m[6] || 0;
+  } else return null;
+  const d = new Date(+a, +mo - 1, +j, +h, +mi, +se);
+  if (isNaN(d) || d.getMonth() !== +mo - 1 || d.getDate() !== +j || +a < 1990 || +a > 2100) return null;
+  return a + '-' + p(mo) + '-' + p(j) + ' ' + p(h) + ':' + p(mi) + ':' + p(se);
+}
+/* Oui / non dans toutes ses variantes (Actif, VRAI, x, 1, enabled…). null = non renseigné. */
+function ouiNon(v) {
+  const n = Import.norm(v);
+  if (n === '') return null;
+  if (['oui', 'o', 'yes', 'y', 'vrai', 'true', '1', 'x', 'actif', 'active', 'enabled', 'visible', 'public'].includes(n)) return true;
+  if (['non', 'n', 'no', 'faux', 'false', '0', 'inactif', 'desactive', 'disabled', 'interne', 'masque'].includes(n)) return false;
+  return undefined;
+}
+/* Correspondance libellé → code, avec synonymes courants des autres outils (GLPI, Jira, Excel maison). */
+function codeImport(v, table) {
+  const n = Import.norm(v);
+  if (n === '') return '';
+  for (const [code, synonymes] of Object.entries(table)) if (synonymes.some(x => Import.norm(x) === n)) return code;
+  return null;
+}
+const SYN_PRIORITE = {
+  basse: ['basse', 'bas', 'faible', 'low', 'minor', 'mineure', 'p4', 'p5', '4', '5', 'tres basse'],
+  normale: ['normale', 'normal', 'moyenne', 'medium', 'standard', 'p3', '3'],
+  haute: ['haute', 'haut', 'elevee', 'high', 'urgent', 'urgente', 'major', 'majeure', 'p2', '2'],
+  critique: ['critique', 'critical', 'blocker', 'bloquant', 'bloquante', 'tres haute', 'tres urgente', 'majeur bloquant', 'p1', '1'],
+};
+const SYN_STATUT = {
+  nouveau: ['nouveau', 'nouvelle', 'new', 'ouvert', 'open', 'a traiter', 'to do', 'todo', 'cree'],
+  en_cours: ['en cours', 'encours', 'in progress', 'traitement', 'en traitement', 'assigne', 'pris en charge', 'planifie'],
+  en_attente: ['en attente', 'attente', 'pending', 'waiting', 'suspendu', 'on hold', 'en attente de reponse'],
+  resolu: ['resolu', 'resolved', 'solved', 'termine', 'done', 'traite'],
+  ferme: ['ferme', 'clos', 'closed', 'cloture', 'archive', 'annule', 'cancelled'],
+};
+/* Temps passé : « 90 », « 1 h 30 », « 1:30 », « 1,5 h » → minutes. enHeures : la colonne est en heures. */
+function minutesImport(v, enHeures) {
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') return Math.round(enHeures ? v * 60 : v);
+  const s = String(v).toLowerCase().replace(',', '.').trim();
+  let m = /^(\d+(?:\.\d+)?)\s*h\s*(\d+)?/.exec(s);
+  if (m) return Math.round(Number(m[1]) * 60 + Number(m[2] || 0));
+  if ((m = /^(\d+):(\d{2})$/.exec(s))) return Number(m[1]) * 60 + Number(m[2]);
+  const n = Number(s.replace(/[^\d.]/g, ''));
+  return isNaN(n) ? null : Math.round(enHeures ? n * 60 : n);
+}
+function motDePasseProvisoire() {
+  const alpha = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ', chiffres = '23456789';
+  const r = new Uint32Array(12); crypto.getRandomValues(r);
+  let s = '';
+  for (let i = 0; i < 12; i++) s += (i === 4 || i === 9 ? chiffres : alpha + chiffres)[r[i] % (i === 4 || i === 9 ? chiffres.length : alpha.length + chiffres.length)];
+  return s.slice(0, 4) + '-' + s.slice(4, 8) + '-' + s.slice(8);
+}
+
+/* ---------------------------------------------------- fenêtre d'import */
+
+/*
+ * conf = {
+ *   titre, intro (HTML), champs: [{ cle, lbl, req?, syn: [...], aide? }],
+ *   exemple: [valeurs du modèle, dans l'ordre des champs],
+ *   options?: (opts) → HTML de cases à cocher portant data-opt="nom" ; optionsDefaut: { nom: true|false },
+ *   preparer(o, ctx) → { valeurs, erreur?, avertissements?: [], action?: 'Créer' | 'Mettre à jour' | 'Ignorer' }
+ *   envoyer(lignes, progression, ctx) → [{ resultat, detail, extra? }] (même ordre)
+ *   rapportExtra?: libellé de la colonne supplémentaire du rapport (ex. mot de passe)
+ *   termine?() : rappelé après l'import (rafraîchit la page)
+ * }
+ */
+function ouvrirImport(conf) {
+  const m = modale('<div id="imp-zone"></div>');
+  m.el.firstElementChild.classList.add('modal-large');
+  const zone = $('#imp-zone', m.el);
+  const ctx = { options: Object.assign({}, conf.optionsDefaut || {}) };
+  let feuilles = null, feuille = null, assoc = {}, nomFichier = '';
+
+  const etape1 = (erreur) => {
+    zone.innerHTML = '<h2>' + esc(conf.titre) + '</h2>' + (conf.intro || '') +
+      '<label class="imp-depot" id="imp-depot"><input type="file" id="imp-fichier" accept=".xlsx,.xlsm,.csv,.tsv,.txt,.json,.xml" class="sr-only">' +
+      ico('telecharger') + '<b>Choisir un fichier</b><span>ou le glisser ici</span>' +
+      '<small>Excel (.xlsx), CSV, TSV, TXT, JSON ou XML — 15 Mo maximum</small></label>' +
+      (erreur ? '<div class="imp-erreur">' + esc(erreur) + '</div>' : '') +
+      '<p class="aide">Modèle à remplir : <button type="button" class="btn-lien" data-modele="xlsx">Excel</button> · ' +
+      '<button type="button" class="btn-lien" data-modele="csv">CSV</button>. La première ligne doit contenir le nom des colonnes ; ' +
+      'leur ordre et leur intitulé exact importent peu.</p>' +
+      '<div class="modal-actions"><button type="button" class="btn" data-a="fermer">Fermer</button></div>';
+    const input = $('#imp-fichier', zone), depot = $('#imp-depot', zone);
+    input.addEventListener('change', () => { if (input.files[0]) charger(input.files[0]); });
+    ['dragenter', 'dragover'].forEach(ev => depot.addEventListener(ev, (e) => { e.preventDefault(); depot.classList.add('survol'); }));
+    ['dragleave', 'drop'].forEach(ev => depot.addEventListener(ev, () => depot.classList.remove('survol')));
+    depot.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) charger(e.dataTransfer.files[0]); });
+    zone.querySelectorAll('[data-modele]').forEach(b => b.addEventListener('click', () => {
+      const f = { nom: 'Modèle', colonnes: conf.champs.map(c => c.lbl), lignes: conf.exemple ? [conf.exemple] : [] };
+      const base = 'modele_import_' + Import.norm(conf.titre).replace(/^importer/, '');
+      if (b.dataset.modele === 'xlsx') Export.xlsx([f], base); else Export.csv([f], base);
+    }));
+    $('[data-a="fermer"]', zone).addEventListener('click', m.close);
+  };
+
+  const charger = async (fichier) => {
+    zone.innerHTML = '<h2>' + esc(conf.titre) + '</h2>' + chargement();
+    nomFichier = fichier.name;
+    try {
+      feuilles = (await Import.lireFichier(fichier)).filter(f => f.colonnes.length);
+      if (!feuilles.length || !feuilles.some(f => f.lignes.length)) throw new Error('Le fichier ne contient aucune ligne de données.');
+      feuille = feuilles.find(f => f.lignes.length) || feuilles[0];
+      associer();
+      etape2();
+    } catch (e) {
+      etape1(e.message || String(e));
+    }
+  };
+
+  /* Association automatique colonne du fichier → champ de l'outil. */
+  const associer = () => {
+    assoc = {};
+    const libres = feuille.colonnes.map((c, i) => ({ i, n: Import.norm(c) }));
+    const prise = new Set();
+    const essai = (champ, exact) => {
+      const cands = [champ.lbl].concat(champ.syn || []).map(x => Import.norm(x)).filter(Boolean);
+      const t = libres.find(c => !prise.has(c.i) && cands.some(x => exact ? c.n === x : (x.length >= 4 && (c.n.startsWith(x) || c.n.includes(x)))));
+      if (t) { assoc[champ.cle] = t.i; prise.add(t.i); }
+    };
+    conf.champs.forEach(c => essai(c, true));
+    conf.champs.forEach(c => { if (assoc[c.cle] == null) essai(c, false); });
+  };
+
+  const objet = (ligne) => {
+    const o = { _entetes: {} };
+    conf.champs.forEach(c => {
+      o[c.cle] = assoc[c.cle] == null ? undefined : ligne[assoc[c.cle]];
+      o._entetes[c.cle] = assoc[c.cle] == null ? '' : feuille.colonnes[assoc[c.cle]];
+    });
+    return o;
+  };
+  const preparerTout = () => {
+    ctx.vus = {};
+    return feuille.lignes.map((l, i) => {
+      ctx.n = i + 2;
+      const p = conf.preparer(objet(l), ctx) || {};
+      p.n = i + 2;     // numéro de ligne dans le fichier (ligne 1 = en-têtes)
+      return p;
+    });
+  };
+
+  const etape2 = () => {
+    const manquants = conf.champs.filter(c => c.req && assoc[c.cle] == null);
+    const prep = manquants.length ? [] : preparerTout();
+    const ok = prep.filter(p => !p.erreur && p.action !== 'Ignorer'), ko = prep.filter(p => p.erreur), ign = prep.filter(p => !p.erreur && p.action === 'Ignorer');
+    const colsApercu = conf.champs.filter(c => assoc[c.cle] != null).slice(0, 6);
+    const statut = (p) => p.erreur ? '<span class="imp-ko">✖ ' + esc(p.erreur) + '</span>'
+      : p.action === 'Ignorer' ? '<span class="imp-ign">— ' + esc(p.detail || 'ignorée') + '</span>'
+      : '<span class="imp-ok">✔ ' + esc(p.action || 'Importer') + '</span>' + ((p.avertissements || []).length ? '<br><span class="imp-av">⚠ ' + esc(p.avertissements.join(' · ')) + '</span>' : '');
+    zone.innerHTML = '<h2>' + esc(conf.titre) + '</h2>' +
+      '<p class="sous-titre">' + esc(nomFichier) + ' — ' + feuille.lignes.length + ' ligne(s)' +
+      (feuilles.length > 1 ? ' — feuille <select id="imp-feuille" class="input input-mini">' + feuilles.map((f, i) =>
+        '<option value="' + i + '"' + (f === feuille ? ' selected' : '') + '>' + esc(f.nom) + ' (' + f.lignes.length + ')</option>').join('') + '</select>' : '') + '</p>' +
+      '<h3>Correspondance des colonnes</h3>' +
+      '<div class="imp-assoc">' + conf.champs.map(c =>
+        '<label><span>' + esc(c.lbl) + (c.req ? ' <b class="imp-req">*</b>' : '') + (c.aide ? '<small>' + esc(c.aide) + '</small>' : '') + '</span>' +
+        '<select class="input" data-champ="' + c.cle + '"><option value="">— ignorer —</option>' +
+        feuille.colonnes.map((col, i) => '<option value="' + i + '"' + (assoc[c.cle] === i ? ' selected' : '') + '>' + esc(col) + '</option>').join('') +
+        '</select></label>').join('') + '</div>' +
+      (conf.options ? '<div class="imp-options">' + conf.options(ctx.options) + '</div>' : '') +
+      (manquants.length
+        ? '<div class="imp-erreur">Associez d\'abord les champs obligatoires : ' + esc(manquants.map(c => c.lbl).join(', ')) + '.</div>'
+        : '<h3>Aperçu</h3><p class="imp-bilan"><span class="imp-ok">' + ok.length + ' prête(s)</span>' +
+          (ign.length ? ' · <span class="imp-ign">' + ign.length + ' ignorée(s)</span>' : '') +
+          (ko.length ? ' · <span class="imp-ko">' + ko.length + ' en erreur (non importée(s))</span>' : '') + '</p>' +
+          '<div class="tbl-wrap imp-apercu"><table class="tbl"><thead><tr><th>Ligne</th>' + colsApercu.map(c => '<th>' + esc(c.lbl) + '</th>').join('') +
+          '<th>Résultat prévu</th></tr></thead><tbody>' +
+          prep.slice().sort((a, b) => (b.erreur ? 2 : (b.avertissements || []).length ? 1 : 0) - (a.erreur ? 2 : (a.avertissements || []).length ? 1 : 0)).slice(0, 12).map(p =>
+            '<tr><td>' + p.n + '</td>' + colsApercu.map(c => '<td>' + esc(String(feuille.lignes[p.n - 2][assoc[c.cle]] ?? '').slice(0, 60)) + '</td>').join('') +
+            '<td>' + statut(p) + '</td></tr>').join('') +
+          '</tbody></table></div>' + (prep.length > 12 ? '<p class="aide">Les erreurs et avertissements sont montrés en premier ; le rapport final détaillera chaque ligne.</p>' : '')) +
+      '<div class="modal-actions"><button type="button" class="btn" data-a="retour">Autre fichier</button>' +
+      '<button type="button" class="btn btn-primary" data-a="go"' + (ok.length ? '' : ' disabled') + '>Importer ' + ok.length + ' ligne(s)</button></div>';
+
+    const fs = $('#imp-feuille', zone);
+    if (fs) fs.addEventListener('change', () => { feuille = feuilles[Number(fs.value)]; associer(); etape2(); });
+    zone.querySelectorAll('select[data-champ]').forEach(s => s.addEventListener('change', () => {
+      assoc[s.dataset.champ] = s.value === '' ? null : Number(s.value); etape2();
+    }));
+    if (conf.options) {
+      zone.querySelector('.imp-options').addEventListener('change', () => {
+        zone.querySelectorAll('[data-opt]').forEach(i => { ctx.options[i.dataset.opt] = i.checked; });
+        etape2();
+      });
+    }
+    $('[data-a="retour"]', zone).addEventListener('click', () => etape1());
+    $('[data-a="go"]', zone).addEventListener('click', () => lancer(prep));
+  };
+
+  const lancer = async (prep) => {
+    const aFaire = prep.filter(p => !p.erreur && p.action !== 'Ignorer');
+    zone.innerHTML = '<h2>' + esc(conf.titre) + '</h2><p id="imp-prog" class="imp-prog">Import en cours… 0 / ' + aFaire.length + '</p>' +
+      '<div class="imp-barre"><div id="imp-jauge"></div></div>';
+    let res = [];
+    try {
+      res = await conf.envoyer(aFaire, (n) => {
+        const p = $('#imp-prog', zone); if (p) p.textContent = 'Import en cours… ' + n + ' / ' + aFaire.length;
+        const j = $('#imp-jauge', zone); if (j) j.style.width = Math.round(n / Math.max(1, aFaire.length) * 100) + '%';
+      }, ctx);
+    } catch (e) {
+      res = aFaire.map(() => ({ resultat: 'Erreur', detail: e.message || 'interrompu' }));
+    }
+    const lignesRapport = prep.map(p => {
+      if (p.erreur) return [p.n, 'Erreur', p.erreur, p.cle || '', ''];
+      if (p.action === 'Ignorer') return [p.n, 'Ignorée', p.detail || '', p.cle || '', ''];
+      const r = res[aFaire.indexOf(p)] || { resultat: 'Erreur', detail: 'non traitée' };
+      return [p.n, r.resultat, [r.detail].concat(p.avertissements || []).filter(Boolean).join(' · '), p.cle || '', r.extra || ''];
+    });
+    const compte = (r) => lignesRapport.filter(l => l[1] === r).length;
+    const avecExtra = lignesRapport.some(l => l[4]);
+    const rapport = { nom: 'Rapport d\'import', colonnes: ['Ligne du fichier', 'Résultat', 'Détail', conf.cleLbl || 'Élément'].concat(avecExtra ? [conf.rapportExtra || 'Information'] : []),
+      lignes: lignesRapport.map(l => avecExtra ? l : l.slice(0, 4)) };
+    zone.innerHTML = '<h2>' + esc(conf.titre) + ' — terminé</h2>' +
+      '<div class="stats imp-stats">' +
+      ['Créé', 'Mis à jour', 'Ignorée', 'Erreur'].map(r => '<div class="stat ' + ({ 'Créé': 'stat-resolu', 'Mis à jour': 'stat-nouveau', 'Ignorée': 'stat-en_attente', 'Erreur': 'stat-critique' })[r] +
+        '"><div class="stat-num">' + compte(r) + '</div><div class="stat-lbl">' + ({ 'Créé': 'Créé(s)', 'Mis à jour': 'Mis à jour', 'Ignorée': 'Ignorée(s)', 'Erreur': 'En erreur' })[r] + '</div></div>').join('') + '</div>' +
+      (avecExtra && conf.avertissementExtra ? '<div class="imp-erreur imp-attention">' + conf.avertissementExtra + '</div>' : '') +
+      '<p>Rapport détaillé, ligne par ligne : <button type="button" class="btn-lien" data-r="xlsx">Excel</button> · <button type="button" class="btn-lien" data-r="csv">CSV</button></p>' +
+      '<div class="modal-actions"><button type="button" class="btn btn-primary" data-a="fini">Fermer</button></div>';
+    zone.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.r === 'xlsx') Export.xlsx([rapport], 'rapport_import'); else Export.csv([rapport], 'rapport_import');
+    }));
+    $('[data-a="fini"]', zone).addEventListener('click', () => { m.close(); if (conf.termine) conf.termine(); });
+    if (compte('Créé') + compte('Mis à jour')) Son.jouer('succes');
+  };
+
+  etape1();
+}
+
+/* Envoi ligne à ligne (les mêmes contrôles que la saisie à l'écran s'appliquent). */
+async function envoyerUnParUn(lignes, progression, fn) {
+  const res = [];
+  for (let i = 0; i < lignes.length; i++) {
+    try { res.push(await fn(lignes[i])); }
+    catch (e) { res.push({ resultat: 'Erreur', detail: e && e.message && e.message !== 'api' ? e.message : 'refusé par le serveur' }); }
+    progression(i + 1);
+  }
+  return res;
+}
+/* Appel silencieux : l'erreur revient dans le rapport plutôt qu'en message à l'écran. */
+async function apiImport(action, data) {
+  try { return await api(action, data, null, { silencieux: true }); }
+  catch (e) { throw new Error(e && e.message && e.message !== 'api' ? e.message : 'refusé par le serveur'); }
+}
+
+/* ---------------------------------------------------- ce que l'on peut importer */
+
+function boutonImport(id) {
+  return '<button type="button" class="btn" id="' + id + '">' + ico('importer') + 'Importer</button>';
+}
+const txt = (v) => String(v == null ? '' : v).trim();
+const renseigne = (v) => v !== undefined && txt(v) !== '';
+
+/* Utilisateurs : création des comptes absents, mise à jour (facultative) des existants. */
+function confImportUtilisateurs(existants, termine) {
+  const parEmail = {}, parLogin = {};
+  existants.forEach(u => {
+    if (u.email) parEmail[String(u.email).toLowerCase()] = u;
+    if (u.login) parLogin[String(u.login).toLowerCase()] = u;
+  });
+  return {
+    titre: 'Importer des utilisateurs', cleLbl: 'Compte', rapportExtra: 'Mot de passe provisoire',
+    intro: '<p class="sous-titre">Crée les comptes absents et, si vous le souhaitez, met à jour ceux qui existent déjà ' +
+      '(reconnus par leur adresse email ou leur identifiant). Chaque compte créé reçoit un mot de passe provisoire, ' +
+      'sauf si le fichier en fournit un. Exemples de sources : export Excel de l\'annuaire, liste du personnel, export de cet outil.</p>',
+    champs: [
+      { cle: 'name', lbl: 'Nom complet', req: true, syn: ['nom', 'name', 'nom complet', 'utilisateur', 'displayname', 'nom affiche', 'collaborateur', 'salarie', 'nom et prenom', 'prenom nom', 'nom prenom'] },
+      { cle: 'prenom', lbl: 'Prénom', syn: ['prenom', 'firstname', 'givenname', 'first name'], aide: 'ajouté devant le nom' },
+      { cle: 'email', lbl: 'Adresse email', req: true, syn: ['email', 'e-mail', 'mail', 'courriel', 'adresse email', 'adresse mail', 'emailaddress', 'userprincipalname', 'upn'] },
+      { cle: 'login', lbl: 'Identifiant', syn: ['identifiant', 'login', 'samaccountname', 'compte windows', 'username', 'nom d utilisateur'], aide: 'sert à retrouver un compte existant' },
+      { cle: 'phone', lbl: 'Téléphone', syn: ['telephone', 'tel', 'poste', 'phone', 'mobile', 'portable', 'telephonenumber', 'numero de telephone'] },
+      { cle: 'role', lbl: 'Rôle', syn: ['role', 'profil', 'droits', 'type de compte outil'], aide: 'Employé ou Administrateur' },
+      { cle: 'active', lbl: 'Compte actif', syn: ['compte', 'compte actif', 'actif', 'active', 'enabled', 'etat'], aide: 'oui / non' },
+      { cle: 'password', lbl: 'Mot de passe', syn: ['mot de passe', 'mdp', 'password', 'pass'], aide: 'sinon généré' },
+    ],
+    exemple: ['Martin Dupont', '', 'm.dupont@d8.fr', '', '01 23 45 67 89', 'Employé', 'oui', ''],
+    optionsDefaut: { maj: true },
+    options: (o) => '<label class="check"><input type="checkbox" data-opt="maj"' + (o.maj ? ' checked' : '') +
+      '> Mettre à jour les comptes qui existent déjà (nom, téléphone, rôle, compte actif)</label>',
+    preparer(o, ctx) {
+      let nom = txt(o.name);
+      const prenom = txt(o.prenom), email = txt(o.email).toLowerCase(), login = txt(o.login).toLowerCase();
+      if (prenom && !Import.norm(nom).includes(Import.norm(prenom))) nom = prenom + ' ' + nom;
+      const cle = nom + (email ? ' <' + email + '>' : '');
+      const ex = parEmail[email] || (login && (parLogin[login] || parEmail[login])) || null;
+      if (nom.length < 2) return { erreur: 'nom manquant', cle };
+      if (!ex && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { erreur: email ? 'adresse email invalide' : 'adresse email manquante', cle };
+      const k = ex ? 'id' + ex.id : email;
+      if (ctx.vus[k]) return { erreur: 'en double dans le fichier (ligne ' + ctx.vus[k] + ')', cle };
+      ctx.vus[k] = ctx.n;
+      let role = null, actif = null;
+      if (renseigne(o.role)) {
+        role = codeImport(o.role, {
+          admin: ['admin', 'administrateur', 'administratrice', 'technicien', 'technicienne', 'informatique', 'it', 'support', 'service informatique'],
+          employe: ['employe', 'employee', 'utilisateur', 'user', 'standard', 'salarie', 'personnel', 'collaborateur'],
+        });
+        if (!role) return { erreur: 'rôle « ' + txt(o.role) + ' » non compris (Employé ou Administrateur)', cle };
+      }
+      if (renseigne(o.active)) {
+        actif = ouiNon(o.active);
+        if (actif === undefined) return { erreur: 'compte actif : « ' + txt(o.active) + ' » non compris (oui / non)', cle };
+      }
+      const pass = String(o.password == null ? '' : o.password);
+      if (pass && pass.length < 8) return { erreur: 'mot de passe trop court (8 caractères minimum)', cle };
+      if (ex) {
+        if (!ctx.options.maj) return { action: 'Ignorer', detail: 'compte déjà existant', cle };
+        return { action: 'Mettre à jour', cle, avertissements: pass ? ['mot de passe remplacé'] : [], valeurs: {
+          id: Number(ex.id), name: nom, email: ex.email || email, phone: o.phone !== undefined ? txt(o.phone) : (ex.phone || ''),
+          role: role || ex.role, active: actif == null ? Number(ex.active) === 1 : actif, password: pass } };
+      }
+      return { action: 'Créer', cle, avertissements: role === 'admin' ? ['aura les droits administrateur'] : [], valeurs: {
+        name: nom, email, phone: txt(o.phone), role: role || 'employe', active: actif == null ? true : actif, password: pass } };
+    },
+    envoyer: (lignes, prog) => envoyerUnParUn(lignes, prog, async (p) => {
+      const v = Object.assign({}, p.valeurs);
+      let genere = '';
+      if (!v.id && !v.password) v.password = genere = motDePasseProvisoire();
+      await apiImport('user_save', v);
+      return { resultat: v.id ? 'Mis à jour' : 'Créé', detail: '', extra: genere };
+    }),
+    avertissementExtra: 'Le rapport contient les <b>mots de passe provisoires</b> des comptes créés : transmettez-les individuellement, ' +
+      'puis supprimez le fichier. Pour que chacun puisse choisir le sien, cochez « Autoriser les employés à changer leur mot de passe » dans Paramètres.',
+    termine,
+  };
+}
+
+/* Tickets : reprise d'un historique (autre outil, tableau Excel). */
+function confImportTickets(termine) {
+  return {
+    titre: 'Importer des tickets', cleLbl: 'Ticket',
+    intro: '<p class="sous-titre">Pour reprendre l\'historique d\'un autre outil (GLPI, tableau Excel…) ou réimporter un export de cet outil. ' +
+      'Chaque ticket reçoit une nouvelle référence (l\'ancienne est notée dans sa description) ; <b>aucun courriel n\'est envoyé</b>. ' +
+      'Un ticket déjà présent (même titre, même date de création, même demandeur) est ignoré : relancer le même fichier ne crée pas de doublons.</p>',
+    champs: [
+      { cle: 'title', lbl: 'Titre', req: true, syn: ['titre', 'title', 'sujet', 'objet', 'intitule', 'summary', 'resume', 'libelle'] },
+      { cle: 'description', lbl: 'Description', syn: ['description', 'detail', 'details', 'contenu', 'body', 'message', 'demande', 'texte'] },
+      { cle: 'category', lbl: 'Catégorie', syn: ['categorie', 'category', 'type', 'rubrique', 'famille'] },
+      { cle: 'site', lbl: 'Site', syn: ['site', 'agence', 'lieu', 'location', 'etablissement', 'localisation'] },
+      { cle: 'priority', lbl: 'Priorité', syn: ['priorite', 'priority', 'urgence', 'impact'] },
+      { cle: 'status', lbl: 'Statut', syn: ['statut', 'status', 'etat', 'state'] },
+      { cle: 'demandeur', lbl: 'Demandeur', syn: ['demandeur', 'requester', 'createur', 'auteur', 'cree par', 'emetteur', 'requerant', 'reporter'], aide: 'email, identifiant ou nom' },
+      { cle: 'assigne', lbl: 'Assigné à', syn: ['assigne a', 'assigne', 'technicien', 'assigned to', 'assignee', 'intervenant', 'responsable', 'attribue a'] },
+      { cle: 'created_at', lbl: 'Créé le', syn: ['cree le', 'date de creation', 'date creation', 'created', 'created at', 'date ouverture', 'date d ouverture', 'ouverture', 'date'] },
+      { cle: 'closed_at', lbl: 'Fermé le', syn: ['ferme le', 'clos le', 'date de cloture', 'date cloture', 'date de resolution', 'resolu le', 'closed', 'closed at', 'resolved', 'solvedate'] },
+      { cle: 'time_spent', lbl: 'Temps passé', syn: ['temps passe (min)', 'temps passe', 'temps', 'duree totale', 'duree d intervention', 'duree intervention', 'temps total', 'time spent', 'minutes'], aide: 'minutes, ou « 1 h 30 »' },
+      { cle: 'ref', lbl: 'Référence d\'origine', syn: ['reference', 'ref', 'numero', 'ticket', 'id', 'key', 'cle'] },
+    ],
+    exemple: ['Imprimante bloquée au 2e étage', 'Bourrage papier répété sur l\'imprimante du couloir.', S.categories[0] || '', S.sites[0] || '',
+      'Normale', 'Résolu', 'm.dupont@d8.fr', '', '2026-03-05 09:12', '2026-03-05 11:40', '45', 'GLPI-1234'],
+    preparer(o) {
+      const titre = txt(o.title), cle = (renseigne(o.ref) ? txt(o.ref) + ' · ' : '') + titre.slice(0, 60);
+      if (titre.length < 2) return { erreur: 'titre manquant', cle };
+      const av = [];
+      let prio = 'normale';
+      if (renseigne(o.priority)) { const c = codeImport(o.priority, SYN_PRIORITE); if (c) prio = c; else av.push('priorité « ' + txt(o.priority) + ' » inconnue → Normale'); }
+      const creee = renseigne(o.created_at) ? dateImport(o.created_at) : null;
+      if (renseigne(o.created_at) && !creee) return { erreur: 'date de création illisible : ' + txt(o.created_at), cle };
+      if (!creee) av.push('sans date de création → aujourd\'hui');
+      const close = renseigne(o.closed_at) ? dateImport(o.closed_at) : null;
+      if (renseigne(o.closed_at) && !close) return { erreur: 'date de clôture illisible : ' + txt(o.closed_at), cle };
+      let statut = '';
+      if (renseigne(o.status)) { statut = codeImport(o.status, SYN_STATUT) || ''; if (!statut) av.push('statut « ' + txt(o.status) + ' » inconnu'); }
+      if (!statut) statut = close ? 'ferme' : 'nouveau';
+      const enHeures = /\(h\)|heure|hours?\b/i.test(o._entetes.time_spent || '');
+      let minutes = renseigne(o.time_spent) ? minutesImport(o.time_spent, enHeures) : 0;
+      if (minutes === null) { av.push('temps passé illisible → 0'); minutes = 0; }
+      const cat = txt(o.category), site = txt(o.site);
+      if (cat && !S.categories.includes(cat)) av.push('catégorie hors liste : ' + cat);
+      if (site && S.sites.length && !S.sites.includes(site)) av.push('site hors liste : ' + site);
+      return { action: 'Créer', cle, avertissements: av, valeurs: {
+        title: titre, description: txt(o.description), category: cat, site, priority: prio, status: statut,
+        demandeur: txt(o.demandeur), assigne: txt(o.assigne), created_at: creee || '', closed_at: close || '',
+        time_spent: minutes, ref: txt(o.ref) } };
+    },
+    async envoyer(lignes, prog) {
+      const res = [];
+      for (let i = 0; i < lignes.length; i += 100) {
+        const lot = lignes.slice(i, i + 100);
+        try {
+          const d = await apiImport('tickets_import', { lignes: lot.map(p => p.valeurs) });
+          d.resultats.forEach(r => res.push(r.ok
+            ? { resultat: r.ignore ? 'Ignorée' : 'Créé', detail: [r.ref].concat(r.avertissements || []).filter(Boolean).join(' — ') }
+            : { resultat: 'Erreur', detail: r.detail }));
+        } catch (e) { lot.forEach(() => res.push({ resultat: 'Erreur', detail: e.message })); }
+        prog(Math.min(lignes.length, i + 100));
+      }
+      return res;
+    },
+    termine,
+  };
+}
+
+/* Listes : catégories et sites ajoutés à ceux qui existent (jamais retirés). */
+function confImportListes(listes, termine) {
+  return {
+    titre: 'Importer des catégories et des sites', cleLbl: 'Valeur',
+    intro: '<p class="sous-titre">Ajoute aux listes les valeurs absentes ; rien n\'est retiré. Une colonne « Catégorie », ' +
+      'une colonne « Site », ou les deux.</p>',
+    champs: [
+      { cle: 'category', lbl: 'Catégorie', syn: ['categorie', 'categories', 'category', 'rubrique', 'type', 'famille'] },
+      { cle: 'site', lbl: 'Site', syn: ['site', 'sites', 'agence', 'lieu', 'etablissement', 'localisation'] },
+    ],
+    exemple: ['Matériel (PC, écran, imprimante…)', 'Vitry-sur-Seine'],
+    preparer(o, ctx) {
+      const cat = txt(o.category), site = txt(o.site), cle = [cat, site].filter(Boolean).join(' / ');
+      if (o.category === undefined && o.site === undefined) return { erreur: 'associez au moins la colonne Catégorie ou Site', cle };
+      const nouvCat = cat && !listes.categories.some(x => Import.norm(x) === Import.norm(cat)) && !ctx.vus['c' + Import.norm(cat)];
+      const nouvSite = site && !listes.sites.some(x => Import.norm(x) === Import.norm(site)) && !ctx.vus['s' + Import.norm(site)];
+      if (nouvCat) ctx.vus['c' + Import.norm(cat)] = ctx.n;
+      if (nouvSite) ctx.vus['s' + Import.norm(site)] = ctx.n;
+      if (!nouvCat && !nouvSite) return { action: 'Ignorer', detail: cle ? 'déjà dans la liste' : 'ligne vide', cle };
+      return { action: 'Ajouter', cle, valeurs: { cat: nouvCat ? cat : '', site: nouvSite ? site : '' } };
+    },
+    async envoyer(lignes, prog) {
+      const categories = listes.categories.concat(lignes.map(p => p.valeurs.cat).filter(Boolean));
+      const sites = listes.sites.concat(lignes.map(p => p.valeurs.site).filter(Boolean));
+      const d = await apiImport('settings_save', { categories, sites });
+      S.categories = d.categories; S.sites = d.sites;
+      prog(lignes.length);
+      return lignes.map(p => ({ resultat: 'Créé', detail: 'ajouté ' + [p.valeurs.cat ? 'aux catégories' : '', p.valeurs.site ? 'aux sites' : ''].filter(Boolean).join(' et ') }));
+    },
+    termine,
+  };
+}
+
+/* Procédures : fiches d'aide et réponses types. */
+function confImportProcedures(fiches, termine) {
+  const parTitre = {};
+  fiches.forEach(f => { parTitre[Import.norm(f.title)] = f; });
+  return {
+    titre: 'Importer des procédures', cleLbl: 'Fiche',
+    intro: '<p class="sous-titre">Une ligne par fiche : un titre et un contenu au minimum. Pratique pour reprendre une FAQ ' +
+      'tenue dans Excel ou un export de cet outil.</p>',
+    champs: [
+      { cle: 'title', lbl: 'Titre', req: true, syn: ['titre', 'title', 'question', 'sujet', 'nom'] },
+      { cle: 'body', lbl: 'Contenu', req: true, syn: ['contenu', 'texte', 'corps', 'body', 'reponse', 'procedure', 'description', 'solution'] },
+      { cle: 'category', lbl: 'Rubrique', syn: ['rubrique', 'categorie', 'category', 'theme'] },
+      { cle: 'public', lbl: 'Visible du personnel', syn: ['visible du personnel', 'visible', 'public', 'publique'], aide: 'oui / non (oui par défaut)' },
+      { cle: 'modele', lbl: 'Réponse type', syn: ['reponse type', 'modele', 'template'], aide: 'oui / non (non par défaut)' },
+    ],
+    exemple: ['Réinitialiser son mot de passe Windows', '1. Appuyez sur Ctrl+Alt+Suppr\n2. Choisissez « Modifier un mot de passe »…', S.categories[0] || '', 'oui', 'non'],
+    optionsDefaut: { remplacer: false },
+    options: (o) => '<label class="check"><input type="checkbox" data-opt="remplacer"' + (o.remplacer ? ' checked' : '') +
+      '> Remplacer les fiches qui portent déjà le même titre</label>',
+    preparer(o, ctx) {
+      const titre = txt(o.title), corps = String(o.body == null ? '' : o.body).trim(), cle = titre.slice(0, 70);
+      if (titre.length < 3) return { erreur: 'titre manquant ou trop court', cle };
+      if (corps.length < 10) return { erreur: 'contenu manquant ou trop court (10 caractères minimum)', cle };
+      if (corps.length > 20000) return { erreur: 'contenu trop long (20 000 caractères maximum)', cle };
+      if (ctx.vus[Import.norm(titre)]) return { erreur: 'titre en double dans le fichier (ligne ' + ctx.vus[Import.norm(titre)] + ')', cle };
+      ctx.vus[Import.norm(titre)] = ctx.n;
+      const pub = renseigne(o.public) ? ouiNon(o.public) : true, mod = renseigne(o.modele) ? ouiNon(o.modele) : false;
+      if (pub === undefined || mod === undefined) return { erreur: 'valeur oui / non non comprise', cle };
+      if (!pub && !mod) return { erreur: 'une fiche doit être visible du personnel ou réponse type', cle };
+      const ex = parTitre[Import.norm(titre)];
+      if (ex && !ctx.options.remplacer) return { action: 'Ignorer', detail: 'une fiche porte déjà ce titre', cle };
+      return { action: ex ? 'Mettre à jour' : 'Créer', cle, valeurs: { id: ex ? ex.id : 0, title: titre, body: corps, category: txt(o.category), public: pub, modele: mod } };
+    },
+    envoyer: (lignes, prog) => envoyerUnParUn(lignes, prog, async (p) => {
+      await apiImport('procedure_save', p.valeurs);
+      return { resultat: p.valeurs.id ? 'Mis à jour' : 'Créé', detail: '' };
+    }),
+    termine,
+  };
 }
 
 /* ================================================ graphiques (SVG) */
@@ -3500,13 +4445,24 @@ function graphBarres(W, lignes, opts) {
 
 /* Diagramme de Gantt : une barre par ticket, de sa création à sa clôture
    (ou à aujourd'hui s'il est encore ouvert), couleur = priorité. */
-function graphGantt(W, tickets, du, au, maintenant) {
+function graphGantt(W, tickets, du, au, maintenant, opts) {
+  opts = opts || {};
   const t0 = dateLocale(du + ' 00:00:00').getTime();
   const t1 = Math.max(t0 + 864e5, dateLocale(au + ' 23:59:59').getTime());
   const now = (dateLocale(maintenant) || new Date()).getTime();
   if (!tickets.length) return '<p class="sous-titre">Aucun ticket sur la période.</p>';
   const lw = Math.min(300, Math.round(W * .34)), d = 14, haut = 30, rh = 22;
-  const H = haut + tickets.length * rh + 8, pw = W - lw - d;
+  // Lignes affichées : les tickets, précédés d'un intertitre à chaque nouveau groupe (ex. technicien).
+  const lignes = [];
+  let groupe = null;
+  tickets.forEach(t => {
+    if (opts.groupe) {
+      const g = opts.groupe(t);
+      if (g !== groupe) { groupe = g; lignes.push({ titre: g, n: tickets.filter(x => opts.groupe(x) === g).length }); }
+    }
+    lignes.push({ t });
+  });
+  const H = haut + lignes.length * rh + 8, pw = W - lw - d;
   const X = (t) => lw + (Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0) * pw;
   const nbCar = Math.max(8, Math.floor(lw / 6.8));
   let s = svgOuvre(W, H, 'Chronologie des tickets');
@@ -3527,8 +4483,14 @@ function graphGantt(W, tickets, du, au, maintenant) {
       '<text x="' + x + '" y="' + (haut - 12) + '" text-anchor="middle" class="viz-axe">' + esc(lbl) + '</text>';
   });
 
-  tickets.forEach((t, i) => {
+  lignes.forEach((ligne, i) => {
     const y = haut + i * rh;
+    if (ligne.titre != null) {
+      s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + rh + '" fill="#E9EEF0"/>' +
+        '<text x="6" y="' + (y + rh / 2 + 4) + '" class="viz-lbl" style="font-weight:700">' + esc(ligne.titre) + ' — ' + ligne.n + ' ticket(s)</text>';
+      return;
+    }
+    const t = ligne.t;
     const deb = dateLocale(t.created_at).getTime();
     const finT = t.closed_at ? dateLocale(t.closed_at).getTime() : now;
     const x1 = X(deb), x2 = Math.max(X(finT), x1 + 3);
@@ -3685,7 +4647,10 @@ async function vueStats() {
     '</tr></thead><tbody>' + (f.lignes.length ? f.lignes.map(l => '<tr>' + l.map(c => '<td>' +
       esc(typeof c === 'number' ? String(c).replace('.', ',') : /^\d{4}-\d{2}-\d{2}/.test(String(c)) ? fmtDate(c) : c) + '</td>').join('') + '</tr>').join('')
       : '<tr><td colspan="' + f.colonnes.length + '">Aucune donnée.</td></tr>') + '</tbody></table></div></details>';
-  const carte = (id, titre, f, large) => '<div class="card viz-carte' + (large ? ' viz-large' : '') + '"><h2>' + esc(titre) + '</h2>' +
+  const carte = (id, titre, f, large) => '<div class="card viz-carte' + (large ? ' viz-large' : '') + '">' +
+    '<div class="viz-tete"><h2>' + esc(titre) + '</h2><span class="viz-img" role="group" aria-label="Enregistrer le graphique en image">' +
+    '<button type="button" class="btn btn-mini" data-img="png" title="Image PNG (PowerPoint, courriel)">PNG</button>' +
+    '<button type="button" class="btn btn-mini" data-img="svg" title="Image vectorielle SVG">SVG</button></span></div>' +
     '<div class="viz" id="' + id + '"></div>' + (f ? tableau(f) : '') + '</div>';
 
   const tile = (cls, v, l) => '<div class="stat ' + cls + '"><div class="stat-num">' + v + '</div><div class="stat-lbl">' + l + '</div></div>';
@@ -3716,7 +4681,7 @@ async function vueStats() {
   // Options du Gantt : filtre et nombre de lignes.
   const G = S.ganttOpts || (S.ganttOpts = { ouverts: false, tout: false });
   const ganttCarte = $('#g-gantt').parentElement;
-  ganttCarte.querySelector('h2').insertAdjacentHTML('afterend',
+  ganttCarte.querySelector('.viz-tete').insertAdjacentHTML('afterend',
     '<div class="viz-options"><label class="check"><input type="checkbox" id="gt-ouv"' + (G.ouverts ? ' checked' : '') + '> Tickets encore ouverts seulement</label>' +
     '<span class="sous-titre" id="gt-info"></span></div>');
 
@@ -3780,6 +4745,10 @@ async function vueStats() {
   };
   dessiner();
   $('#gt-ouv').addEventListener('change', () => { G.ouverts = $('#gt-ouv').checked; dessiner(); });
+  $('#stats').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-img]');
+    if (b) Export.image(b.closest('.viz-carte'), b.dataset.img);
+  });
 
   // Redessin à la bonne largeur si la fenêtre change de taille.
   let minuteur = null;
@@ -3823,7 +4792,7 @@ function vueTickets() {
     '<div class="page-head"><div><h1>' + (staff ? 'Tickets' : 'Mes demandes') + '</h1>' +
     '<p class="sous-titre">' + (staff ? 'Toutes les demandes du personnel' : 'Vos demandes auprès du service informatique') + '</p></div>' +
     '<div class="page-actions">' +
-    (staff ? boutonsExport('exp-tickets') : '') +
+    (staff ? boutonImport('imp-tickets') + boutonsExport('exp-tickets') : '') +
     '<button type="button" class="btn" id="btn-maj">' + ico('maj') + 'Actualiser</button>' +
     '<a class="btn btn-primary" href="#/nouveau">' + ico('plus') + 'Nouveau ticket</a>' +
     '</div></div>' +
@@ -3873,6 +4842,7 @@ function vueTickets() {
     $('#fl-dormants').addEventListener('change', () => { f.stale_only = $('#fl-dormants').checked; relire(); });
     // L'export contient exactement ce que l'écran affiche : tous les filtres
     // sont repris (« assigné à », « sans réponse »…), sur toutes les pages.
+    $('#imp-tickets').addEventListener('click', () => ouvrirImport(confImportTickets(() => chargerListe())));
     brancherExport('exp-tickets', async (format) => {
       const filtres = {};
       ['status', 'priority', 'category', 'site', 'q', 'assigned'].forEach(k => { if (f[k]) filtres[k] = f[k]; });
@@ -3902,7 +4872,7 @@ function vueTickets() {
             String(r.created_at).slice(0, 10), joursLbl(r.jours)]) };
         return { titre: 'Liste des tickets', sousTitre: desc.length ? 'Filtres : ' + desc.join(', ') : 'Tous les tickets', html: Export.tableHtml(pdfF), paysage: true };
       }
-      return { base: 'tickets', feuilles: [feuille] };
+      return { base: 'tickets', titre: 'Liste des tickets', sousTitre: desc.length ? 'Filtres : ' + desc.join(', ') : 'Tous les tickets', feuilles: [feuille] };
     });
   }
   $('#fl-raz').addEventListener('click', () => { S.filtres = filtresDefaut(); vueTickets(); });
@@ -4388,7 +5358,7 @@ async function vueUtilisateurs() {
   main.innerHTML =
     '<div class="page-head"><div><h1>Utilisateurs</h1>' +
     "<p class=\"sous-titre\">Comptes du personnel ayant accès à l'outil</p></div>" +
-    '<div class="page-actions">' + boutonsExport('exp-users') +
+    '<div class="page-actions">' + boutonImport('imp-users') + boutonsExport('exp-users') +
     '<button type="button" class="btn" id="btn-journal">Journal des connexions</button>' +
     '<button type="button" class="btn btn-primary" id="btn-ajout">' + ico('plus') + 'Ajouter un utilisateur</button></div></div>' +
     '<div id="zone-u">' + chargement() + '</div>';
@@ -4400,6 +5370,7 @@ async function vueUtilisateurs() {
   try { rows = await api('users_list'); } catch (e) { return; }
   if (!encoreValide(token)) return;
 
+  $('#imp-users').addEventListener('click', () => ouvrirImport(confImportUtilisateurs(rows, vueUtilisateurs)));
   // Export : utile pour la revue des accès (comptes jamais utilisés, anciens salariés).
   brancherExport('exp-users', () => ({
     base: 'utilisateurs', titre: 'Utilisateurs', sousTitre: rows.length + ' compte(s)', paysage: true,
@@ -4729,7 +5700,8 @@ async function vueListes() {
 
   main.innerHTML =
     '<div class="page-head"><div><h1>Listes</h1>' +
-    '<p class="sous-titre">Ce que le personnel voit dans les menus déroulants du formulaire</p></div></div>' +
+    '<p class="sous-titre">Ce que le personnel voit dans les menus déroulants du formulaire</p></div>' +
+    '<div class="page-actions">' + boutonImport('imp-listes') + boutonsExport('exp-listes') + '</div></div>' +
     '<form id="f-listes" novalidate>' +
     '<div class="card"><h2>Catégories de tickets</h2>' +
     '<div class="field"><label for="li-cat">Une par ligne</label>' +
@@ -4744,6 +5716,14 @@ async function vueListes() {
     '<button class="btn btn-primary" type="submit">Enregistrer les listes</button>' +
     '</form>';
 
+  $('#imp-listes').addEventListener('click', () => ouvrirImport(confImportListes(
+    { categories: c.categories || [], sites: c.sites || [] }, vueListes)));
+  brancherExport('exp-listes', () => {
+    const cats = c.categories || [], sites = c.sites || [];
+    return { base: 'listes', titre: 'Listes', sousTitre: 'Catégories de tickets et sites',
+      feuilles: [{ nom: 'Listes', colonnes: ['Catégorie', 'Site'],
+        lignes: Array.from({ length: Math.max(cats.length, sites.length) }, (_, i) => [cats[i] || '', sites[i] || '']) }] };
+  });
   $('#f-listes').addEventListener('submit', async (e) => {
     e.preventDefault();
     const lister = (v) => v.split('\n').map(x => x.trim()).filter(x => x !== '');
@@ -4802,11 +5782,26 @@ async function vueProcedures() {
     '<p class="sous-titre">' + (staff
       ? 'Les fiches servent deux fois : consultables par le personnel, et insérables en un clic dans une réponse.'
       : 'Les gestes simples à essayer avant d\'ouvrir un ticket.') + '</p></div>' +
-    (staff ? '<div class="page-actions"><button type="button" class="btn btn-primary" id="fiche-new">' +
-      ico('plus') + 'Nouvelle fiche</button></div>' : '') + '</div>' +
+    '<div class="page-actions">' + (staff ? boutonImport('imp-proc') : '') + boutonsExport('exp-proc') +
+    (staff ? '<button type="button" class="btn btn-primary" id="fiche-new">' + ico('plus') + 'Nouvelle fiche</button>' : '') + '</div></div>' +
     (corps || '<div class="card vide"><p>Aucune fiche pour le moment.</p></div>');
 
+  // Export : tableau (Excel, CSV, JSON, XML) ou document lisible (PDF, page web, Markdown).
+  const visibles = fiches.filter(f => staff || Number(f.public));
+  brancherExport('exp-proc', () => {
+    const tri = visibles.slice().sort((a, b) => (a.category || 'Général').localeCompare(b.category || 'Général', 'fr') || a.title.localeCompare(b.title, 'fr'));
+    const html = tri.map(f => '<div class="imp-bloc imp-fiche"><h2>' + esc(f.title) + '</h2><p class="imp-date">' + esc(f.category || 'Général') +
+      (Number(f.modele) ? ' · réponse type' : '') + '</p><div style="white-space:pre-wrap">' + esc(f.body) + '</div></div>').join('');
+    return {
+      base: 'procedures', titre: staff ? 'Procédures' : 'Aide et procédures', sousTitre: tri.length + ' fiche(s)', html,
+      markdown: '# ' + (staff ? 'Procédures' : 'Aide et procédures') + '\n\n' + tri.map(f => '## ' + f.title + '\n\n*' + (f.category || 'Général') + '*\n\n' + f.body).join('\n\n') + '\n',
+      feuilles: [{ nom: 'Procédures', colonnes: ['Titre', 'Rubrique', 'Contenu', 'Visible du personnel', 'Réponse type', 'Mis à jour le'],
+        lignes: tri.map(f => [f.title, f.category || '', f.body, Number(f.public) ? 'oui' : 'non', Number(f.modele) ? 'oui' : 'non', f.updated_at || '']) }],
+    };
+  });
+
   if (staff) {
+    $('#imp-proc').addEventListener('click', () => ouvrirImport(confImportProcedures(fiches, vueProcedures)));
     $('#fiche-new').addEventListener('click', () => modaleFiche(null));
     document.querySelectorAll('[data-mod]').forEach(b => b.addEventListener('click',
       () => modaleFiche(fiches.find(f => String(f.id) === b.dataset.mod))));
@@ -6346,7 +7341,7 @@ const ACTIONS_MODIFIANTES = [
     'ticket_create', 'ticket_update', 'ticket_claim', 'ticket_delete',
     'ticket_close_own', 'ticket_reopen_own', 'comment_add',
     'user_save', 'settings_save', 'mail_test', 'ldap_test',
-    'procedure_save', 'procedure_delete', 'tickets_bulk', 'db_optimize',
+    'procedure_save', 'procedure_delete', 'tickets_bulk', 'db_optimize', 'tickets_import',
 ];
 if (in_array($action, ACTIONS_MODIFIANTES, true) && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Allow: POST');
@@ -6664,6 +7659,14 @@ case 'dashboard': {
              WHERE strftime('%Y-%m', created_at) = '" . date('Y-m') . "'")->fetchColumn(),
         'nb_users'   => users_count(),
         'nb_tickets' => (int) db()->query('SELECT COUNT(*) FROM tickets')->fetchColumn(),
+        // Plan de charge : tickets ouverts, par technicien (diagramme de Gantt).
+        'ouverts' => db()->query(
+            "SELECT t.id, t.ref, t.title, t.status, t.priority, t.category, t.site, t.created_at, t.closed_at,
+                    COALESCE(a.name, '') AS assignee, c.name AS creator_name
+             FROM tickets t LEFT JOIN users a ON a.id = t.assigned_to JOIN users c ON c.id = t.created_by
+             WHERE t.status NOT IN ('resolu','ferme')
+             ORDER BY a.name IS NULL, a.name COLLATE NOCASE, t.created_at LIMIT 300")->fetchAll(),
+        'maintenant' => now(),
     ]);
 }
 
@@ -7867,6 +8870,109 @@ case 'export_csv': {
     }
     fclose($out);
     exit;
+}
+
+/*
+ * Import d'un historique de tickets (autre outil, tableau Excel), par lots.
+ * Aucune notification n'est envoyée. Un ticket déjà présent (même titre, même
+ * date de création, même demandeur) est ignoré : relancer le même fichier ne
+ * crée pas de doublons. La référence d'origine est notée dans la description.
+ */
+case 'tickets_import': {
+    $me = require_auth();
+    require_role($me, ['admin']);
+    check_csrf();
+    $lignes = body()['lignes'] ?? null;
+    if (!is_array($lignes) || count($lignes) > 200) {
+        fail('Lot d\'import invalide.');
+    }
+    $couper = static function (string $s, int $n): string {
+        return preg_match('/^.{0,' . $n . '}/us', $s, $m) ? $m[0] : substr($s, 0, $n);
+    };
+    $date = static function ($v): ?string {
+        $v = (string) $v;
+        return preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $v) && strtotime($v) !== false ? $v : null;
+    };
+    $comptes = db()->query('SELECT id, name, email, login, role, active FROM users')->fetchAll();
+    $trouver = static function (string $v) use ($comptes): ?array {
+        $n = sans_accent(trim($v));
+        if ($n === '') { return null; }
+        foreach ($comptes as $u) {
+            if ($n === sans_accent((string) $u['email']) || $n === sans_accent((string) $u['login'])) { return $u; }
+        }
+        foreach ($comptes as $u) {
+            if ($n === sans_accent((string) $u['name'])) { return $u; }
+        }
+        return null;
+    };
+    $categories = setting_list('categories');
+    $prefixe = setting_get('ref_prefix', 'D8');
+    $pdo = db();
+    $resultats = [];
+    $pdo->beginTransaction();
+    try {
+        foreach ($lignes as $l) {
+            if (!is_array($l)) { $resultats[] = ['ok' => false, 'detail' => 'ligne illisible']; continue; }
+            $av = [];
+            $titre = trim((string) ($l['title'] ?? ''));
+            if (len($titre) < 2) { $resultats[] = ['ok' => false, 'detail' => 'titre manquant']; continue; }
+            if (len($titre) > 150) { $titre = $couper($titre, 150); $av[] = 'titre raccourci à 150 caractères'; }
+            $desc = trim((string) ($l['description'] ?? ''));
+            if ($desc === '') { $desc = $titre; }
+            $prio = in_array($l['priority'] ?? '', PRIORITIES, true) ? $l['priority'] : 'normale';
+            $statut = in_array($l['status'] ?? '', STATUSES, true) ? $l['status'] : 'nouveau';
+            $cree = $date($l['created_at'] ?? '') ?? now();
+            $clos = $date($l['closed_at'] ?? '');
+            if (in_array($statut, ['resolu', 'ferme'], true)) {
+                if ($clos === null) { $clos = $cree; $av[] = 'clôture sans date : datée du jour de création'; }
+                if ($clos < $cree) { $clos = $cree; $av[] = 'clôture antérieure à la création : corrigée'; }
+            } else {
+                $clos = null;
+            }
+            $demandeur = trim((string) ($l['demandeur'] ?? ''));
+            $dem = $trouver($demandeur);
+            if (!$dem) {
+                $dem = $me;
+                if ($demandeur !== '') { $av[] = 'demandeur inconnu (« ' . $demandeur . ' ») : rattaché à vous'; $desc .= "\n\nDemandeur d'origine : " . $demandeur; }
+            }
+            $assigne = trim((string) ($l['assigne'] ?? ''));
+            $tech = null;
+            if ($assigne !== '') {
+                $t = $trouver($assigne);
+                if ($t && $t['role'] === 'admin') { $tech = (int) $t['id']; }
+                else { $av[] = 'technicien « ' . $assigne . ' » introuvable parmi les administrateurs : non assigné'; }
+            }
+            $cat = trim((string) ($l['category'] ?? ''));
+            if ($cat === '') { $cat = $categories[count($categories) - 1] ?? 'Autre'; $av[] = 'sans catégorie : « ' . $cat . ' »'; }
+            $refOrigine = trim((string) ($l['ref'] ?? ''));
+            if ($refOrigine !== '') { $desc .= "\n\nRéférence d'origine : " . $refOrigine; }
+            $desc = $couper($desc, 20000);
+
+            $st = $pdo->prepare('SELECT ref FROM tickets WHERE title = ? AND created_at = ? AND created_by = ? LIMIT 1');
+            $st->execute([$titre, $cree, (int) $dem['id']]);
+            if ($doublon = $st->fetchColumn()) {
+                $resultats[] = ['ok' => true, 'ignore' => true, 'ref' => $doublon, 'avertissements' => ['déjà présent : ' . $doublon]];
+                continue;
+            }
+            $pdo->prepare('INSERT INTO tickets (title, description, category, site, priority, status, created_by, assigned_to,
+                                                created_at, updated_at, closed_at, time_spent)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$titre, $desc, $cat, $couper(trim((string) ($l['site'] ?? '')), 120), $prio, $statut, (int) $dem['id'], $tech,
+                           $cree, $clos ?? $cree, $clos, max(0, min(100000, (int) ($l['time_spent'] ?? 0)))]);
+            $id = (int) $pdo->lastInsertId();
+            $ref = $prefixe . '-' . sprintf('%04d', $id);
+            $pdo->prepare('UPDATE tickets SET ref = ? WHERE id = ?')->execute([$ref, $id]);
+            sys_comment($id, (int) $me['id'], 'Ticket importé depuis un fichier' . ($refOrigine !== '' ? ' (référence d\'origine : ' . $refOrigine . ')' : '') . '.');
+            mark_seen((int) $me['id'], $id);   // pas de pastille « nouveau » sur tout l'historique
+            $resultats[] = ['ok' => true, 'ref' => $ref, 'avertissements' => $av];
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        journal_erreur('Import de tickets : ' . $e->getMessage());
+        fail('Import interrompu, rien n\'a été enregistré pour ce lot : ' . $e->getMessage(), 500);
+    }
+    ok(['resultats' => $resultats]);
 }
 
 /* Mêmes tickets que l'export CSV, en JSON : le navigateur en fait un fichier
