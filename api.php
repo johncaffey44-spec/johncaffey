@@ -51,6 +51,12 @@ $MIN_PASSWORD  = 8;                   // longueur minimale des mots de passe
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
 $FAIL_WINDOW   = 900;                 // …sur cette durée (s), puis blocage pendant la même durée
 
+/* --- super administrateur : mot de passe exigé pour « Vider les projets », « Tout réinitialiser »
+   et « Restaurer ». Seule son empreinte (bcrypt) figure ici. Il se change depuis l'application
+   (Données & sauvegarde) : le nouveau est alors rangé dans data/superadmin.json, qui prime. */
+$SUPERADMIN_HASH = '$2y$12$t95WZ/hH9x3iSbXx/h0O5u2KxUSyRUu8qsE0QFbDbbAI0eQe6EHZW';
+$SUPERADMIN_TTL  = 300;               // validité (s) d'une confirmation super administrateur
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, max-age=0');
 header('X-Content-Type-Options: nosniff');
@@ -208,6 +214,16 @@ function open_session(string $login, array $a, string $name): array {
     $_SESSION['auth'] = ['login' => $login, 'userId' => (string)$a['userId'], 'name' => $name, 'stamp' => (string)$a['stamp'], 'seen' => time()];
     return $_SESSION['auth'];
 }
+function superadmin_hash(string $DATA_DIR, string $default): string {
+    $h = read_json("$DATA_DIR/superadmin.json")['hash'] ?? '';
+    return is_string($h) && $h !== '' ? $h : $default;
+}
+/** volume d'un planning et identité de la base (meta.gen change si la base est remplacée) */
+function doc_shape(?array $d): array {
+    $n = 0;
+    foreach (['projects', 'ops', 'absences'] as $k) $n += is_array($d[$k] ?? null) ? count($d[$k]) : 0;
+    return ['total' => $n, 'gen' => (string)($d['meta']['gen'] ?? '')];
+}
 function me_payload(array $s): array {
     return ['auth' => true, 'userId' => $s['userId'], 'login' => $s['login'], 'name' => $s['name'], 'build' => page_build()];
 }
@@ -220,7 +236,30 @@ $me = auth_user($ACC, $SESSION_IDLE, $lock);
 $PUBLIC = ['me', 'signup-list', 'signup', 'login', 'logout'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);
 // la session n'est plus modifiée ensuite : on la libère pour ne pas bloquer les requêtes parallèles
-if (!in_array($action, ['signup', 'login', 'logout', 'password'], true)) session_write_close();
+if (!in_array($action, ['signup', 'login', 'logout', 'password', 'sa-check', 'sa-change'], true)) session_write_close();
+
+/* --- super administrateur : confirmation (valable $SUPERADMIN_TTL s pour cette session) --- */
+if ($action === 'sa-check' || $action === 'sa-change') {
+    $in = body_json();
+    flock($lock, LOCK_EX);
+    if (!is_admin(read_doc($FILE), $me['userId']) && is_file($FILE)) out(403, ['error' => 'Réservé aux administrateurs']);
+    throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
+    if (!password_verify((string)($in['password'] ?? ''), superadmin_hash($DATA_DIR, $SUPERADMIN_HASH))) {
+        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+        out(403, ['error' => 'Mot de passe super administrateur incorrect.']);
+    }
+    throttle_clear($FAILS, $ip);
+    if ($action === 'sa-change') {
+        $next = (string)($in['next'] ?? '');
+        if (strlen($next) < 12) out(400, ['error' => 'Le mot de passe super administrateur doit faire au moins 12 caractères.']);
+        if (strlen($next) > 200) out(400, ['error' => 'Mot de passe trop long.']);
+        if (!write_json("$DATA_DIR/superadmin.json", ['hash' => password_hash($next, PASSWORD_DEFAULT), 'changed' => date('c'), 'by' => $me['name']]))
+            out(500, ['error' => 'Écriture impossible']);
+    }
+    flock($lock, LOCK_UN);
+    $_SESSION['sa_until'] = time() + $SUPERADMIN_TTL;
+    out(200, ['ok' => true, 'ttl' => $SUPERADMIN_TTL]);
+}
 
 /* --- qui suis-je ? --- */
 if ($action === 'me') {
@@ -410,6 +449,8 @@ if ($action === 'save') {
     if (!valid_json($body)) out(400, ['error' => 'JSON invalide']);
     $base = isset($_GET['base']) ? (int)$_GET['base'] : -1;
     $by = cut((string)$me['name'], 80);     // l'auteur vient de la session, pas du navigateur
+    $shape = doc_shape(json_decode($body, true));
+    $sa = (int)($_SESSION['sa_until'] ?? 0) > time();
 
     flock($lock, LOCK_EX);
     $m = read_meta($META);
@@ -420,6 +461,13 @@ if ($action === 'save') {
         http_response_code(409);
         echo '{"version":' . $cur . ',"savedAt":' . json_encode($m['savedAt']) . ',"data":' . ($raw !== '' ? $raw : 'null') . '}';
         exit;
+    }
+    // remplacement de la base ou suppression massive : confirmation super administrateur exigée
+    $was = $m['shape'] ?? null;
+    if (is_array($was) && !$sa && (($was['gen'] !== '' && $shape['gen'] !== '' && $was['gen'] !== $shape['gen'])
+        || ((int)$was['total'] >= 10 && $shape['total'] < (int)$was['total'] / 2))) {
+        flock($lock, LOCK_UN);
+        out(403, ['superadmin' => true, 'error' => 'Opération réservée au super administrateur.']);
     }
     // copie de sécurité espacée dans le temps
     $bdir = "$DATA_DIR/backups";
@@ -442,7 +490,7 @@ if ($action === 'save') {
         flock($lock, LOCK_UN);
         out(500, ['error' => 'Écriture impossible']);
     }
-    $new = ['version' => $cur + 1, 'savedAt' => date('c'), 'by' => $by, 'bytes' => strlen($body)];
+    $new = ['version' => $cur + 1, 'savedAt' => date('c'), 'by' => $by, 'bytes' => strlen($body), 'shape' => $shape];
     @file_put_contents($META, json_encode($new, JSON_UNESCAPED_UNICODE));
     flock($lock, LOCK_UN);
     out(200, ['version' => $new['version'], 'savedAt' => $new['savedAt']]);

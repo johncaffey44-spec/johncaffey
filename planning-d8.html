@@ -843,6 +843,7 @@ function migrate(d) {
   if (!d || typeof d !== 'object' || Array.isArray(d)) return seed();
   d.schema = d.schema || 1;
   d.meta = d.meta || {};
+  d.meta.gen = d.meta.gen || uid('g');      // identité de la base : change quand elle est vidée, réinitialisée ou restaurée
   d.log = Array.isArray(d.log) ? d.log : [];
   d.settings = Object.assign({}, DEFAULT_SETTINGS, d.settings || {});
   for (const k of COLLS) if (!Array.isArray(d[k])) d[k] = [];
@@ -1070,6 +1071,54 @@ const Auth = {
   }
 };
 
+/* ---------- super administrateur ----------
+   Exigé pour vider, réinitialiser ou restaurer la base. En base partagée, le mot de passe est
+   vérifié par le serveur (api.php), qui refuse aussi ces opérations sans confirmation.
+   En base locale, seule cette empreinte le vérifie : simple garde-fou contre les fausses manœuvres. */
+const SA_LOCAL = { salt: '43f481137543254e', sha256: '6be04719b753012489a0616109231983d49a5eb7d4a5913ae63b3f89184e7986' };
+async function sha256hex(t) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function superAdmin(msg, o = {}) {
+  return new Promise(res => {
+    let done = false;
+    const m = modal({
+      size: 'sm', title: o.title || 'Mot de passe super administrateur',
+      body: `<form id="sa-f" class="fgrid one" novalidate>
+        <p style="margin:0;line-height:1.5">${msg}</p>
+        <input type="text" name="username" value="superadmin" autocomplete="username" hidden>
+        <div class="fld"><label>Mot de passe super administrateur</label><input class="in" type="password" name="password" autocomplete="current-password" autofocus></div>
+        ${o.change ? `<div class="fld"><label>Nouveau mot de passe (12 caractères minimum)</label><input class="in" type="password" name="next" autocomplete="new-password"></div>
+        <div class="fld"><label>Confirmation</label><input class="in" type="password" name="confirm" autocomplete="new-password"></div>` : ''}
+        <div class="bnr danger hide" data-err></div></form>`,
+      foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn ${o.change ? 'pri' : 'dgr'}" data-ok>${esc(o.ok || 'Confirmer')}</button>`,
+      onClose: () => { if (!done) res(false); }
+    });
+    const err = t => { const b = $('[data-err]', m.el); b.innerHTML = ic('warn') + '<span>' + esc(t) + '</span>'; b.classList.remove('hide'); };
+    const go = async () => {
+      const v = Object.fromEntries(new FormData($('#sa-f', m.el)));
+      if (!v.password) return err('Saisissez le mot de passe.');
+      if (o.change && String(v.next || '').length < 12) return err('Le nouveau mot de passe doit faire au moins 12 caractères.');
+      if (o.change && v.next !== v.confirm) return err('Les deux nouveaux mots de passe ne correspondent pas.');
+      const btn = $('[data-ok]', m.el); btn.disabled = true;
+      let good = false;
+      if (Sync.mode === 'server') {
+        const r = await Auth.api(o.change ? 'sa-change' : 'sa-check', o.change ? { password: v.password, next: v.next } : { password: v.password }).catch(() => null);
+        good = !!(r && r.ok);
+        if (!good) { btn.disabled = false; return err((r && r.body && r.body.error) || 'Serveur injoignable.'); }
+      } else {
+        try { good = await sha256hex(SA_LOCAL.salt + v.password) === SA_LOCAL.sha256; }
+        catch (e) { btn.disabled = false; return err('Vérification impossible dans ce navigateur.'); }
+        if (!good) { btn.disabled = false; return err('Mot de passe super administrateur incorrect.'); }
+      }
+      done = true; m.close(); res(true);
+    };
+    $('[data-ok]', m.el).onclick = go;
+    $('#sa-f', m.el).onsubmit = e => { e.preventDefault(); go(); };
+  });
+}
+
 const Sync = {
   mode: 'memory', version: 0, pending: [], busy: false, retry: 0, bc: null, lastSave: '',
   async init() {
@@ -1127,7 +1176,7 @@ const Sync = {
   post(data, base) {                          // l'auteur est déduit de la session par le serveur
     return fetchJSON('api.php?a=save&base=' + base,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }, 25000)
-      .then(r => r.ok ? r.body : r.status === 409 ? Object.assign({ conflict: true }, r.body) : r.status === 401 ? { unauth: true } : null);
+      .then(r => r.ok ? r.body : r.status === 409 ? Object.assign({ conflict: true }, r.body) : r.status === 401 ? { unauth: true } : r.status === 403 && r.body && r.body.superadmin ? { sa: true } : null);
   },
   async flush() {
     if (this.busy || !this.pending.length || this.mode !== 'server') return;
@@ -1135,6 +1184,16 @@ const Sync = {
     const count = this.pending.length;
     try {
       let r = await this.post(DB, this.version);
+      if (r && r.sa) {                        // le serveur exige la confirmation du super administrateur
+        if (!await superAdmin('Le serveur demande la confirmation du super administrateur pour enregistrer cette opération.')) {
+          this.pending = [];                  // abandon : on revient à la version du serveur
+          const l = await fetchJSON('api.php?a=load', {}, 30000).catch(() => null);
+          if (l && l.ok && l.body && l.body.data) { DB = migrate(l.body.data); this.version = l.body.version; REV++; render(); }
+          toast('Opération annulée : rien n’a été modifié sur le serveur.', 'warn');
+          this.busy = false; setSync('ok', 'Synchronisé · v' + this.version); return;
+        }
+        this.busy = false; this.flush(); return;
+      }
       if (r && r.unauth) {                    // session expirée : on garde les modifications et on redemande le mot de passe
         setSync('warn', 'Session expirée');
         await Auth.relogin();
@@ -1574,6 +1633,7 @@ function modal(o) {
     <div class="mb">${o.body || ''}</div>${o.foot ? `<footer>${o.foot}</footer>` : ''}</div>`;
   $('#modals').appendChild(el);
   const close = () => { if (!el.isConnected) return; el.remove(); o.onClose && o.onClose(); };
+  el._close = close;                 // Échap passe aussi par onClose
   el.addEventListener('mousedown', e => { if (e.target === el) close(); });
   $$('[data-close]', el).forEach(b => b.addEventListener('click', close));
   const api = { el, close };
@@ -1757,8 +1817,9 @@ Object.assign(ACT, {
   'bnr-x': el => { BANNERS = BANNERS.filter(b => b.id !== el.dataset.id); renderBanner(); },
   'keep-demo': () => mutate('Masquage du bandeau de démonstration', d => { d.meta.demo = false; }, { nolog: true }),
   'clear-demo': async () => {
-    if (!await ask('Les projets, opérations et absences de démonstration seront supprimés. Le paramétrage (agences, services, personnel, modèles) est conservé.', { ok: 'Vider les projets', danger: true })) return;
-    mutate('Suppression des données de démonstration', d => { d.projects = []; d.ops = []; d.absences = []; d.meta.demo = false; d.counters.project = 1; d.counters.op = 1; });
+    if (!needs('admin')) return;
+    if (!await superAdmin(`Tous les projets, opérations et absences (${num(DB.projects.length)} projets) seront supprimés. Le paramétrage (agences, services, personnel, modèles) est conservé.`, { ok: 'Vider les projets' })) return;
+    mutate('Suppression de tous les projets', d => { d.projects = []; d.ops = []; d.absences = []; d.meta.demo = false; d.meta.gen = uid('g'); d.counters.project = 1; d.counters.op = 1; });
   },
   who: el => {
     const u = me(), r = roleOf(u), srv = Sync.mode === 'server';
@@ -3006,7 +3067,9 @@ function pageData() {
     <div class="card"><div class="card-h">${ic('warn')}<span>Remise à zéro</span></div><div class="card-b">
       <p class="mut" style="margin:0 0 12px">À faire une fois le paramétrage validé, avant la mise en service réelle.</p>
       <div class="row wrap"><button class="btn dgr" data-act="clear-demo">Vider les projets</button>
-        <button class="btn dgr" data-act="reset-all">Tout réinitialiser</button></div></div></div>
+        <button class="btn dgr" data-act="reset-all">Tout réinitialiser</button></div>
+      <p class="mut" style="margin:12px 0 0;font-size:12.5px">${ic('lock', 'sm')} Vider, réinitialiser et restaurer exigent le mot de passe super administrateur.
+        ${Sync.mode === 'server' ? '<button class="btn sm gh" data-act="sa-change">Changer ce mot de passe</button>' : ''}</p></div></div>
   </div>`;
 }
 function pageJournal(q) {
@@ -3216,8 +3279,8 @@ Object.assign(ACT, {
     const f = await pickFile('.json,application/json'); if (!f) return;
     let data; try { data = JSON.parse(await readFile(f)); } catch (e) { return toast('Fichier illisible.', 'danger'); }
     if (!data || !Array.isArray(data.projects)) return toast('Ce fichier n’est pas une sauvegarde du planning.', 'danger');
-    if (!await ask(`Remplacer toutes les données actuelles par le contenu de <b>${esc(f.name)}</b> (${data.projects.length} projets) ?`, { ok: 'Restaurer', danger: true })) return;
-    mutate('Restauration d’une sauvegarde', db => { const d = migrate(data); for (const k of Object.keys(db)) delete db[k]; Object.assign(db, d); });
+    if (!await superAdmin(`Remplacer toutes les données actuelles par le contenu de <b>${esc(f.name)}</b> (${data.projects.length} projets) ?`, { ok: 'Restaurer' })) return;
+    mutate('Restauration d’une sauvegarde', db => { const d = migrate(data); d.meta.gen = uid('g'); for (const k of Object.keys(db)) delete db[k]; Object.assign(db, d); });
     toast('Sauvegarde restaurée', 'ok');
   },
   'export-projects': el => {
@@ -3236,8 +3299,13 @@ Object.assign(ACT, {
   'import-csv': () => { if (needs('admin')) importCSV(); },
   'reset-all': async () => {
     if (!needs('admin')) return;
-    if (!await ask('Toutes les données (paramétrage compris) seront remplacées par le jeu de démonstration. Exportez une sauvegarde avant si besoin.', { ok: 'Réinitialiser', danger: true })) return;
-    mutate('Réinitialisation complète', db => { const d = seed(); for (const k of Object.keys(db)) delete db[k]; Object.assign(db, d); });
+    if (!await superAdmin('Toutes les données (paramétrage compris) seront remplacées par le jeu de démonstration. Exportez une sauvegarde avant si besoin.', { ok: 'Tout réinitialiser' })) return;
+    mutate('Réinitialisation complète', db => { const d = migrate(seed()); d.meta.gen = uid('g'); for (const k of Object.keys(db)) delete db[k]; Object.assign(db, d); });
+  },
+  'sa-change': async () => {
+    if (!needs('admin')) return;
+    if (Sync.mode !== 'server') return toast('Le mot de passe super administrateur ne se change qu’en base partagée (serveur).', 'warn');
+    if (await superAdmin('Saisissez le mot de passe actuel puis le nouveau.', { title: 'Changer le mot de passe super administrateur', change: true, ok: 'Enregistrer' })) toast('Mot de passe super administrateur modifié', 'ok');
   },
   'print-day': (el, e) => { if (e) e.stopPropagation(); printDay(el.dataset.sv, el.dataset.d); },
   'print-week': el => printWeek(el.dataset.sv || route().seg[1]),

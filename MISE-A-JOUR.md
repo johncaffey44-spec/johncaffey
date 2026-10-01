@@ -113,3 +113,16 @@ Ordre à respecter :
 3. **Le serveur vérifie *qui* enregistre, pas *ce qui* est modifié.** Les droits par rôle (Commercial, Lecture seule…) sont appliqués par l'interface. Une personne connectée et techniquement habile peut encore modifier le document complet. Ses enregistrements sont toutefois signés par sa session, dans le journal et dans `planning.meta.json`.
 4. **« Reprendre là où je m'étais arrêté »** (Chrome, Edge) conserve les cookies de session : dans ce cas, la fermeture du navigateur ne déconnecte pas. La déconnexion se fait par le menu, ou après 12 h d'inactivité.
 5. **Base locale** : il n'y a pas de connexion. Toutes les données sont dans le navigateur du poste, donc un mot de passe vérifié dans le navigateur serait purement décoratif.
+
+## 5. Mot de passe super administrateur
+
+Trois actions de *Paramétrage › Données & sauvegarde* exigent le mot de passe **super administrateur** : **Vider les projets**, **Tout réinitialiser** et **Restaurer**. Il faut aussi être connecté avec un rôle administrateur.
+
+- **Base partagée** : le mot de passe est vérifié par **le serveur**, qui refuse aussi tout enregistrement qui remplace la base ou supprime plus de la moitié des projets, opérations et absences sans cette confirmation. Une manipulation par la console du navigateur (F12) est donc bloquée.
+  - La confirmation reste valable 5 minutes pour la session (`$SUPERADMIN_TTL`).
+  - Après 8 essais ratés, l'adresse IP est bloquée 15 min.
+  - Pour le changer : bouton **Changer ce mot de passe**, sous « Remise à zéro ». Il faut 12 caractères minimum et l'ancien mot de passe. Le nouveau est rangé, haché, dans `data/superadmin.json`.
+- **Base locale** : la vérification se fait dans la page. C'est un garde-fou contre les fausses manœuvres, pas une protection : les données sont dans le navigateur. Ce mot de passe-là reste celui d'origine.
+
+**Mot de passe oublié :** supprimez `data/superadmin.json` sur le serveur. Le mot de passe d'origine (empreinte `$SUPERADMIN_HASH` dans `api.php`) redevient valable. Pour en définir un autre sans le connaître, remplacez `$SUPERADMIN_HASH` par le résultat de :
+`php -r "echo password_hash('NouveauMotDePasse', PASSWORD_DEFAULT);"`
