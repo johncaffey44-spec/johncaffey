@@ -314,6 +314,8 @@ body.kiosk .tbl{font-size:15px}
   body.printing #app{display:none}
   body.printing #print{display:block}
   .pbreak{break-after:page}
+  #print .psvg svg{width:100%;height:auto;max-height:178mm}
+  html[data-theme=dark]{--bg:#fff;--surface:#fff;--surface-2:#f7f8fa;--surface-3:#edf0f3;--border:#e1e5ea;--border-2:#ccd2da;--text:#191d23;--text-2:#485261;--text-3:#6d7783;--primary:#1487c9;--primary-soft:#e7f3fb;--today:rgba(20,135,201,.07)}
 }
 #print h2{font-size:17px;margin-bottom:2px}
 #print .ph{display:flex;align-items:baseline;gap:12px;border-bottom:2px solid #333;padding-bottom:5px;margin-bottom:9px}
@@ -321,6 +323,10 @@ body.kiosk .tbl{font-size:15px}
 #print table{width:100%;border-collapse:collapse;font-size:10.5px}
 #print th,#print td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
 #print th{background:#f0f0f0}
+/* exports & diagrammes */
+.gantt-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);box-shadow:var(--sh);max-height:calc(100vh - 230px)}
+.gantt-wrap svg{display:block}
+.gantt-wrap g[data-act]:hover rect{filter:brightness(1.1)}
 /* connexion */
 #auth{position:fixed;inset:0;z-index:90;background:var(--bg);display:flex;align-items:flex-start;justify-content:center;padding:9vh 16px 32px;overflow-y:auto}
 #auth:empty{display:none}
@@ -574,6 +580,10 @@ const ICONS = {
   filter: 'M22 3H2l8 9.5V19l4 2v-8.5z',
   lock: 'M5 11h14v11H5zM8 11V7a4 4 0 0 1 8 0v4',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+  gantt: 'M3 3v18h18M7 7h7M10 12h8M8 17h6',
+  image: 'M3 3h18v18H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 21',
+  sheet: 'M3 3h18v18H3zM3 9h18M3 15h18M9 3v18',
+  braces: 'M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1',
   play: 'M5 3l16 9-16 9z',
   dots: 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
   arrow: 'M5 12h14M13 6l6 6-6 6',
@@ -1549,7 +1559,7 @@ function navModel() {
         { r: '/preparation', ic: 'clipboard', t: 'Préparation', b: prepLate || '', bc: 'warn' }
       ].concat(DB.services.filter(s => s.active !== false).sort(byOrder).map(s =>
         ({ r: '/planning/' + s.id, ic: s.icon || 'cal', t: s.name, c: s.color, b: bl[s.id] || '' })
-      )).concat([{ r: '/absences', ic: 'calx', t: 'Absences & congés' }])
+      )).concat([{ r: '/gantt', ic: 'gantt', t: 'Diagramme de Gantt' }, { r: '/absences', ic: 'calx', t: 'Absences & congés' }])
     },
     { h: 'Consulter', items: [{ r: '/ecrans', ic: 'monitor', t: 'Vues écrans' }] },
     {
@@ -1597,7 +1607,7 @@ function renderNav(r) {
 }
 function crumbFor(r) {
   const s = r.seg;
-  const m = { projets: 'Projets en cours', archives: 'Projets archivés', preparation: 'Préparation', absences: 'Absences & congés', ecrans: 'Vues écrans', alertes: 'Alertes', rapports: 'Rapports', admin: 'Paramétrage' };
+  const m = { projets: 'Projets en cours', archives: 'Projets archivés', preparation: 'Préparation', absences: 'Absences & congés', gantt: 'Diagramme de Gantt', ecrans: 'Vues écrans', alertes: 'Alertes', rapports: 'Rapports', admin: 'Paramétrage' };
   if (!s.length) return 'Tableau de bord';
   if (s[0] === 'planning') return 'Planning ' + (label(svc(s[1])) || '');
   if (s[0] === 'ecran') return 'Vue écran';
@@ -1669,17 +1679,22 @@ function popover(anchor, html) {
   el.style.cssText = `position:fixed;z-index:70;min-width:210px;max-width:320px;padding:6px;top:${Math.round(r.bottom + 6)}px;right:${Math.max(8, Math.round(window.innerWidth - r.right))}px;box-shadow:var(--sh-lg)`;
   el.innerHTML = html;
   document.body.appendChild(el); POP = el;
+  // pas assez de place en dessous : on ouvre au-dessus, et au besoin avec défilement interne
+  const h = el.offsetHeight, below = window.innerHeight - r.bottom - 14, above = r.top - 14;
+  if (h > below && above > below) el.style.top = Math.max(8, Math.round(r.top - 6 - Math.min(h, above))) + 'px';
+  el.style.maxHeight = Math.max(160, h > below && above > below ? above : below) + 'px';
+  el.style.overflowY = 'auto';
   setTimeout(() => document.addEventListener('mousedown', outPop), 0);
   return el;
 }
 
 /* ---------- graphiques (SVG, sans librairie) ---------- */
-function chart(spec) { const id = 'c' + (++chN); CH[id] = spec; return `<div class="chart" data-chart="${id}" style="height:${spec.h || 240}px"></div>`; }
+function chart(spec) { const id = 'c' + (++chN); CH[id] = spec; return `<div class="chart" data-chart="${id}"${spec.key ? ` data-key="${esc(spec.key)}"` : ''} style="height:${spec.h || 240}px"></div>`; }
 function drawCharts() {
   for (const el of $$('.chart[data-chart]')) {
     const s = CH[el.dataset.chart]; if (!s) continue;
     const w = Math.max(300, el.clientWidth || 640), h = s.h || 240;
-    el.innerHTML = s.type === 'area' ? svgArea(s, w, h) : svgBars(s, w, h);
+    el.innerHTML = s.type === 'area' ? svgArea(s, w, h) : s.type === 'donut' ? svgDonut(s, w, h) : s.type === 'lines' ? svgLines(s, w, h) : s.type === 'stack' ? svgStack(s, w, h) : svgBars(s, w, h);
   }
 }
 function axis(W, H, max, pl, pr, pt, pb, dec) {
@@ -1693,7 +1708,7 @@ function axis(W, H, max, pl, pr, pt, pb, dec) {
 }
 function svgBars(s, W, H) {
   const pl = 40, pr = 10, pt = 10, pb = 24, w = W - pl - pr, h = H - pt - pb;
-  const data = s.data || [], max = s.max || Math.max(1, ...data.map(d => +d.value || 0));
+  const data = s.data || [], max = s.max || niceMax(Math.max(1, ...data.map(d => +d.value || 0)), !s.dec);
   const bw = w / Math.max(1, data.length), step = Math.max(1, Math.ceil(data.length / Math.max(3, Math.floor(w / 64))));
   let out = axis(W, H, max, pl, pr, pt, pb, s.dec);
   data.forEach((d, i) => {
@@ -1702,7 +1717,9 @@ function svgBars(s, W, H) {
     if (d.value == null) out += `<text x="${cx}" y="${pt + h - 3}" text-anchor="middle" font-size="10" fill="var(--text-3)">–</text>`;
     else {
       const bh = Math.max(d.value > 0 ? 2 : 0, h * Math.min(1.02, d.value / max));
-      out += `<rect x="${x + bw * .16}" y="${pt + h - bh}" width="${Math.max(2, bw * .68)}" height="${bh}" rx="2" fill="${d.color || 'var(--primary)'}"><title>${esc(d.tip || d.label + ' : ' + num(d.value, s.dec || 0))}</title></rect>`;
+      const bwid = Math.min(24, Math.max(2, bw * .62));
+      out += `<path d="${barPath(x + (bw - bwid) / 2, pt + h - bh, bwid, bh, 4)}" fill="${d.color || 'var(--primary)'}"/>
+        <rect x="${x.toFixed(1)}" y="${pt}" width="${bw.toFixed(1)}" height="${h}" fill="transparent"><title>${esc(d.tip || d.label + ' : ' + num(d.value, s.dec || 0))}</title></rect>`;
     }
     if (i % step === 0) out += `<text x="${cx}" y="${H - 7}" text-anchor="middle" font-size="10" fill="var(--text-3)">${esc(d.label)}</text>`;
   });
@@ -1710,7 +1727,7 @@ function svgBars(s, W, H) {
 }
 function svgArea(s, W, H) {
   const pl = 40, pr = 10, pt = 10, pb = 24, w = W - pl - pr, h = H - pt - pb;
-  const data = s.data || [], max = s.max || Math.max(1, ...data.map(d => +d.value || 0));
+  const data = s.data || [], max = s.max || niceMax(Math.max(1, ...data.map(d => +d.value || 0)), !s.dec);
   const X = i => pl + (data.length < 2 ? w / 2 : i * w / (data.length - 1));
   const Y = v => pt + h - h * Math.min(1, (+v || 0) / max);
   let line = '', dots = '';
@@ -1871,6 +1888,7 @@ function pageFor(r) {
     case 'preparation': return pagePrep(r.q);
     case 'planning': return pagePlanning(s[1], r.q);
     case 'absences': return pageAbsences(r.q);
+    case 'gantt': return pageGantt(r.q);
     case 'ecrans': return pageScreens();
     case 'ecran': return pageKiosk(s[1] || 'rotation', r.q);
     case 'alertes': return pageAlerts(r.q);
@@ -1929,7 +1947,7 @@ function pageDash() {
   const load = days.map(d => {
     const l = dayLoad(svId, d);
     return {
-      label: D.short(d), value: l.pct, color: occColor(l.pct), mark: d === T,
+      label: D.short(d), full: D.fmt(d), value: l.pct, color: occColor(l.pct), mark: d === T,
       tip: D.long(d) + ' : ' + (l.pct == null ? 'aucune ressource disponible' : `${num(l.load, 1)} / ${num(l.cap, 1)} ${l.unit} — ${l.pct} %`)
     };
   });
@@ -1982,8 +2000,8 @@ function pageDash() {
   <div class="grid" style="margin-top:14px">
     <div class="card">
       <div class="card-h">${ic('bar')}<span>Charge prévisionnelle</span>
-        <select class="in" style="width:auto;margin-left:auto" data-on="dash-svc">${selOpts(svcs, svId)}</select></div>
-      <div class="card-b">${chart({ type: 'bars', data: load, max: Math.max(100, ...load.map(x => x.value || 0)), h: 230 })}
+        <select class="in" style="width:auto;margin-left:auto" data-on="dash-svc">${selOpts(svcs, svId)}</select>${xpBtn('chart:dash-load', { icon: 1, ml: false })}</div>
+      <div class="card-b">${chart({ type: 'bars', key: 'dash-load', title: 'Charge prévisionnelle · ' + label(svc(svId)), xl: 'Jour', yl: 'Charge (%)', data: load, max: Math.max(100, ...load.map(x => x.value || 0)), h: 230 })}
         <div class="lgd" style="margin-top:8px">
           <span><i style="--c:#3c9f5f"></i>moins de ${DB.settings.occLow} %</span>
           <span><i style="--c:#e8bf2e"></i>${DB.settings.occLow} à ${DB.settings.occHigh} %</span>
@@ -1991,6 +2009,14 @@ function pageDash() {
           <span><i style="--c:#d1444a"></i>au-delà de la capacité</span>
           <span class="mut">capacité = ressources actives du service, absences déduites</span>
         </div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px">
+      <div class="card"><div class="card-h">${ic('pie')}<span>Étapes des projets en cours, par statut</span>${xpBtn('chart:dash-status', { icon: 1 })}</div>
+        <div class="card-b">${chart({ type: 'donut', key: 'dash-status', title: 'Étapes des projets en cours par statut', xl: 'Statut', yl: 'Étapes', unit: 'étapes', h: 210,
+          data: foldOther(DB.statuses.slice().sort(byOrder).map(s => ({ label: s.name, color: s.color, value: ops.filter(o => o.statusId === s.id).length }))) })}</div></div>
+      <div class="card"><div class="card-h">${ic('building')}<span>Projets en cours, par agence</span>${xpBtn('chart:dash-agency', { icon: 1 })}</div>
+        <div class="card-b">${chart({ type: 'donut', key: 'dash-agency', title: 'Projets en cours par agence', xl: 'Agence', yl: 'Projets', unit: 'projets', h: 210,
+          data: foldOther(DB.agencies.map(a => ({ label: a.name, color: a.color, value: act.filter(p => p.agencyId === a.id).length }))) })}</div></div>
     </div>
     <div class="card"><div class="card-h">${ic('repeat')}<span>Flux par agence</span></div><div class="card-b">${flux}</div></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px">
@@ -2010,7 +2036,7 @@ function alertRow(a) {
 }
 
 /* ------------------------------ projets ------------------------------ */
-function pageProjects(arch, q) {
+function filterProjects(arch) {               // liste affichée = liste exportée (mêmes filtres, même tri)
   const F = UI.pf = Object.assign({ q: '', type: '', da: '', ag: '', com: '', tag: '', flag: '' }, UI.pf);
   const S = UI.sortP = UI.sortP || { k: 'id', d: -1 };
   let rows = DB.projects.filter(p => !!p.archived === arch);
@@ -2025,6 +2051,10 @@ function pageProjects(arch, q) {
   const val = (p, k) => k === 'id' ? p.id : k === 'client' ? norm(p.client) : k === 'req' ? (p.requested || '') :
     k === 'city' ? norm(p.city) : k === 'type' ? norm(label(get('projectTypes', p.typeId))) : k === 'ag' ? norm(label(get('agencies', p.agencyId))) : '';
   rows.sort((a, b) => { const x = val(a, S.k), y = val(b, S.k); return (x < y ? -1 : x > y ? 1 : 0) * S.d; });
+  return rows;
+}
+function pageProjects(arch, q) {
+  const rows = filterProjects(arch), F = UI.pf, S = UI.sortP;
   const page = Math.min(UI.pPage || 0, Math.max(0, Math.ceil(rows.length / 40) - 1));
   const slice = rows.slice(page * 40, page * 40 + 40);
   const th = (t, k, cls = '') => `<th class="s ${cls}" data-act="sortP" data-k="${k}">${t}${S.k === k ? (S.d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
@@ -2032,7 +2062,7 @@ function pageProjects(arch, q) {
   return `${phead(arch ? 'Projets archivés' : 'Projets en cours',
     `${num(rows.length)} projet${rows.length > 1 ? 's' : ''}${F.q || F.type || F.ag || F.com || F.da || F.tag || F.flag ? ' après filtrage' : ''}`,
     `${arch ? '' : `<button class="btn pri" data-act="new-project">${ic('plus')} Nouveau projet</button>`}
-     <button class="btn" data-act="export-projects" data-arch="${arch ? 1 : 0}">${ic('download')} Export CSV</button>`)}
+     ${xpBtn('projects:' + (arch ? 1 : 0))}${arch ? '' : impBtn('projects')}`)}
   <div class="toolbar">
     <input class="in srchin" id="pf_q" data-on="pf" data-k="q" placeholder="Client, n°, ville, référence…" value="${esc(F.q)}">
     <select class="in" data-on="pf" data-k="type">${selOpts(DB.projectTypes, F.type, 'Tous les types')}</select>
@@ -2376,6 +2406,7 @@ function pagePlanning(svId, q) {
        <button class="btn sm ${view === 'list' ? 'pri' : ''}" data-act="pl-view" data-v="list">${ic('list', 'sm')} Liste</button></div>
      <button class="btn" data-act="new-absence">${ic('calx')} Absence</button>
      <button class="btn" data-act="print-week" data-sv="${sv.id}">${ic('printer')} Imprimer</button>
+     ${xpBtn('week:' + sv.id)}
      <a class="btn" href="#/ecran/${sv.id}" target="_blank" title="Affichage atelier plein écran">${ic('monitor')} Mode écran</a>`)}
   <div class="plan">
     <div class="plan-main">${view === 'list' ? listView : `<div class="pl"><div class="pl-scroll"><div class="pl-inner">${head}${rows}</div></div></div>`}
@@ -2441,7 +2472,7 @@ function pagePrep(q) {
   const total = list.length, done = list.filter(x => x.o.prepDone).length;
   return `${phead('Préparation atelier',
     `${total} machine${total > 1 ? 's' : ''} sur les ${DB.settings.prepHorizon} prochains jours · ${done} préparée${done > 1 ? 's' : ''}`,
-    `<button class="btn" data-act="print-prep">${ic('printer')} Imprimer la liste</button>
+    `<button class="btn" data-act="print-prep">${ic('printer')} Imprimer la liste</button>${xpBtn('prep')}
      <a class="btn" href="#/ecran/preparation" target="_blank">${ic('monitor')} Mode écran</a>`)}
   <div class="toolbar">
     <input class="in srchin" id="prepq" data-on="prepf" data-k="q" placeholder="Client, ville, matricule…" value="${esc(F.q)}">
@@ -2497,7 +2528,7 @@ function pageAbsences(q) {
   }).join('');
   const upcoming = DB.absences.filter(a => a.end >= D.today()).sort((a, b) => a.start < b.start ? -1 : 1);
   return `${phead('Absences & congés', 'Cliquez une case pour saisir ou modifier une absence',
-    `<button class="btn pri" data-act="new-absence">${ic('plus')} Nouvelle absence</button>`)}
+    `<button class="btn pri" data-act="new-absence">${ic('plus')} Nouvelle absence</button>${xpBtn('absences')}${impBtn('absences')}`)}
   <div class="toolbar">
     <button class="btn sm" data-act="abs-m" data-d="-1">${ic('left', 'sm')}</button>
     <b style="min-width:170px;text-align:center;text-transform:capitalize">${esc(D.monthName(m))}</b>
@@ -2513,7 +2544,18 @@ function pageAbsences(q) {
       <td style="width:190px"><b>${esc(staffName(a.staffId))}</b></td>
       <td style="width:150px">${pillHTML(label(get('absenceTypes', a.typeId)) || '', (get('absenceTypes', a.typeId) || {}).color || '#999')}</td>
       <td>du ${D.fmt(a.start)} ${a.startSlot === 'PM' ? '(après-midi)' : ''} au ${D.fmt(a.end)} ${a.endSlot === 'AM' ? '(matin)' : ''}</td>
-      <td class="mut">${esc(a.note || '')}</td></tr>`).join('') || `<tr><td>${emptyBox('Aucune absence à venir', '')}</td></tr>`}</tbody></table></div>`;
+      <td class="mut">${esc(a.note || '')}</td></tr>`).join('') || `<tr><td>${emptyBox('Aucune absence à venir', '')}</td></tr>`}</tbody></table></div>
+  ${absYearCard(m.slice(0, 4))}`;
+}
+function absYearCard(yr) {                   // jours ouvrés d'absence par mois et par motif
+  const months = []; for (let i = 1; i <= 12; i++) months.push(yr + '-' + pad(i));
+  const last = mm => D.add(D.add(mm + '-01', 32).slice(0, 7) + '-01', -1);
+  const series = DB.absenceTypes.map(t => ({ name: t.name, color: t.color,
+    values: months.map(mm => DB.absences.filter(a => a.typeId === t.id).reduce((s, a) => s + absHalves(a, mm + '-01', last(mm)), 0) / 2) }))
+    .filter(x => x.values.some(v => v > 0));
+  return `<div class="card" style="margin-top:14px"><div class="card-h">${ic('bar')}<span>Jours d’absence ${yr}, par mois et par motif</span>${series.length ? xpBtn('chart:abs-year', { icon: 1 }) : ''}</div>
+    <div class="card-b">${series.length ? chart({ type: 'stack', key: 'abs-year', title: 'Jours d’absence ' + yr + ' par mois et par motif', xl: 'Mois', unit: ' j', dec: 1, h: 270,
+      labels: months.map(mm => D.fmt(mm + '-01', { month: 'short' })), full: months.map(mm => D.monthName(mm)), series }) : emptyBox('Aucune absence en ' + yr, '')}</div></div>`;
 }
 function absenceForm(id, pre) {
   const a = id ? DB.absences.find(x => x.id === id) : null;
@@ -2631,18 +2673,19 @@ function pageKiosk(id, q) {
       <div class="lgd" style="margin-top:14px">${DB.statuses.slice().sort(byOrder).map(s => `<span><i style="--c:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div></div>`;
 }
 /* ------------------------------ alertes ------------------------------ */
+const ALERT_NAMES = {
+  overlap: 'Chevauchements', absent: 'Ressource absente', sequence: 'Enchaînement impossible', late: 'Dates demandées non tenues',
+  waiting: 'Étapes en attente de l’étape précédente', prep: 'Préparations à faire', stale: 'Statuts à mettre à jour',
+  unassigned: 'Sans ressource', holiday: 'Jours non travaillés', overcap: 'Capacité dépassée'
+};
 function pageAlerts(q) {
   const A = alerts();
   const lvl = UI.alLvl || '';
   const list = lvl ? A.list.filter(a => a.level === lvl) : A.list;
   const groups = new Map();
   for (const a of list) pushMap(groups, a.type, a);
-  const NAMES = {
-    overlap: 'Chevauchements', absent: 'Ressource absente', sequence: 'Enchaînement impossible', late: 'Dates demandées non tenues',
-    waiting: 'Étapes en attente de l’étape précédente', prep: 'Préparations à faire', stale: 'Statuts à mettre à jour',
-    unassigned: 'Sans ressource', holiday: 'Jours non travaillés', overcap: 'Capacité dépassée'
-  };
-  return `${phead('Alertes', `${A.list.length} point${A.list.length > 1 ? 's' : ''} de vigilance sur les projets en cours`)}
+  const NAMES = ALERT_NAMES;
+  return `${phead('Alertes', `${A.list.length} point${A.list.length > 1 ? 's' : ''} de vigilance sur les projets en cours`, xpBtn('alerts'))}
   <div class="toolbar">
     ${[['', 'Toutes'], ['danger', 'Bloquantes'], ['warn', 'À surveiller'], ['info', 'Informations']].map(x =>
     `<button class="btn sm ${lvl === x[0] ? 'pri' : ''}" data-act="al-lvl" data-v="${x[0]}">${x[1]}</button>`).join('')}
@@ -2658,7 +2701,7 @@ function pageAlerts(q) {
 function pageReports(kind, q) {
   const R = UI.rep = Object.assign({ from: D.add(D.today(), -30), to: D.today() }, UI.rep);
   const tabs = [['activite', 'Activité des équipes'], ['projets', 'Projets & délais'], ['charge', 'Charge prévisionnelle']];
-  const nav = `<div class="row" style="gap:6px">${tabs.map(t => `<a class="btn sm ${kind === t[0] ? 'pri' : ''}" href="#/rapports/${t[0]}">${esc(t[1])}</a>`).join('')}</div>`;
+  const nav = `<div class="row" style="gap:6px">${tabs.map(t => `<a class="btn sm ${kind === t[0] ? 'pri' : ''}" href="#/rapports/${t[0]}">${esc(t[1])}</a>`).join('')}</div>${xpBtn('rep-' + (tabs.some(t => t[0] === kind) ? kind : 'activite'))}`;
   const period = `<div class="toolbar">
     <label class="mut" style="font-size:12.5px">Du</label><input class="in" type="date" data-on="rep" data-k="from" value="${esc(R.from)}">
     <label class="mut" style="font-size:12.5px">au</label><input class="in" type="date" data-on="rep" data-k="to" value="${esc(R.to)}">
@@ -2674,49 +2717,25 @@ function doneInRange(o, from, to) {
   return d && d >= from && d <= to;
 }
 function repActivite(R) {
-  const svcs = DB.services.filter(s => s.active !== false).sort(byOrder);
-  const days = []; for (let d = R.from; d <= R.to; d = D.add(d, 1)) if (isWork(d)) days.push(d);
-  return svcs.map(sv => {
-    const staff = staffOfService(sv.id);
-    if (!staff.length) return '';
-    const rows = staff.map(s => {
-      const ops = (idx().opsByStaff.get(s.id) || []).filter(o => o.serviceId === sv.id);
-      const done = ops.filter(o => doneInRange(o, R.from, R.to));
-      const hours = done.reduce((t, o) => t + opHours(o), 0);
-      let cap = 0, used = 0;
-      for (const d of days) {
-        let av = 0; for (const sl of [0, 1]) if (!absenceAt(s.id, d, sl)) av++;
-        if (sv.mode === 'half') {
-          cap += av;
-          used += [0, 1].filter(sl => ((idx().slots.get(s.id) || new Map()).get(d + '|' + sl) || []).some(id => (O(id) || {}).serviceId === sv.id)).length;
-        } else {
-          cap += av / 2 * (+sv.perDay || 1);
-          used += (idx().dayOps.get(s.id + '|' + d) || []).filter(o => o.serviceId === sv.id).length;
-        }
-      }
-      return { s, n: done.length, hours, pct: cap > 0 ? Math.round(used / cap * 100) : null };
-    }).filter(r => r.n || r.pct);
-    if (!rows.length) return '';
-    return `<div class="card" style="margin-bottom:14px"><div class="card-h"><span style="color:${sv.color}">${ic(sv.icon || 'cal')}</span><span>${esc(sv.name)}</span></div>
-      <div class="card-b">${chart({ type: 'bars', h: 200, data: rows.map(r => ({ label: label(r.s), value: r.n, color: sv.color, tip: label(r.s) + ' : ' + r.n + ' opérations terminées' })) })}
+  return activiteData(R).map(({ sv, rows }) => `<div class="card" style="margin-bottom:14px"><div class="card-h"><span style="color:${sv.color}">${ic(sv.icon || 'cal')}</span><span>${esc(sv.name)}</span>${xpBtn('chart:act-' + sv.id, { icon: 1 })}</div>
+      <div class="card-b">${chart({ type: 'bars', key: 'act-' + sv.id, title: 'Opérations terminées · ' + sv.name, xl: 'Ressource', yl: 'Opérations terminées', h: 200,
+        data: rows.map(r => ({ label: label(r.s), value: r.n, color: sv.color, tip: label(r.s) + ' : ' + r.n + ' opérations terminées' })) })}
         <table class="tbl" style="margin-top:10px"><thead><tr><th>Ressource</th><th class="r">Opérations terminées</th><th class="r">Heures</th><th class="r">Occupation</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td>${esc(label(r.s))}</td><td class="r">${r.n}</td><td class="r">${num(r.hours, 1)} h</td>
-          <td class="r">${r.pct == null ? '<span class="mut">—</span>' : `<span class="pill" style="${cvar(occColor(r.pct), .15, .32)}">${r.pct} %</span>`}</td></tr>`).join('')}</tbody></table></div></div>`;
-  }).join('') || emptyBox('Aucune donnée', 'Aucune opération terminée sur la période choisie.');
+          <td class="r">${r.pct == null ? '<span class="mut">—</span>' : `<span class="pill" style="${cvar(occColor(r.pct), .15, .32)}">${r.pct} %</span>`}</td></tr>`).join('')}</tbody></table></div></div>`).join('')
+    || emptyBox('Aucune donnée', 'Aucune opération terminée sur la période choisie.');
 }
 function repProjets(R) {
-  const done = DB.projects.filter(p => p.archived && p.archivedAt >= R.from && p.archivedAt <= R.to);
+  const done = projetsDone(R);
   const lead = done.filter(p => p.createdAt).map(p => D.diff(String(p.createdAt).slice(0, 10), p.archivedAt)).filter(x => x >= 0);
   const withReq = done.filter(p => p.requested);
   const onTime = withReq.filter(p => p.archivedAt <= p.requested).length;
   const days = []; for (let d = R.from; d <= R.to; d = D.add(d, 1)) days.push(d);
-  const perDay = days.map(d => ({ label: D.short(d), value: done.filter(p => p.archivedAt === d).length, tip: D.long(d) }));
-  const count = (key, coll) => {
-    const m = new Map();
-    for (const p of done) m.set(p[key], (m.get(p[key]) || 0) + 1);
-    return [...m.entries()].map(([k, v]) => ({ label: label(get(coll, k)) || 'non renseigné', value: v, color: (get(coll, k) || {}).color }))
-      .sort((a, b) => b.value - a.value).slice(0, 12);
-  };
+  const perDay = days.map(d => ({ label: D.short(d), full: D.fmt(d), value: done.filter(p => p.archivedAt === d).length, tip: D.long(d) }));
+  const count = (key, coll) => countBy(done, key, coll).slice(0, 12);
+  const wks = []; for (let w = D.monday(R.from); w <= R.to; w = D.add(w, 7)) wks.push(w);
+  const inWk = (d, w) => d && d >= w && d <= D.add(w, 6);
+  const late = withReq.length - onTime, noDate = done.length - withReq.length;
   const kpi = (v, l, c, icn) => `<div class="kpi" style="cursor:default"><span class="ico" style="${cvar(c, .14, .28)}">${ic(icn)}</span><span><span class="v">${v}</span><span class="l">${esc(l)}</span></span></div>`;
   return `<div class="kpis">
     ${kpi(done.length, 'projets terminés', '#3c9f5f', 'checkcircle')}
@@ -2724,32 +2743,36 @@ function repProjets(R) {
     ${kpi(withReq.length ? Math.round(onTime / withReq.length * 100) + ' %' : '—', 'dans la date demandée', '#7c5cc4', 'flag')}
     ${kpi(DB.ops.filter(o => doneInRange(o, R.from, R.to)).length, 'opérations terminées', '#0e9f8e', 'wrench')}
   </div>
-  <div class="card" style="margin-top:14px"><div class="card-h">${ic('trend')}<span>Projets terminés par jour</span></div>
-    <div class="card-b">${chart({ type: 'area', h: 220, data: perDay })}</div></div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr));margin-top:14px">
+    <div class="card"><div class="card-h">${ic('trend')}<span>Projets créés et terminés, par semaine</span>${xpBtn('chart:proj-flow', { icon: 1 })}</div>
+      <div class="card-b">${chart({ type: 'lines', key: 'proj-flow', title: 'Projets créés et terminés par semaine', xl: 'Semaine', h: 250,
+        labels: wks.map(w => 'S' + D.week(w)), full: wks.map(w => 'semaine du ' + D.fmt(w)),
+        series: [{ name: 'Créés', color: '#2a78d6', values: wks.map(w => DB.projects.filter(p => inWk(String(p.createdAt || '').slice(0, 10), w)).length) },
+          { name: 'Terminés', color: '#eb6834', values: wks.map(w => DB.projects.filter(p => p.archived && inWk(p.archivedAt, w)).length) }] })}</div></div>
+    <div class="card"><div class="card-h">${ic('flag')}<span>Respect des dates demandées</span>${xpBtn('chart:proj-delay', { icon: 1 })}</div>
+      <div class="card-b">${chart({ type: 'donut', key: 'proj-delay', title: 'Respect des dates demandées', xl: 'Situation', yl: 'Projets', unit: 'projets terminés', h: 210,
+        data: [{ label: 'Dans la date demandée', value: onTime, color: '#3c9f5f' }, { label: 'Après la date demandée', value: late, color: '#d1444a' }, { label: 'Sans date demandée', value: noDate, color: '#9aa3ae' }].filter(d => d.value > 0) })}</div></div>
+  </div>
+  <div class="card" style="margin-top:14px"><div class="card-h">${ic('trend')}<span>Projets terminés par jour</span>${xpBtn('chart:proj-day', { icon: 1 })}</div>
+    <div class="card-b">${chart({ type: 'area', key: 'proj-day', title: 'Projets terminés par jour', xl: 'Jour', yl: 'Projets terminés', h: 220, data: perDay })}</div></div>
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:14px">
-    <div class="card"><div class="card-h">${ic('coffee')}<span>Par modèle de distributeur</span></div><div class="card-b">${hbars(count('daModelId', 'daModels'))}</div></div>
-    <div class="card"><div class="card-h">${ic('flag')}<span>Par type de projet</span></div><div class="card-b">${hbars(count('typeId', 'projectTypes'))}</div></div>
-    <div class="card"><div class="card-h">${ic('building')}<span>Par agence</span></div><div class="card-b">${hbars(count('agencyId', 'agencies'))}</div></div>
+    <div class="card"><div class="card-h">${ic('coffee')}<span>Par modèle de distributeur</span>${xpBtn('hb:daModelId', { icon: 1, title: 'Exporter ce tableau' })}</div><div class="card-b">${hbars(count('daModelId', 'daModels'))}</div></div>
+    <div class="card"><div class="card-h">${ic('flag')}<span>Par type de projet</span>${xpBtn('hb:typeId', { icon: 1, title: 'Exporter ce tableau' })}</div><div class="card-b">${hbars(count('typeId', 'projectTypes'))}</div></div>
+    <div class="card"><div class="card-h">${ic('building')}<span>Par agence</span>${xpBtn('hb:agencyId', { icon: 1, title: 'Exporter ce tableau' })}</div><div class="card-b">${hbars(count('agencyId', 'agencies'))}</div></div>
   </div>`;
 }
 function repCharge() {
-  const weeks = []; let w = D.monday(D.today());
-  for (let i = 0; i < 8; i++) { weeks.push(w); w = D.add(w, 7); }
-  const svcs = DB.services.filter(s => s.active !== false).sort(byOrder);
-  const cell = (sv, wk) => {
-    let cap = 0, load = 0;
-    for (const d of workDaysOfWeek(wk)) { const l = dayLoad(sv.id, d); cap += l.cap; load += l.load; }
-    const pct = cap > 0 ? Math.round(load / cap * 100) : null;
-    return `<td class="r" title="${num(load, 1)} / ${num(cap, 1)} ${sv.capMode === 'count' ? 'interventions' : 'heures'}">
-      ${pct == null ? '<span class="mut">—</span>' : `<span class="pill" style="${cvar(occColor(pct), .16, .34)}">${pct} %</span>`}</td>`;
-  };
-  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Service</th>${weeks.map(w =>
+  const C = chargeData();
+  const pill = (c, sv) => `<td class="r" title="${num(c.load, 1)} / ${num(c.cap, 1)} ${sv.capMode === 'count' ? 'interventions' : 'heures'}">
+      ${c.pct == null ? '<span class="mut">—</span>' : `<span class="pill" style="${cvar(occColor(c.pct), .16, .34)}">${c.pct} %</span>`}</td>`;
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Service</th>${C.weeks.map(w =>
     `<th class="r">S${D.week(w)}<div class="mut" style="font-weight:400">${D.short(w)}</div></th>`).join('')}<th class="r">File d’attente</th></tr></thead>
-    <tbody>${svcs.map(sv => {
-    const bl = backlog(sv.id), h = bl.reduce((t, o) => t + opHours(o), 0);
-    return `<tr><td><span class="pill" style="${cvar(sv.color, .14, .3)}">${esc(sv.name)}</span></td>${weeks.map(w => cell(sv, w)).join('')}
-      <td class="r"><a href="#/planning/${sv.id}">${bl.length} op. · ${num(h, 0)} h</a></td></tr>`;
-  }).join('')}</tbody></table></div>
+    <tbody>${C.rows.map(r => `<tr><td><span class="pill" style="${cvar(r.sv.color, .14, .3)}">${esc(r.sv.name)}</span></td>${r.cells.map(c => pill(c, r.sv)).join('')}
+      <td class="r"><a href="#/planning/${r.sv.id}">${r.bl} op. · ${num(r.h, 0)} h</a></td></tr>`).join('')}</tbody></table></div>
+  <div class="card" style="margin-top:14px"><div class="card-h">${ic('trend')}<span>Occupation par semaine et par service</span>${xpBtn('chart:charge-lines', { icon: 1 })}</div>
+    <div class="card-b">${chart({ type: 'lines', key: 'charge-lines', title: 'Occupation par semaine et par service', xl: 'Semaine', unit: ' %', h: 280, ref: 100, refLabel: 'capacité (100 %)',
+      labels: C.weeks.map(w => 'S' + D.week(w)), full: C.weeks.map(w => 'semaine du ' + D.fmt(w)),
+      series: C.rows.map(r => ({ name: r.sv.name, color: r.sv.color, values: r.cells.map(c => c.pct) })) })}</div></div>
   <div class="card" style="margin-top:14px"><div class="card-h">${ic('info')}<span>Lecture</span></div><div class="card-b mut" style="font-size:13px;line-height:1.7">
     La capacité d’une semaine correspond aux ressources actives du service, absences et jours fériés déduits.
     Au-delà de 100 %, la semaine est en surcharge : l’opération sera décalée, sous-traitée, ou une ressource devra être renforcée.
@@ -2998,7 +3021,7 @@ function pageAdmin(kind, q) {
       Un compte inutilisé reste un accès ouvert aux données clients.</span>${dorm.length ? `<button class="btn sm" data-act="disable-dormant">Désactiver les ${dorm.length} comptes dormants</button>` : ''}</div>`;
   }
   return `${phead(S.label, S.desc, `<button class="btn pri" data-act="crud-add" data-c="${kind}">${ic('plus')} Ajouter</button>
-    <button class="btn" data-act="crud-export" data-c="${kind}">${ic('download')} Export CSV</button>`)}
+    ${xpBtn('admin:' + kind)}${kind !== 'roles' ? impBtn(kind) : ''}`)}
   ${extra}
   <div class="toolbar"><input class="in srchin" id="adq_${kind}" data-on="adq" data-k="${kind}" placeholder="Filtrer" value="${esc(qq)}">
     <span class="mut">${rows.length} élément${rows.length > 1 ? 's' : ''}</span></div>
@@ -3059,11 +3082,14 @@ function pageData() {
     <div class="card"><div class="card-h">${ic('download')}<span>Sauvegarde</span></div><div class="card-b">
       <p class="mut" style="margin:0 0 12px">Un fichier JSON contenant tout : paramétrage, projets, planning, absences, journal.</p>
       <div class="row wrap"><button class="btn pri" data-act="export-json">${ic('download')} Exporter</button>
-        <button class="btn" data-act="import-json">${ic('upload')} Restaurer</button></div></div></div>
+        <button class="btn" data-act="import-json">${ic('upload')} Restaurer</button></div>
+      <p class="mut" style="margin:14px 0 8px">Toutes les listes dans un classeur Excel (une feuille par liste), en CSV ou en JSON, pour les retravailler ailleurs.</p>
+      ${xpBtn('all', { label: 'Tout exporter (Excel, CSV, JSON)' })}</div></div>
     <div class="card"><div class="card-h">${ic('file')}<span>Reprise de l’historique</span></div><div class="card-b">
-      <p class="mut" style="margin:0 0 12px">Importez les projets de l’ancien outil au format CSV (colonnes reconnues : n°, client, type, DA, ville, date demandée, agence, commercial).</p>
-      <div class="row wrap"><button class="btn" data-act="import-csv">${ic('upload')} Importer un CSV</button>
-        <button class="btn" data-act="export-projects" data-arch="0">${ic('download')} Export projets</button></div></div></div>
+      <p class="mut" style="margin:0 0 12px">Importez des projets, des absences ou des listes de paramétrage (agences, personnel, modèles…) depuis Excel (.xlsx), CSV ou JSON.
+        Les en-têtes des exports de l’application sont reconnus : exportez, complétez, réimportez.</p>
+      <div class="row wrap"><button class="btn" data-act="imp">${ic('upload')} Importer un fichier</button>
+        ${xpBtn('projects:0', { label: 'Export projets' })}</div></div></div>
     <div class="card"><div class="card-h">${ic('warn')}<span>Remise à zéro</span></div><div class="card-b">
       <p class="mut" style="margin:0 0 12px">À faire une fois le paramétrage validé, avant la mise en service réelle.</p>
       <div class="row wrap"><button class="btn dgr" data-act="clear-demo">Vider les projets</button>
@@ -3076,7 +3102,7 @@ function pageJournal(q) {
   const qq = UI.logq || '';
   let rows = DB.log;
   if (qq) rows = rows.filter(l => norm(l.a + ' ' + l.u).includes(norm(qq)));
-  return `${phead('Journal d’activité', 'Qui a fait quoi, et quand')}
+  return `${phead('Journal d’activité', 'Qui a fait quoi, et quand', xpBtn('journal'))}
   <div class="toolbar"><input class="in srchin" id="logq" data-on="logq" placeholder="Filtrer" value="${esc(qq)}">
     <span class="mut">${num(rows.length)} entrée(s)</span></div>
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th style="width:150px">Date</th><th style="width:170px">Utilisateur</th><th>Action</th><th style="width:90px">Projet</th></tr></thead><tbody>
@@ -3277,11 +3303,8 @@ Object.assign(ACT, {
   'import-json': async () => {
     if (!needs('admin')) return;
     const f = await pickFile('.json,application/json'); if (!f) return;
-    let data; try { data = JSON.parse(await readFile(f)); } catch (e) { return toast('Fichier illisible.', 'danger'); }
-    if (!data || !Array.isArray(data.projects)) return toast('Ce fichier n’est pas une sauvegarde du planning.', 'danger');
-    if (!await superAdmin(`Remplacer toutes les données actuelles par le contenu de <b>${esc(f.name)}</b> (${data.projects.length} projets) ?`, { ok: 'Restaurer' })) return;
-    mutate('Restauration d’une sauvegarde', db => { const d = migrate(data); d.meta.gen = uid('g'); for (const k of Object.keys(db)) delete db[k]; Object.assign(db, d); });
-    toast('Sauvegarde restaurée', 'ok');
+    let data; try { data = JSON.parse(await readText(f)); } catch (e) { return toast('Fichier illisible.', 'danger'); }
+    return restoreBackup(data, f.name);
   },
   'export-projects': el => {
     const arch = el.dataset.arch === '1';
@@ -3423,6 +3446,7 @@ function palette() {
   cmds.push({ t: 'Nouveau projet', s: 'Action', act: 'new-project', ic: 'plus' },
     { t: 'Nouvelle absence', s: 'Action', act: 'new-absence', ic: 'calx' },
     { t: 'Exporter une sauvegarde', s: 'Action', act: 'export-json', ic: 'download' },
+    { t: 'Importer un fichier (Excel, CSV, JSON)', s: 'Action', act: 'imp', ic: 'upload' },
     { t: 'Basculer le thème clair / sombre', s: 'Action', act: 'theme', ic: 'moon' },
     { t: 'Raccourcis clavier', s: 'Action', act: 'shortcuts', ic: 'keyboard' });
   const el = document.createElement('div'); el.className = 'mwrap';
@@ -3512,102 +3536,12 @@ function printPrep() {
 
 /* ---------- export agenda (.ics) ---------- */
 function icsFor(staffId, weeks = 8) {
-  const T = D.today(), end = D.add(T, weeks * 7), S = DB.settings;
-  const ops = (idx().opsByStaff.get(staffId) || []).filter(o => o.date >= D.add(T, -7) && o.date <= end);
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
-  const q = t => String(t || '').replace(/([\\;,])/g, '\\$1').replace(/\n/g, '\\n');
-  const out = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//D8 Production//Planning//FR', 'CALSCALE:GREGORIAN'];
-  for (const o of ops) {
-    const p = P(o.projectId) || {}, sv = svc(o.serviceId) || {};
-    for (const d of opDays(o)) {
-      const hs = opHalves(o).filter(h => h[0] === d).map(h => h[1]);
-      const st = (sv.mode === 'half' && !hs.includes(0)) ? S.pmStart : S.amStart;
-      const en = (sv.mode === 'half' && !hs.includes(1)) ? S.amEnd : S.pmEnd;
-      out.push('BEGIN:VEVENT', `UID:op${o.id}-${d}@d8planning`, `DTSTAMP:${stamp}`,
-        `DTSTART:${d.replace(/-/g, '')}T${st.replace(':', '')}00`, `DTEND:${d.replace(/-/g, '')}T${en.replace(':', '')}00`,
-        `SUMMARY:${q(sv.name + ' · ' + p.client)}`, `LOCATION:${q([p.address, p.city].filter(Boolean).join(', '))}`,
-        `DESCRIPTION:${q([label(get('projectTypes', p.typeId)), label(get('daModels', p.daModelId)), '#' + p.id, p.phone, o.notes].filter(Boolean).join(' · '))}`,
-        'END:VEVENT');
-    }
-  }
-  for (const a of (idx().absByStaff.get(staffId) || []).filter(x => x.end >= T)) {
-    out.push('BEGIN:VEVENT', `UID:abs${a.id}@d8planning`, `DTSTAMP:${stamp}`,
-      `DTSTART;VALUE=DATE:${a.start.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${D.add(a.end, 1).replace(/-/g, '')}`,
-      `SUMMARY:${q(label(get('absenceTypes', a.typeId)) || 'Absence')}`, 'END:VEVENT');
-  }
-  out.push('END:VCALENDAR');
-  return out.join('\r\n');
+  const T = D.today(), end = D.add(T, weeks * 7);
+  return icsOps((idx().opsByStaff.get(staffId) || []).filter(o => o.date >= D.add(T, -7) && o.date <= end), (idx().absByStaff.get(staffId) || []).filter(x => x.end >= T));
 }
 
-/* ---------- import CSV de projets ---------- */
-async function importCSV() {
-  const file = await pickFile('.csv,text/csv,text/plain'); if (!file) return;
-  let rows;
-  try { rows = CSV.parse(await readFile(file)); } catch (e) { return toast('Fichier illisible.', 'danger'); }
-  if (rows.length < 2) return toast('Le fichier ne contient aucune ligne exploitable.', 'danger');
-  const head = rows[0].map(h => norm(h));
-  const col = (...names) => { for (const n of names) { const i = head.findIndex(h => h.includes(n)); if (i >= 0) return i; } return -1; };
-  const C = {
-    id: col('n°', 'numero', 'num', '#'), client: col('client', 'nom'), type: col('type', 'mouvement'),
-    da: col('modele', 'distributeur', 'machine'), city: col('ville'), req: col('demand', 'date'),
-    ag: col('agence', 'site'), com: col('commercial'), ref: col('commande', 'reference', 'ref'), notes: col('note', 'commentaire')
-  };
-  const data = rows.slice(1).map(r => ({
-    id: C.id >= 0 ? parseInt(String(r[C.id]).replace(/\D/g, ''), 10) : NaN,
-    raw: C.client >= 0 ? r[C.client] : '', type: C.type >= 0 ? r[C.type] : '', da: C.da >= 0 ? r[C.da] : '',
-    city: C.city >= 0 ? r[C.city] : '', req: C.req >= 0 ? D.fromAny(r[C.req]) : '', ag: C.ag >= 0 ? r[C.ag] : '',
-    com: C.com >= 0 ? r[C.com] : '', ref: C.ref >= 0 ? r[C.ref] : '', notes: C.notes >= 0 ? r[C.notes] : ''
-  })).filter(x => String(x.raw).trim());
-  if (!data.length) return toast('Aucune colonne « client » reconnue dans ce fichier.', 'danger');
-  const findBy = (coll, name) => DB[coll].find(x => norm(label(x)) === norm(name));
-  const newDa = [...new Set(data.map(d => d.da).filter(Boolean).filter(n => !findBy('daModels', n)))];
-  const newTy = [...new Set(data.map(d => d.type).filter(Boolean).filter(n => !findBy('projectTypes', n)))];
-  const newCo = [...new Set(data.map(d => d.com).filter(Boolean).filter(n => !findBy('users', n)))];
-  const m = modal({
-    title: 'Importer des projets', size: 'lg',
-    body: `<p style="margin:0 0 10px"><b>${data.length}</b> ligne(s) lues dans <b>${esc(file.name)}</b>.</p>
-      <div class="tbl-wrap" style="max-height:230px;margin-bottom:12px"><table class="tbl"><thead><tr><th>N°</th><th>Client</th><th>Type</th><th>Modèle</th><th>Ville</th><th>Demandé</th></tr></thead><tbody>
-      ${data.slice(0, 8).map(d => `<tr><td class="n">${isNaN(d.id) ? '' : d.id}</td><td>${esc(d.raw)}</td><td>${esc(d.type)}</td><td>${esc(d.da)}</td><td>${esc(d.city)}</td><td>${esc(d.req ? D.fmt(d.req) : '')}</td></tr>`).join('')}
-      </tbody></table></div>
-      ${newDa.length || newTy.length || newCo.length ? `<div class="bnr info">${ic('info')}<span>Seront créés automatiquement :
-        ${[newDa.length ? newDa.length + ' modèle(s)' : '', newTy.length ? newTy.length + ' type(s)' : '', newCo.length ? newCo.length + ' commercial(aux)' : ''].filter(Boolean).join(', ')}.</span></div>` : ''}
-      <label class="sw" style="margin-top:8px"><input type="checkbox" id="imp-arch"><i></i><span>Importer comme projets terminés (archives, sans étapes)</span></label>
-      <label class="sw" style="margin-top:8px"><input type="checkbox" id="imp-steps" checked><i></i><span>Créer les étapes selon le type et l’agence</span></label>`,
-    foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn pri" data-ok>Importer</button>`
-  });
-  $('[data-ok]', m.el).onclick = () => {
-    const arch = $('#imp-arch', m.el).checked, steps = $('#imp-steps', m.el).checked && !arch;
-    mutate(`Import de ${data.length} projet(s)`, db => {
-      const ref = (coll, name, make) => {
-        if (!String(name || '').trim()) return '';
-        const f = db[coll].find(x => norm(label(x)) === norm(name));
-        if (f) return f.id;
-        const o = make(String(name).trim()); db[coll].push(o); return o.id;
-      };
-      for (const d of data) {
-        const { client, ref: erp, part, tags } = parseLegacy(d.raw);
-        const id = !isNaN(d.id) && d.id > 0 && !db.projects.some(p => p.id === d.id) ? d.id : db.counters.project++;
-        if (id >= db.counters.project) db.counters.project = id + 1;
-        const typeId = ref('projectTypes', d.type, n => ({ id: uid('typ'), name: n, color: '#6d7783', services: [], active: true })) || (db.projectTypes[0] || {}).id;
-        const agencyId = (db.agencies.find(a => norm(a.name) === norm(d.ag)) || db.agencies[0] || {}).id;
-        const p = {
-          id, client, erpRef: d.ref || erp, part, typeId, agencyId,
-          daModelId: ref('daModels', d.da, n => ({ id: daId(n), name: n, category: '', order: 99, active: true })),
-          commercialId: ref('users', d.com, n => ({ id: uid('usr'), firstName: n.split(' ')[0] || n, lastName: n.split(' ').slice(1).join(' '), email: '', roleId: 'r_com', active: true, lastLogin: '' })),
-          city: d.city, address: '', requested: d.req, tags, contactName: '', phone: '', notes: d.notes,
-          opGroupId: '', archived: arch, archivedAt: arch ? D.today() : '', autoArch: false, createdAt: D.now(), createdBy: 'import'
-        };
-        db.projects.push(p);
-        if (steps) {
-          const t = db.projectTypes.find(x => x.id === typeId), a = db.agencies.find(x => x.id === agencyId);
-          const ts = new Set((t && t.services) || []), circ = a && a.circuit && a.circuit.length ? new Set(a.circuit) : null;
-          for (const s of db.services.filter(s => ts.has(s.id) && (!circ || circ.has(s.id))).sort(byOrder)) db.ops.push(newOp(db, id, s.id, ''));
-        }
-      }
-    });
-    m.close(); toast(data.length + ' projet(s) importés', 'ok');
-  };
-}
+/* ---------- import de projets (ancien bouton « Importer un CSV ») ---------- */
+function importCSV() { return importFile('projects'); }
 
 /* ---------- vues écrans : minuteries ---------- */
 function afterRender() {
@@ -3635,6 +3569,1142 @@ function afterRender() {
 }
 const baseRender = render;
 render = function () { baseRender(); try { afterRender(); } catch (e) { console.warn(e); } };
+
+/* =====================================================================
+   8. EXPORTS, IMPORTS & DIAGRAMMES
+   Tout se fait dans le navigateur, sans bibliothèque externe (fonctionne hors ligne) :
+   Excel (.xlsx) · CSV · JSON · PDF (fenêtre d'impression) · agenda (.ics) · PNG · SVG · presse-papiers.
+   Un jeu de données = { title, sheet?, sub?, pdf?, cols: [{ l, t?, dec? }], rows: [[…]] }
+   t : 'text' (défaut) · 'int' · 'num' · 'date' (AAAA-MM-JJ) · 'dt' (date-heure ISO)
+   ===================================================================== */
+const slug = s => norm(s).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'export';
+const yesNo = b => b ? 'oui' : 'non';
+const SLOT_TXT = (o, sv) => (sv || {}).mode === 'half' ? (o.slot === 'PM' ? 'après-midi' : 'matin') : 'journée';
+const CONTACT_TXT = { ok: 'rendez-vous confirmé', msg: 'message laissé', none: 'non contacté' };
+const ALERT_LEVEL = { danger: 'Bloquante', warn: 'À surveiller', info: 'Information' };
+
+/* valeur lisible d'une cellule (PDF, largeur des colonnes Excel) */
+function dsText(c, v) {
+  if (v == null || v === '') return '';
+  if (c.t === 'date') return D.fmt(String(v).slice(0, 10));
+  if (c.t === 'dt') return D.dt(v);
+  if (c.t === 'num') return num(v, c.dec ?? 1);
+  return String(v);
+}
+/* valeur CSV / presse-papiers : virgule décimale et dates JJ/MM/AAAA, relues telles quelles par Excel en français */
+function dsCsv(c, v) {
+  if (v == null || v === '') return '';
+  if (c.t === 'num' || c.t === 'int') return String(Math.round(+v * 100) / 100).replace('.', ',');
+  if (c.t === 'date' || c.t === 'dt') return dsText(c, v);
+  return String(v);
+}
+const dsObjects = ds => ds.rows.map(r => Object.fromEntries(ds.cols.map((c, i) => [c.l, r[i] ?? ''])));
+const dsCsvText = ds => CSV.make([ds.cols.map(c => c.l), ...ds.rows.map(r => ds.cols.map((c, i) => dsCsv(c, r[i])))]);
+
+/* lecture d'un fichier texte : UTF-8, sinon Windows-1252 (CSV enregistrés par Excel en français) */
+async function readText(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^﻿/, ''); }
+  catch (e) { return new TextDecoder('windows-1252').decode(buf); }
+}
+/* presse-papiers : l'API moderne exige HTTPS, d'où la méthode de secours */
+function copyText(t) {
+  const legacy = () => {
+    const a = document.createElement('textarea'); a.value = t; a.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(a); a.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { }
+    a.remove(); return ok;
+  };
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t).then(() => true, legacy);
+  return Promise.resolve(legacy());
+}
+
+/* ---------- ZIP (conteneur des fichiers .xlsx) ---------- */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function streamBytes(u8, ts) { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(ts)).arrayBuffer()); }
+async function deflateRaw(u8) { if (!self.CompressionStream) return null; try { return await streamBytes(u8, new CompressionStream('deflate-raw')); } catch (e) { return null; } }
+async function inflateRaw(u8) {
+  if (!self.DecompressionStream) throw new Error('Ce navigateur ne sait pas lire les fichiers Excel : mettez-le à jour, ou enregistrez le fichier en CSV.');
+  return streamBytes(u8, new DecompressionStream('deflate-raw'));
+}
+async function zipFiles(files) {
+  const enc = new TextEncoder(), parts = [], central = [], now = new Date();
+  const dosT = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosD = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), raw = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+    const crc = crc32(raw), def = await deflateRaw(raw), z = def && def.length < raw.length, body = z ? def : raw;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, z ? 8 : 0, true);
+    lh.setUint16(10, dosT, true); lh.setUint16(12, dosD, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, body.length, true); lh.setUint32(22, raw.length, true); lh.setUint16(26, name.length, true);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(10, z ? 8 : 0, true); ch.setUint16(12, dosT, true); ch.setUint16(14, dosD, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, body.length, true); ch.setUint32(24, raw.length, true); ch.setUint16(28, name.length, true); ch.setUint32(42, off, true);
+    parts.push(new Uint8Array(lh.buffer), name, body);
+    central.push(new Uint8Array(ch.buffer), name);
+    off += 30 + name.length + body.length;
+  }
+  const size = central.reduce((t, a) => t + a.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, size, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+async function unzip(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder(), files = new Map();
+  let e = buf.byteLength - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('Fichier Excel illisible (archive endommagée).');
+  let p = dv.getUint32(e + 16, true);
+  for (let i = 0, n = dv.getUint16(e + 10, true); i < n && dv.getUint32(p, true) === 0x02014b50; i++) {
+    const nl = dv.getUint16(p + 28, true), lo = dv.getUint32(p + 42, true);
+    const start = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true);
+    files.set(dec.decode(u8.subarray(p + 46, p + 46 + nl)), { m: dv.getUint16(p + 10, true), data: u8.subarray(start, start + dv.getUint32(p + 20, true)) });
+    p += 46 + nl + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+  }
+  return async name => { const f = files.get(name); return f ? dec.decode(f.m === 8 ? await inflateRaw(f.data) : f.data) : null; };
+}
+
+/* ---------- Excel (.xlsx) : écriture ---------- */
+const xmlEsc = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+const xlCol = i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+const xlSerial = d => (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) - Date.UTC(1899, 11, 30)) / 864e5;
+async function xlsxBlob(sheets) {
+  const names = [];
+  for (const sh of sheets) {
+    let n = String(sh.name || sh.title || 'Feuille').replace(/[\[\]:*?\/\\]/g, ' ').trim().slice(0, 31) || 'Feuille';
+    while (names.includes(n)) n = n.slice(0, 27) + ' (' + (names.length + 1) + ')';
+    names.push(n);
+  }
+  const sheetXml = sh => {
+    const w = sh.cols.map((c, i) => Math.min(60, Math.max(String(c.l).length + 3, c.t === 'date' ? 11 : c.t === 'dt' ? 16 : 6,
+      ...sh.rows.slice(0, 400).map(r => dsText(c, r[i]).length + 1))));
+    const cell = (ref, c, v) => {
+      if (v == null || v === '') return '';
+      if (c.t === 'date' && /^\d{4}-\d{2}-\d{2}/.test(v)) return `<c r="${ref}" s="2"><v>${xlSerial(D.parse(String(v).slice(0, 10)))}</v></c>`;
+      if (c.t === 'dt' && !isNaN(new Date(v))) return `<c r="${ref}" s="4"><v>${xlSerial(new Date(v)).toFixed(6)}</v></c>`;
+      if ((c.t === 'int' || c.t === 'num') && isFinite(+v)) return `<c r="${ref}" s="${c.t === 'num' ? 3 : 0}"><v>${+v}</v></c>`;
+      return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`;
+    };
+    const last = xlCol(sh.cols.length - 1) + (sh.rows.length + 1);
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+      + '<sheetFormatPr defaultRowHeight="15"/><cols>' + w.map((x, i) => `<col min="${i + 1}" max="${i + 1}" width="${x}" customWidth="1"/>`).join('') + '</cols><sheetData>'
+      + `<row r="1">${sh.cols.map((c, i) => `<c r="${xlCol(i)}1" t="inlineStr" s="1"><is><t xml:space="preserve">${xmlEsc(c.l)}</t></is></c>`).join('')}</row>`
+      + sh.rows.map((r, j) => `<row r="${j + 2}">${sh.cols.map((c, i) => cell(xlCol(i) + (j + 2), c, r[i])).join('')}</row>`).join('')
+      + '</sheetData>' + (sh.rows.length ? `<autoFilter ref="A1:${last}"/>` : '')
+      + '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape"/></worksheet>';
+  };
+  const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const files = [
+    { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+      + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
+      + sheets.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '</Types>' },
+    { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>` },
+    { name: 'docProps/core.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEsc(sheets[0] ? sheets[0].title || names[0] : '')}</dc:title><dc:creator>${xmlEsc(DB.settings.appName + (me() ? ' · ' + label(me()) : ''))}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().replace(/\.\d+/, '')}</dcterms:created></cp:coreProperties>` },
+    { name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><sheets>`
+      + names.map((n, i) => `<sheet name="${xmlEsc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets>'
+      + (sheets.some(s => s.rows.length) ? '<definedNames>' + sheets.map((s, i) => s.rows.length ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xmlEsc(names[i].replace(/'/g, "''"))}'!$A$1:$${xlCol(s.cols.length - 1)}$${s.rows.length + 1}</definedName>` : '').join('') + '</definedNames>' : '')
+      + '</workbook>' },
+    { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="${R}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+      + `<Relationship Id="rId${sheets.length + 1}" Type="${R}/styles" Target="styles.xml"/></Relationships>` },
+    { name: 'xl/styles.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      + '<numFmts count="2"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy hh:mm"/></numFmts>'
+      + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font></fonts>'
+      + '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0E6DA4"/><bgColor indexed="64"/></patternFill></fill></fills>'
+      + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+      + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+      + '<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+      + '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
+      + '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+      + '<xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+      + '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>'
+      + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>' },
+    ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXml(s) }))
+  ];
+  const z = await zipFiles(files);
+  return new Blob([z], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+/* ---------- Excel (.xlsx) : lecture ---------- */
+async function readXlsx(buf) {
+  const get = await unzip(buf), NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const X = s => new DOMParser().parseFromString(s || '<x/>', 'application/xml');
+  const tags = (el, n) => [...el.getElementsByTagNameNS('*', n)];
+  const wbx = await get('xl/workbook.xml');
+  if (!wbx) throw new Error('Ce fichier n’est pas un classeur Excel (.xlsx).');
+  const rel = {}; for (const r of tags(X(await get('xl/_rels/workbook.xml.rels')), 'Relationship')) rel[r.getAttribute('Id')] = r.getAttribute('Target');
+  const shared = tags(X(await get('xl/sharedStrings.xml')), 'si').map(si => tags(si, 't').filter(t => t.parentNode.localName !== 'rPh').map(t => t.textContent).join(''));
+  const st = X(await get('xl/styles.xml')), fmts = {};
+  for (const f of tags(st, 'numFmt')) fmts[f.getAttribute('numFmtId')] = f.getAttribute('formatCode') || '';
+  const xfs = (tags(st, 'cellXfs')[0] ? tags(tags(st, 'cellXfs')[0], 'xf') : []).map(x => +x.getAttribute('numFmtId') || 0);
+  const isDate = s => { const id = xfs[s] || 0; if ((id >= 14 && id <= 22) || (id >= 45 && id <= 47)) return true; const c = fmts[id]; return !!c && /[dmy]/i.test(c.replace(/"[^"]*"|\[[^\]]*\]|\\./g, '')); };
+  const fromSerial = v => { const d = new Date(Date.UTC(1899, 11, 30) + Math.round(+v * 864e5)); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); };
+  const colIdx = ref => { let n = 0; for (const ch of String(ref).replace(/\d+/g, '')) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  const out = [];
+  for (const s of tags(X(wbx), 'sheet')) {
+    const t = rel[s.getAttributeNS(NS_R, 'id') || s.getAttribute('r:id')] || '';
+    const path = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\//, '');
+    const doc = X(await get(path)), rows = [];
+    for (const row of tags(doc, 'row')) {
+      const ri = (+row.getAttribute('r') || rows.length + 1) - 1, arr = [];
+      let ci = 0;
+      for (const c of tags(row, 'c')) {
+        ci = c.getAttribute('r') ? colIdx(c.getAttribute('r')) : ci;
+        const tp = c.getAttribute('t'), v = tags(c, 'v')[0], raw = v ? v.textContent : '';
+        let val = raw;
+        if (tp === 's') val = shared[+raw] ?? '';
+        else if (tp === 'inlineStr') val = tags(c, 't').map(x => x.textContent).join('');
+        else if (tp === 'b') val = raw === '1' ? 'oui' : 'non';
+        else if (!tp || tp === 'n') { if (raw !== '' && isDate(+c.getAttribute('s') || 0)) val = fromSerial(raw); }
+        arr[ci++] = val;
+      }
+      rows[ri] = Array.from(arr, x => x ?? '');
+    }
+    out.push({ name: s.getAttribute('name') || 'Feuille', rows: Array.from(rows, r => r || []).filter(r => r.some(x => String(x).trim() !== '')) });
+  }
+  return out;
+}
+
+/* ---------- lecture de n'importe quel fichier tabulaire ---------- */
+function objectsToRows(list) {
+  const keys = []; for (const o of list) if (o && typeof o === 'object') for (const k of Object.keys(o)) if (!keys.includes(k)) keys.push(k);
+  return [keys, ...list.map(o => keys.map(k => { const v = (o || {})[k]; return Array.isArray(v) ? v.join(', ') : v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : v; }))];
+}
+async function readTabular(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'xls' || ext === 'ods') throw new Error('Format .' + ext + ' non pris en charge : ouvrez le fichier dans Excel ou LibreOffice et enregistrez-le en .xlsx ou .csv.');
+  if (ext === 'xlsx' || ext === 'xlsm') return { sheets: await readXlsx(await file.arrayBuffer()) };
+  const text = await readText(file);
+  if (ext === 'json' || /^\s*[\[{]/.test(text)) {
+    let j; try { j = JSON.parse(text); } catch (e) { throw new Error('JSON invalide : ' + e.message); }
+    if (j && !Array.isArray(j) && Array.isArray(j.projects) && j.settings) return { backup: j };
+    if (Array.isArray(j)) return { sheets: [{ name: file.name.replace(/\.\w+$/, ''), rows: objectsToRows(j) }] };
+    const arrs = Object.entries(j || {}).filter(([, v]) => Array.isArray(v));
+    if (arrs.length) return { sheets: arrs.map(([k, v]) => ({ name: k, rows: objectsToRows(v) })) };
+    throw new Error('Ce JSON ne contient aucun tableau de lignes.');
+  }
+  return { sheets: [{ name: file.name.replace(/\.\w+$/, ''), rows: CSV.parse(text) }] };
+}
+
+/* ---------- images : SVG autonome et PNG ---------- */
+let LIGHT_VARS = null;
+function lightVars() {            // couleurs du thème clair, quel que soit le thème affiché (papier, courriel)
+  if (LIGHT_VARS) return LIGHT_VARS;
+  LIGHT_VARS = {};
+  for (const sh of document.styleSheets) {
+    let rules; try { rules = sh.cssRules; } catch (e) { continue; }
+    for (const r of rules) if (r.selectorText === ':root') for (const p of r.style) if (p.startsWith('--')) LIGHT_VARS[p] = r.style.getPropertyValue(p).trim();
+  }
+  return LIGHT_VARS;
+}
+function svgStandalone(svg) {
+  const el = typeof svg === 'string' ? new DOMParser().parseFromString(svg.replace(/^\s*<svg\b(?![^>]*xmlns=)/, '<svg xmlns="http://www.w3.org/2000/svg"'), 'image/svg+xml').documentElement : svg;
+  if (!el || el.localName !== 'svg') throw new Error('graphique introuvable');
+  const vb = (el.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+  const W = Math.round(vb[2] || el.clientWidth || 800), H = Math.round(vb[3] || el.clientHeight || 400), v = lightVars();
+  const s = new XMLSerializer().serializeToString(el).replace(/var\((--[\w-]+)\)/g, (m, k) => v[k] || '#888888')
+    .replace(/^<svg\b[^>]*>/, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Segoe UI, Arial, sans-serif"><rect width="${W}" height="${H}" fill="#ffffff"/>`);
+  return { s, W, H };
+}
+function svgPng(svg, scale = 2) {
+  const { s, W, H } = svgStandalone(svg), k = Math.min(scale, 16000 / W, 16000 / H);
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(new Blob([s], { type: 'image/svg+xml;charset=utf-8' })), img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = Math.round(W * k); c.height = Math.round(H * k);
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); c.toBlob(b => b ? res(b) : rej(new Error('image trop grande')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('image illisible')); };
+    img.src = url;
+  });
+}
+
+/* ---------- PDF : mise en page imprimable, puis « Enregistrer au format PDF » ---------- */
+function printTable(ds) {
+  const keep = ds.pdf ? ds.cols.map((c, i) => ds.pdf.includes(c.l) ? i : -1).filter(i => i >= 0) : ds.cols.map((c, i) => i);
+  const al = c => c.t === 'int' || c.t === 'num' ? ' style="text-align:right"' : '';
+  printHTML(printHead(ds.title, ds.sub || '') + `<table><thead><tr>${keep.map(i => `<th${al(ds.cols[i])}>${esc(ds.cols[i].l)}</th>`).join('')}</tr></thead><tbody>
+    ${ds.rows.map(r => `<tr>${keep.map(i => `<td${al(ds.cols[i])}>${esc(dsText(ds.cols[i], r[i]))}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    <p style="font-size:9px;color:#666;margin:6px 0 0">${num(ds.rows.length)} ligne(s)${ds.pdf ? ' · colonnes principales (toutes les colonnes figurent dans l’export Excel)' : ''}</p>`);
+}
+function printSVG(title, sub, svgs) {
+  printHTML(svgs.map((s, i) => `<div class="${i < svgs.length - 1 ? 'pbreak' : ''}">${printHead(title, (sub || '') + (svgs.length > 1 ? ` · page ${i + 1}/${svgs.length}` : ''))}
+    <div class="psvg">${svgStandalone(s).s}</div></div>`).join(''));
+}
+
+/* ---------- agenda (.ics) d'une liste d'opérations ---------- */
+function icsOps(ops, abs = [], staffOf = null) {
+  const S = DB.settings, stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const q = t => String(t || '').replace(/([\\;,])/g, '\\$1').replace(/\n/g, '\\n');
+  const out = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//D8 Production//Planning//FR', 'CALSCALE:GREGORIAN', 'X-WR-TIMEZONE:Europe/Paris'];
+  for (const o of ops) {
+    if (!o.date) continue;
+    const p = P(o.projectId) || {}, sv = svc(o.serviceId) || {};
+    for (const d of opDays(o)) {
+      const hs = opHalves(o).filter(h => h[0] === d).map(h => h[1]);
+      const st = (sv.mode === 'half' && !hs.includes(0)) ? S.pmStart : S.amStart;
+      const en = (sv.mode === 'half' && !hs.includes(1)) ? S.amEnd : S.pmEnd;
+      out.push('BEGIN:VEVENT', `UID:op${o.id}-${d}@d8planning`, `DTSTAMP:${stamp}`,
+        `DTSTART:${d.replace(/-/g, '')}T${st.replace(':', '')}00`, `DTEND:${d.replace(/-/g, '')}T${en.replace(':', '')}00`,
+        `SUMMARY:${q(sv.name + ' · ' + p.client + (staffOf && o.staffId ? ' · ' + staffName(o.staffId) : ''))}`,
+        `LOCATION:${q([p.address, p.city].filter(Boolean).join(', '))}`,
+        `DESCRIPTION:${q([label(get('projectTypes', p.typeId)), label(get('daModels', p.daModelId)), '#' + p.id, p.phone, o.notes].filter(Boolean).join(' · '))}`,
+        'END:VEVENT');
+    }
+  }
+  for (const a of abs) {
+    out.push('BEGIN:VEVENT', `UID:abs${a.id}@d8planning`, `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${a.start.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${D.add(a.end, 1).replace(/-/g, '')}`,
+      `SUMMARY:${q((label(get('absenceTypes', a.typeId)) || 'Absence') + (staffOf ? ' · ' + staffName(a.staffId) : ''))}`, 'END:VEVENT');
+  }
+  out.push('END:VCALENDAR');
+  return out.join('\r\n');
+}
+
+/* ---------- jeux de données exportables ---------- */
+function nextStepText(p) {
+  const ops = projOps(p.id), o = ops.find(x => stage(x) !== 'done');
+  if (!ops.length) return 'aucune étape';
+  if (!o) return 'terminé';
+  return label(svc(o.serviceId)) + (o.date ? ' ' + D.fmt(o.date) : ' à planifier') + (o.staffId ? ' · ' + staffName(o.staffId) : '');
+}
+function absHalves(a, from, to) {          // demi-journées ouvrées d'absence comprises entre from et to
+  let n = 0;
+  for (let d = a.start < from ? from : a.start; d <= a.end && d <= to; d = D.add(d, 1)) {
+    if (!isWork(d)) continue;
+    n += 2 - (d === a.start && a.startSlot === 'PM' ? 1 : 0) - (d === a.end && a.endSlot === 'AM' ? 1 : 0);
+  }
+  return Math.max(0, n);
+}
+const DS = {
+  projects(list, title, sheet) {
+    return {
+      title, sheet, pdf: ['N°', 'Client', 'Type', 'Modèle', 'Ville', 'Date demandée', 'Agence', 'Commercial', 'Prochaine étape'],
+      cols: [{ l: 'N°', t: 'int' }, { l: 'Client' }, { l: 'Commande' }, { l: 'Rang' }, { l: 'Type' }, { l: 'Modèle' }, { l: 'Ville' }, { l: 'Adresse' },
+        { l: 'Date demandée', t: 'date' }, { l: 'Agence' }, { l: 'Commercial' }, { l: 'Étiquettes' }, { l: 'Contact' }, { l: 'Téléphone' },
+        { l: 'Prochaine étape' }, { l: 'Avancement' }, { l: 'En retard' }, { l: 'Créé le', t: 'date' }, { l: 'Archivé le', t: 'date' }, { l: 'Notes' }],
+      rows: list.map(p => {
+        const ops = projOps(p.id);
+        return [p.id, p.client, p.erpRef, p.part, label(get('projectTypes', p.typeId)), label(get('daModels', p.daModelId)), p.city, p.address,
+          p.requested, label(get('agencies', p.agencyId)), label(get('users', p.commercialId)), (p.tags || []).map(t => label(get('tags', t))).filter(Boolean).join(', '),
+          p.contactName, p.phone, nextStepText(p), ops.length ? ops.filter(o => stage(o) === 'done').length + '/' + ops.length + ' étapes' : '',
+          yesNo(!!lateFlag(p)), String(p.createdAt || '').slice(0, 10), p.archivedAt, p.notes];
+      })
+    };
+  },
+  ops(list, title, sheet) {
+    return {
+      title, sheet, pdf: ['Service', 'Début', 'Créneau', 'Ressource', 'Client', 'Ville', 'Modèle', 'Statut'],
+      cols: [{ l: 'N° opération', t: 'int' }, { l: 'N° projet', t: 'int' }, { l: 'Client' }, { l: 'Ville' }, { l: 'Agence' }, { l: 'Type' }, { l: 'Modèle' },
+        { l: 'Service' }, { l: 'Statut' }, { l: 'Ressource' }, { l: 'Début', t: 'date' }, { l: 'Créneau' }, { l: 'Fin', t: 'date' },
+        { l: 'Durée (h)', t: 'num' }, { l: 'Préparation faite' }, { l: 'Matricule' }, { l: 'Contact client' }, { l: 'Notes' }],
+      rows: list.slice().sort((a, b) => (a.date || '9999') < (b.date || '9999') ? -1 : (a.date || '9999') > (b.date || '9999') ? 1 : a.id - b.id).map(o => {
+        const p = P(o.projectId) || {}, sv = svc(o.serviceId) || {};
+        return [o.id, o.projectId, p.client, p.city, label(get('agencies', p.agencyId)), label(get('projectTypes', p.typeId)), label(get('daModels', p.daModelId)),
+          sv.name, label(stat(o.statusId)), staffName(o.staffId), o.date, o.date ? SLOT_TXT(o, sv) : 'à planifier', o.date ? opEnd(o) : '',
+          opHours(o), sv.needsPrep ? yesNo(o.prepDone) : '', o.matricule, sv.needsContact ? CONTACT_TXT[o.contact] || '' : '', o.notes];
+      })
+    };
+  },
+  absences(list) {
+    return {
+      title: 'Absences & congés', sheet: 'Absences',
+      cols: [{ l: 'Ressource' }, { l: 'Motif' }, { l: 'Du', t: 'date' }, { l: 'Début' }, { l: 'Au', t: 'date' }, { l: 'Fin' }, { l: 'Jours ouvrés', t: 'num' }, { l: 'Note' }],
+      rows: list.slice().sort((a, b) => a.start < b.start ? -1 : a.start > b.start ? 1 : 0).map(a => [staffName(a.staffId), label(get('absenceTypes', a.typeId)),
+        a.start, a.startSlot === 'PM' ? 'après-midi' : 'matin', a.end, a.endSlot === 'AM' ? 'matin' : 'après-midi', absHalves(a, a.start, a.end) / 2, a.note])
+    };
+  },
+  coll(kind) {
+    const S = SCHEMAS[kind];
+    const val = (f, x) => {
+      const v = x[f.k];
+      if (f.t === 'bool') return yesNo(v !== false);
+      if (f.t === 'ref') return label(get(f.ref, v));
+      if (f.t === 'refs') return (v || []).map(id => label(get(f.ref, id))).filter(Boolean).join(', ');
+      if (f.t === 'multi') return (v || []).map(k => (f.opts.find(o => o[0] === k) || [])[1] || k).join(', ');
+      if (f.t === 'select') return (f.opts.find(o => o[0] === v) || [])[1] || v || '';
+      return v ?? '';
+    };
+    return {
+      title: S.label, sheet: S.label,
+      cols: [...S.fields.map(f => ({ l: f.l, t: f.t === 'number' ? 'num' : f.t === 'date' ? 'date' : 'text', dec: 1 })), { l: 'ID' }],
+      rows: DB[kind].slice().sort(kind === 'staff' || kind === 'users' ? byName : byOrder).map(x => [...S.fields.map(f => val(f, x)), x.id])
+    };
+  },
+  journal(rows) {
+    return {
+      title: 'Journal d’activité', sheet: 'Journal',
+      cols: [{ l: 'Date', t: 'dt' }, { l: 'Utilisateur' }, { l: 'Action' }, { l: 'N° projet', t: 'int' }],
+      rows: rows.map(l => [l.t, l.u, l.a, /^p\d+$/.test(l.r || '') ? +l.r.slice(1) : ''])
+    };
+  }
+};
+function filteredJournal() { const qq = UI.logq || ''; return qq ? DB.log.filter(l => norm(l.a + ' ' + l.u).includes(norm(qq))) : DB.log; }
+
+/* ---------- fournisseurs d'export, appelés au moment du clic (filtres en cours) ---------- */
+const XP = {
+  projects: a => {
+    const arch = a === '1', list = filterProjects(arch);
+    const ds = DS.projects(list, arch ? 'Projets archivés' : 'Projets en cours', arch ? 'Archives' : 'Projets');
+    ds.sub = num(list.length) + ' projet(s)' + (Object.values(UI.pf || {}).some(Boolean) ? ' · filtres appliqués' : '');
+    return { ds };
+  },
+  week: svId => {
+    const sv = svc(svId); if (!sv) return null;
+    const days = workDaysOfWeek(UI.week || D.monday(D.today())), first = days[0], last = days[days.length - 1];
+    const ops = DB.ops.filter(o => o.serviceId === sv.id && o.date && opDays(o).some(d => d >= first && d <= last));
+    const abs = DB.absences.filter(a => a.end >= first && a.start <= last && staffOfService(sv.id).some(s => s.id === a.staffId));
+    const ds = DS.ops(ops, `Planning ${sv.name} · semaine ${D.week(first)}`, 'Semaine ' + D.week(first));
+    ds.sub = `du ${D.fmt(first)} au ${D.fmt(last)}`;
+    return { ds, file: `planning-${sv.name}-S${D.week(first)}`, ics: () => icsOps(ops, abs, true), print: () => printWeek(sv.id) };
+  },
+  prep: () => {
+    const l = prepList();
+    return {
+      ds: {
+        title: 'Préparation atelier', sub: `${DB.settings.prepHorizon} prochains jours`,
+        cols: [{ l: 'Production', t: 'date' }, { l: 'N° projet', t: 'int' }, { l: 'Client' }, { l: 'Ville' }, { l: 'Modèle' }, { l: 'Matricule' },
+          { l: 'Mouvement' }, { l: 'Atelier' }, { l: 'Commercial' }, { l: 'Préparation faite' }, { l: 'En retard' }],
+        rows: l.map(x => [x.o.date, x.p.id, x.p.client, x.p.city, label(get('daModels', x.p.daModelId)), x.o.matricule, label(get('projectTypes', x.p.typeId)),
+          staffName(x.o.staffId), label(get('users', x.p.commercialId)), yesNo(x.o.prepDone), yesNo(x.late)])
+      }, print: () => printPrep()
+    };
+  },
+  absences: () => ({ ds: DS.absences(DB.absences), ics: () => icsOps([], DB.absences, true) }),
+  alerts: () => {
+    const A = alerts();
+    return {
+      ds: {
+        title: 'Alertes', sub: `${A.list.length} point(s) de vigilance`,
+        cols: [{ l: 'Niveau' }, { l: 'Catégorie' }, { l: 'N° projet', t: 'int' }, { l: 'Client' }, { l: 'Service' }, { l: 'Date' , t: 'date' }, { l: 'Message' }],
+        rows: A.list.map(a => { const o = O(a.opId); return [ALERT_LEVEL[a.level] || a.level, ALERT_NAMES[a.type] || a.type, a.projectId, (P(a.projectId) || {}).client, o ? label(svc(o.serviceId)) : '', o ? o.date : '', a.msg]; })
+      }
+    };
+  },
+  journal: () => ({ ds: DS.journal(filteredJournal()) }),
+  admin: kind => SCHEMAS[kind] ? { ds: DS.coll(kind) } : null,
+  'rep-activite': () => {
+    const R = UI.rep, rows = [];
+    for (const g of activiteData(R)) for (const r of g.rows) rows.push([g.sv.name, label(r.s), r.n, r.hours, r.pct]);
+    return { ds: { title: 'Activité des équipes', sub: `du ${D.fmt(R.from)} au ${D.fmt(R.to)}`, cols: [{ l: 'Service' }, { l: 'Ressource' }, { l: 'Opérations terminées', t: 'int' }, { l: 'Heures', t: 'num' }, { l: 'Occupation (%)', t: 'int' }], rows } };
+  },
+  'rep-projets': () => {
+    const R = UI.rep, done = projetsDone(R);
+    const ds = DS.projects(done, 'Projets terminés', 'Terminés');
+    ds.sub = `du ${D.fmt(R.from)} au ${D.fmt(R.to)}`;
+    ds.cols.push({ l: 'Délai création → fin (j)', t: 'int' }, { l: 'Dans la date demandée' });
+    done.forEach((p, i) => ds.rows[i].push(p.createdAt ? D.diff(String(p.createdAt).slice(0, 10), p.archivedAt) : '', p.requested ? yesNo(p.archivedAt <= p.requested) : ''));
+    ds.pdf = ['N°', 'Client', 'Type', 'Agence', 'Date demandée', 'Archivé le', 'Délai création → fin (j)', 'Dans la date demandée'];
+    return { ds };
+  },
+  'rep-charge': () => {
+    const C = chargeData();
+    return {
+      ds: {
+        title: 'Charge prévisionnelle', sub: '8 semaines à venir · occupation en % de la capacité',
+        cols: [{ l: 'Service' }, ...C.weeks.map(w => ({ l: `S${D.week(w)} (${D.short(w)}) %`, t: 'int' })), { l: 'File d’attente (op.)', t: 'int' }, { l: 'File d’attente (h)', t: 'num' }],
+        rows: C.rows.map(r => [r.sv.name, ...r.cells.map(c => c.pct), r.bl, r.h])
+      }
+    };
+  },
+  chart: key => {
+    const s = Object.values(CH).find(c => c.key === key); if (!s) return null;
+    return { title: s.title, file: s.title, ds: chartDs(s), svg: () => $(`.chart[data-key="${key}"] svg`) };
+  },
+  gantt: () => {
+    const G = UI.gantt, gd = ganttData(G), ops = [], abs = [];
+    for (const r of gd.rows) { if (r.ops) ops.push(...r.ops.filter(o => o.date && opEnd(o) >= gd.from && o.date <= gd.to)); if (r.abs) abs.push(...r.abs); }
+    const ds = DS.ops([...new Set(ops)], 'Diagramme de Gantt', 'Gantt');
+    ds.sub = `du ${D.fmt(gd.from)} au ${D.fmt(gd.to)} · ${G.mode === 'ressources' ? 'par ressource' : 'par projet'}`;
+    return {
+      title: 'Diagramme de Gantt', file: 'gantt', ds, svg: () => ganttSVG(gd, G),
+      ics: () => icsOps([...new Set(ops)], [...new Set(abs)], true),
+      print: () => {
+        const per = 24, pages = [];
+        for (let i = 0; i < Math.max(1, gd.rows.length); i += per) pages.push(ganttSVG(gd, G, gd.rows.slice(i, i + per)));
+        printSVG('Diagramme de Gantt', ds.sub, pages);
+      }
+    };
+  },
+  all: () => {
+    const kinds = ['agencies', 'services', 'staffGroups', 'staff', 'opGroups', 'projectTypes', 'daModels', 'statuses', 'absenceTypes', 'tags', 'users'];
+    const pr = DB.projects.slice().sort((a, b) => b.id - a.id);
+    return {
+      title: 'Classeur complet', file: 'planning-complet',
+      sheets: [DS.projects(pr.filter(p => !p.archived), 'Projets en cours', 'Projets'), DS.projects(pr.filter(p => p.archived), 'Projets archivés', 'Archives'),
+        DS.ops(DB.ops, 'Opérations', 'Opérations'), DS.absences(DB.absences), ...kinds.map(k => DS.coll(k)), DS.journal(DB.log)]
+    };
+  }
+};
+function chartDs(s) {
+  if (s.type === 'lines' || s.type === 'stack') return {
+    title: s.title, cols: [{ l: s.xl || 'Période' }, ...s.series.map(x => ({ l: x.name + (s.unit ? ` (${s.unit.trim()})` : ''), t: 'num', dec: s.dec || 0 }))],
+    rows: s.labels.map((l, i) => [(s.full || s.labels)[i], ...s.series.map(x => x.values[i])])
+  };
+  if (s.type === 'donut') {
+    const tot = s.data.reduce((t, d) => t + d.value, 0);
+    return { title: s.title, cols: [{ l: s.xl || 'Catégorie' }, { l: s.yl || 'Nombre', t: 'int' }, { l: 'Part (%)', t: 'num' }], rows: s.data.map(d => [d.label, d.value, tot ? d.value / tot * 100 : 0]) };
+  }
+  return { title: s.title, cols: [{ l: s.xl || 'Libellé' }, { l: s.yl || 'Valeur', t: 'num', dec: s.dec || 0 }], rows: (s.data || []).map(d => [d.full || d.label, d.value]) };
+}
+
+/* ---------- menu « Exporter » ---------- */
+const FMT = {
+  xlsx: ['sheet', 'Excel (.xlsx)', 'tableau filtrable, dates et nombres reconnus'],
+  csv: ['file', 'CSV (séparateur ;)', 'Excel, LibreOffice, logiciel de gestion'],
+  json: ['braces', 'JSON', 'échange avec d’autres logiciels'],
+  pdf: ['printer', 'PDF', 'fenêtre d’impression → « Enregistrer au format PDF »'],
+  clip: ['copy', 'Copier le tableau', 'à coller dans Excel, Outlook ou Teams'],
+  ics: ['cal', 'Agenda (.ics)', 'Outlook, Google Agenda, téléphone'],
+  png: ['image', 'Image PNG', 'à insérer dans un courriel ou une présentation'],
+  svg: ['image', 'Image SVG', 'vectorielle, nette à toutes les tailles']
+};
+function xpBtn(key, o = {}) {
+  if (o.icon) return `<button class="ibtn no-print" data-act="xp" data-x="${esc(key)}" title="${esc(o.title || 'Exporter ce graphique')}" style="margin-left:${o.ml === false ? '0' : 'auto'}">${ic('download', 'sm')}</button>`;
+  return `<button class="btn${o.sm ? ' sm' : ''}${o.pri ? ' pri' : ''}" data-act="xp" data-x="${esc(key)}">${ic('download', o.sm ? 'sm' : '')} ${esc(o.label || 'Exporter')}</button>`;
+}
+function impBtn(target, o = {}) {
+  const perm = (IMPORTS[target] || {}).perm || 'admin';
+  return can(perm) ? `<button class="btn${o.sm ? ' sm' : ''}" data-act="imp" data-t="${esc(target)}">${ic('upload', o.sm ? 'sm' : '')} ${esc(o.label || 'Importer')}</button>` : '';
+}
+function xpGet(key) {
+  const i = key.indexOf(':'), f = XP[i < 0 ? key : key.slice(0, i)];
+  return f ? f(i < 0 ? '' : key.slice(i + 1)) : null;
+}
+function xpFormats(x) {
+  const f = [];
+  if (x.svg) f.push('png', 'svg');
+  if (x.ds || x.sheets) f.push('xlsx', 'csv', 'json');
+  if (x.ds || x.svg || x.print) f.push('pdf');
+  if (x.ds) f.push('clip');
+  if (x.ics) f.push('ics');
+  return f;
+}
+async function exportAs(f, x) {
+  const sheets = x.sheets || [x.ds], ds = x.ds, base = slug(x.file || (ds && ds.title) || x.title) + '-' + D.today();
+  if (f === 'xlsx') download(base + '.xlsx', await xlsxBlob(sheets));
+  else if (f === 'csv') {
+    if (sheets.length === 1) download(base + '.csv', dsCsvText(sheets[0]), 'text/csv;charset=utf-8');
+    else download(base + '-csv.zip', await zipFiles(sheets.map(s => ({ name: slug(s.sheet || s.title) + '.csv', data: dsCsvText(s) }))));
+  }
+  else if (f === 'json') download(base + '.json', JSON.stringify(sheets.length === 1 ? dsObjects(sheets[0]) : Object.fromEntries(sheets.map(s => [s.sheet || s.title, dsObjects(s)])), null, 1), 'application/json');
+  else if (f === 'pdf') { if (x.print) x.print(); else if (x.svg) printSVG(x.title, ds && ds.sub, [x.svg()]); else printTable(ds); }
+  else if (f === 'clip') {
+    const ok = await copyText([ds.cols.map(c => c.l), ...ds.rows.map(r => ds.cols.map((c, i) => dsCsv(c, r[i])))].map(r => r.map(v => String(v).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\r\n'));
+    toast(ok ? `${num(ds.rows.length)} ligne(s) copiée(s) : collez-les dans Excel (Ctrl + V)` : 'Le navigateur a refusé la copie.', ok ? 'ok' : 'danger');
+  }
+  else if (f === 'ics') download(base + '.ics', x.ics(), 'text/calendar;charset=utf-8');
+  else if (f === 'png') download(base + '.png', await svgPng(x.svg()));
+  else if (f === 'svg') download(base + '.svg', svgStandalone(x.svg()).s, 'image/svg+xml');
+}
+
+/* ---------- import : Excel, CSV ou JSON vers projets, absences ou listes de paramétrage ---------- */
+const parseBool = v => { const s = norm(v); return /^(oui|o|yes|y|vrai|true|1|x|actif|active)$/.test(s) ? true : /^(non|n|no|faux|false|0|inactif|inactive)$/.test(s) ? false : undefined; };
+const parseNum = v => { const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : ''; };
+const headIdx = (head, ...names) => { for (const n of names) { const i = head.findIndex(h => h === n); if (i >= 0) return i; } for (const n of names) { const i = head.findIndex(h => h.includes(n)); if (i >= 0) return i; } return -1; };
+const IMPORTS = {
+  projects: { label: 'Projets', perm: 'admin' },
+  absences: { label: 'Absences & congés', perm: 'planning' },
+  ...Object.fromEntries(Object.keys(SCHEMAS).filter(k => k !== 'roles').map(k => [k, { label: SCHEMAS[k].label, perm: 'admin' }]))
+};
+const PROJ_COLS = {
+  id: ['n°', 'numero', 'num', '#', 'id'], client: ['client', 'nom'], type: ['type', 'mouvement'], da: ['modele', 'distributeur', 'machine'],
+  city: ['ville'], address: ['adresse'], req: ['date demandee', 'demand', 'date'], ag: ['agence', 'site'], com: ['commercial'],
+  ref: ['commande', 'reference', 'ref'], part: ['rang'], tags: ['etiquette', 'tag'], contact: ['contact'], phone: ['telephone', 'tel'], notes: ['note', 'commentaire']
+};
+const ABS_COLS = { staff: ['ressource', 'personne', 'salarie', 'technicien', 'nom'], type: ['motif', 'type'], start: ['du', 'debut le', 'date de debut', 'date debut', 'depuis'], startSlot: ['debut'], end: ['au', 'fin le', 'date de fin', 'date fin', 'jusqu'], endSlot: ['fin'], note: ['note', 'commentaire'] };
+function mapCols(head, spec) {
+  const used = new Set(), out = {};
+  for (const [k, names] of Object.entries(spec)) {
+    let i = -1;
+    for (const n of names) { i = head.findIndex((h, j) => !used.has(j) && h === n); if (i >= 0) break; }
+    if (i < 0) for (const n of names) { i = head.findIndex((h, j) => !used.has(j) && h.includes(n) && n.length > 1); if (i >= 0) break; }
+    if (i >= 0) used.add(i);
+    out[k] = i;
+  }
+  return out;
+}
+function collCols(kind, head) {
+  const S = SCHEMAS[kind], out = {};
+  for (const f of S.fields) out[f.k] = head.findIndex(h => h === norm(f.l) || h === norm(f.k));
+  out.id = head.findIndex(h => h === 'id' || h === 'identifiant');
+  return out;
+}
+function recognized(target, head) {
+  if (target === 'projects') { const m = mapCols(head, PROJ_COLS); return Object.keys(m).filter(k => m[k] >= 0).map(k => head[m[k]]); }
+  if (target === 'absences') { const m = mapCols(head, ABS_COLS); return Object.keys(m).filter(k => m[k] >= 0).map(k => head[m[k]]); }
+  const m = collCols(target, head); return Object.keys(m).filter(k => m[k] >= 0).map(k => head[m[k]]);
+}
+function guessTarget(name, head, pref) {
+  const n = norm(name);
+  for (const [k, t] of Object.entries(IMPORTS)) if (can(t.perm) && (n === norm(t.label) || n.includes(norm(t.label).split(' ')[0]))) return k;
+  if (pref && can(IMPORTS[pref].perm)) return pref;
+  let best = null, bs = 0;
+  for (const k of Object.keys(IMPORTS)) { if (!can(IMPORTS[k].perm)) continue; const s = recognized(k, head).length; if (s > bs) { bs = s; best = k; } }
+  return best;
+}
+async function importFile(pref) {
+  const f = await pickFile('.xlsx,.xlsm,.csv,.tsv,.txt,.json,application/json,text/csv'); if (!f) return;
+  let parsed;
+  try { parsed = await readTabular(f); } catch (e) { return toast(e.message || 'Fichier illisible.', 'danger'); }
+  if (parsed.backup) { if (!needs('admin')) return; return restoreBackup(parsed.backup, f.name); }
+  const sheets = parsed.sheets.filter(s => s.rows.length >= 2);
+  if (!sheets.length) return toast('Aucune ligne exploitable : il faut une ligne d’en-têtes puis au moins une ligne de données.', 'danger');
+  const targets = Object.entries(IMPORTS).filter(([, t]) => can(t.perm));
+  if (!targets.length) return toast('Votre rôle ne permet pas d’importer.', 'warn');
+  let si = Math.max(0, sheets.findIndex(s => guessTarget(s.name, s.rows[0].map(norm), null) === pref));
+  const body = () => {
+    const sh = sheets[si], head = sh.rows[0].map(h => norm(h)), t = guessTarget(sh.name, head, pref) || targets[0][0];
+    return { sh, head, t };
+  };
+  const m = modal({
+    title: 'Importer · ' + f.name, size: 'lg',
+    body: `<div class="fgrid">
+        ${sheets.length > 1 ? `<div class="fld"><label>Feuille du classeur</label><select class="in" id="imp-sh">${sheets.map((s, i) => `<option value="${i}"${i === si ? ' selected' : ''}>${esc(s.name)} (${s.rows.length - 1} lignes)</option>`).join('')}</select></div>` : ''}
+        <div class="fld"><label>Importer dans</label><select class="in" id="imp-t">${targets.map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('')}</select></div></div>
+      <div id="imp-prev" style="margin-top:12px"></div>`,
+    foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn pri" data-ok>Continuer</button>`
+  });
+  const paint = (keepTarget) => {
+    const { sh, head, t } = body();
+    if (!keepTarget) $('#imp-t', m.el).value = t;
+    const tt = $('#imp-t', m.el).value, rec = recognized(tt, head);
+    $('#imp-prev', m.el).innerHTML = `<div class="bnr ${rec.length ? 'info' : 'warn'}" style="margin:0 0 10px">${ic(rec.length ? 'info' : 'warn')}<span>
+        ${rec.length ? `Colonnes reconnues (${rec.length}/${head.length}) : <b>${esc(rec.join(', '))}</b>` : 'Aucune colonne reconnue pour cette destination : vérifiez la ligne d’en-têtes ou choisissez une autre destination.'}</span></div>
+      <div class="tbl-wrap" style="max-height:260px"><table class="tbl"><thead><tr>${sh.rows[0].map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>
+        ${sh.rows.slice(1, 7).map(r => `<tr>${sh.rows[0].map((h, i) => `<td class="trunc" style="max-width:180px">${esc(r[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      <p class="mut" style="font-size:12.5px;margin:8px 0 0">${num(sh.rows.length - 1)} ligne(s). Astuce : exportez d’abord la liste en Excel, complétez-la, puis réimportez-la : les en-têtes seront reconnus.</p>`;
+  };
+  paint(false);
+  const shSel = $('#imp-sh', m.el); if (shSel) shSel.onchange = () => { si = +shSel.value; paint(false); };
+  $('#imp-t', m.el).onchange = () => paint(true);
+  $('[data-ok]', m.el).onclick = () => {
+    const { sh } = body(), tt = $('#imp-t', m.el).value;
+    if (!recognized(tt, sh.rows[0].map(norm)).length) return toast('Aucune colonne reconnue.', 'warn');
+    m.close();
+    if (tt === 'projects') importProjects(sh.rows, f.name);
+    else if (tt === 'absences') importAbsences(sh.rows, f.name);
+    else importColl(tt, sh.rows, f.name);
+  };
+}
+function importSummary(title, lines, run) {
+  const m = modal({
+    title, size: 'sm', body: `<ul style="margin:0;padding-left:18px;line-height:1.8">${lines.filter(Boolean).map(l => `<li>${l}</li>`).join('')}</ul>`,
+    foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn pri" data-ok>Importer</button>`
+  });
+  $('[data-ok]', m.el).onclick = () => { run(); m.close(); };
+}
+function importColl(kind, rows, fileName) {
+  if (!needs('admin')) return;
+  const S = SCHEMAS[kind], head = rows[0].map(h => norm(h)), C = collCols(kind, head);
+  const findRef = (coll, s) => { const n = norm(s); return (DB[coll].find(x => norm(label(x)) === n || norm(x.id) === n) || {}).id; };
+  let warn = 0;
+  const conv = (f, raw) => {
+    const s = String(raw ?? '').trim();
+    if (s === '') return undefined;
+    switch (f.t) {
+      case 'bool': return parseBool(s);
+      case 'number': { const n = parseNum(s); return n === '' ? undefined : n; }
+      case 'date': return D.fromAny(s) || undefined;
+      case 'color': return /^#?[0-9a-f]{6}$/i.test(s) ? (s[0] === '#' ? s : '#' + s) : undefined;
+      case 'ref': { const id = findRef(f.ref, s); if (!id) warn++; return id || undefined; }
+      case 'refs': return s.split(/[,;|]/).map(x => x.trim()).filter(Boolean).map(x => { const id = findRef(f.ref, x); if (!id) warn++; return id; }).filter(Boolean);
+      case 'multi': return s.split(/[,;|]/).map(x => norm(x)).map(x => (f.opts.find(o => norm(o[1]) === x || norm(o[0]) === x) || [])[0]).filter(Boolean);
+      case 'select': return (f.opts.find(o => norm(o[1]) === norm(s) || norm(o[0]) === norm(s)) || [])[0];
+      default: return s;
+    }
+  };
+  const keyOf = x => norm(label(x));
+  const items = rows.slice(1).map(r => {
+    const v = {};
+    for (const f of S.fields) { if (f.ro || C[f.k] < 0) continue; const x = conv(f, r[C[f.k]]); if (x !== undefined) v[f.k] = x; }
+    return { v, id: C.id >= 0 ? String(r[C.id] || '').trim() : '' };
+  }).filter(x => Object.keys(x.v).length);
+  const plan = items.map(x => {
+    const ex = (x.id && DB[kind].find(y => y.id === x.id)) || DB[kind].find(y => keyOf(y) && keyOf(y) === norm(label(x.v)));
+    const missing = !ex && S.fields.find(f => f.req && (x.v[f.k] == null || x.v[f.k] === '' || (Array.isArray(x.v[f.k]) && !x.v[f.k].length)) && !(kind === 'users' && f.k === 'roleId'));
+    return { ...x, ex, skip: !!missing };
+  });
+  const nNew = plan.filter(p => !p.ex && !p.skip).length, nUpd = plan.filter(p => p.ex).length, nSkip = plan.filter(p => p.skip).length;
+  importSummary('Importer · ' + S.label, [
+    `<b>${nNew}</b> élément(s) à créer`, `<b>${nUpd}</b> élément(s) déjà présents (même ID ou même nom), mis à jour avec les valeurs du fichier`,
+    nSkip ? `<b>${nSkip}</b> ligne(s) ignorée(s) : champ obligatoire vide` : '',
+    warn ? `${warn} référence(s) introuvable(s) (agence, service, groupe…) laissée(s) vide(s)` : '',
+    `Fichier : ${esc(fileName)}`
+  ], () => {
+    const defRole = (DB.roles.find(r => !(r.perms || []).length) || DB.roles[DB.roles.length - 1] || {}).id;
+    mutate(`Import ${S.label} (${nNew + nUpd})`, db => {
+      for (const p of plan) {
+        if (p.skip) continue;
+        if (p.ex) { const t = db[kind].find(y => y.id === p.ex.id); if (t) Object.assign(t, p.v); continue; }
+        const base = Object.fromEntries(S.fields.filter(f => f.def !== undefined).map(f => [f.k, f.def]));
+        if (kind === 'users') Object.assign(base, { roleId: defRole, lastLogin: '' });
+        const o = Object.assign({ id: p.id && !db[kind].some(y => y.id === p.id) ? p.id : uid(kind.slice(0, 3)) }, base, p.v);
+        for (const f of S.fields) if ((f.t === 'refs' || f.t === 'multi') && !Array.isArray(o[f.k])) o[f.k] = [];
+        db[kind].push(o);
+      }
+    }, { undo: true });
+    toast(`${nNew + nUpd} élément(s) importé(s)`, 'ok');
+  });
+}
+function importAbsences(rows, fileName) {
+  if (!needs('planning')) return;
+  const head = rows[0].map(h => norm(h)), C = mapCols(head, ABS_COLS);
+  const cell = (r, k) => C[k] >= 0 ? String(r[C[k]] ?? '').trim() : '';
+  const staffBy = s => DB.staff.find(x => norm(label(x)) === norm(s) || norm(x.lastName + ' ' + x.firstName) === norm(s));
+  let unknown = 0, dup = 0, badType = 0;
+  const list = [];
+  for (const r of rows.slice(1)) {
+    const st = staffBy(cell(r, 'staff')), start = D.fromAny(cell(r, 'start'));
+    if (!st || !start) { unknown++; continue; }
+    const end = D.fromAny(cell(r, 'end')) || start;
+    const ty = DB.absenceTypes.find(t => norm(t.name) === norm(cell(r, 'type')));
+    if (!ty && cell(r, 'type')) badType++;
+    const a = { staffId: st.id, typeId: (ty || DB.absenceTypes[0] || {}).id, start, end: end < start ? start : end,
+      startSlot: /apr|pm|midi/i.test(cell(r, 'startSlot')) ? 'PM' : 'AM', endSlot: /mat|am/i.test(cell(r, 'endSlot')) ? 'AM' : 'PM', note: cell(r, 'note') };
+    if (DB.absences.some(x => x.staffId === a.staffId && x.start === a.start && x.end === a.end && x.typeId === a.typeId) || list.some(x => x.staffId === a.staffId && x.start === a.start && x.end === a.end)) { dup++; continue; }
+    list.push(a);
+  }
+  importSummary('Importer · Absences', [
+    `<b>${list.length}</b> absence(s) à créer`, dup ? `${dup} déjà présente(s), ignorée(s)` : '',
+    unknown ? `${unknown} ligne(s) ignorée(s) : ressource inconnue ou date illisible` : '',
+    badType ? `${badType} motif(s) inconnu(s), remplacé(s) par « ${esc(label(DB.absenceTypes[0]))} »` : '', `Fichier : ${esc(fileName)}`
+  ], () => {
+    mutate(`Import de ${list.length} absence(s)`, db => { for (const a of list) db.absences.push(Object.assign({ id: uid('ab') }, a)); }, { undo: true });
+    toast(list.length + ' absence(s) importée(s)', 'ok');
+  });
+}
+function importProjects(rows, fileName) {
+  if (!needs('admin')) return;
+  const head = rows[0].map(h => norm(h)), C = mapCols(head, PROJ_COLS);
+  const cell = (r, k) => C[k] >= 0 ? String(r[C[k]] ?? '').trim() : '';
+  const data = rows.slice(1).map(r => ({
+    id: C.id >= 0 ? parseInt(cell(r, 'id').replace(/\D/g, ''), 10) : NaN,
+    raw: cell(r, 'client'), type: cell(r, 'type'), da: cell(r, 'da'), city: cell(r, 'city'), address: cell(r, 'address'), req: D.fromAny(cell(r, 'req')),
+    ag: cell(r, 'ag'), com: cell(r, 'com'), ref: cell(r, 'ref'), part: cell(r, 'part'), tags: cell(r, 'tags'), contact: cell(r, 'contact'), phone: cell(r, 'phone'), notes: cell(r, 'notes')
+  })).filter(x => x.raw);
+  if (!data.length) return toast('Aucune colonne « client » reconnue dans ce fichier.', 'danger');
+  const findBy = (coll, name) => DB[coll].find(x => norm(label(x)) === norm(name));
+  const exists = data.filter(d => !isNaN(d.id) && DB.projects.some(p => p.id === d.id)).length;
+  const newDa = [...new Set(data.map(d => d.da).filter(Boolean).filter(n => !findBy('daModels', n)))];
+  const newTy = [...new Set(data.map(d => d.type).filter(Boolean).filter(n => !findBy('projectTypes', n)))];
+  const newCo = [...new Set(data.map(d => d.com).filter(Boolean).filter(n => !findBy('users', n)))];
+  const m = modal({
+    title: 'Importer des projets', size: 'lg',
+    body: `<p style="margin:0 0 10px"><b>${data.length}</b> ligne(s) lues dans <b>${esc(fileName)}</b>.</p>
+      <div class="tbl-wrap" style="max-height:230px;margin-bottom:12px"><table class="tbl"><thead><tr><th>N°</th><th>Client</th><th>Type</th><th>Modèle</th><th>Ville</th><th>Demandé</th></tr></thead><tbody>
+      ${data.slice(0, 8).map(d => `<tr><td class="n">${isNaN(d.id) ? '' : d.id}</td><td>${esc(d.raw)}</td><td>${esc(d.type)}</td><td>${esc(d.da)}</td><td>${esc(d.city)}</td><td>${esc(d.req ? D.fmt(d.req) : '')}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${newDa.length || newTy.length || newCo.length ? `<div class="bnr info">${ic('info')}<span>Seront créés automatiquement :
+        ${[newDa.length ? newDa.length + ' modèle(s)' : '', newTy.length ? newTy.length + ' type(s)' : '', newCo.length ? newCo.length + ' commercial(aux)' : ''].filter(Boolean).join(', ')}.</span></div>` : ''}
+      ${exists ? `<div class="fld" style="margin:8px 0"><label>${exists} projet(s) existent déjà (même n°)</label><select class="in" id="imp-ex">
+        <option value="skip">Les ignorer (ne rien modifier)</option><option value="update">Les mettre à jour avec les valeurs du fichier</option></select></div>` : ''}
+      <label class="sw" style="margin-top:8px"><input type="checkbox" id="imp-arch"><i></i><span>Importer comme projets terminés (archives, sans étapes)</span></label>
+      <label class="sw" style="margin-top:8px"><input type="checkbox" id="imp-steps" checked><i></i><span>Créer les étapes selon le type et l’agence</span></label>`,
+    foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn pri" data-ok>Importer</button>`
+  });
+  $('[data-ok]', m.el).onclick = () => {
+    const arch = $('#imp-arch', m.el).checked, steps = $('#imp-steps', m.el).checked && !arch, upd = ($('#imp-ex', m.el) || {}).value === 'update';
+    let nNew = 0, nUpd = 0, nSkip = 0;
+    mutate(`Import de ${data.length} projet(s)`, db => {
+      const ref = (coll, name, make) => {
+        if (!String(name || '').trim()) return '';
+        const f = db[coll].find(x => norm(label(x)) === norm(name));
+        if (f) return f.id;
+        const o = make(String(name).trim()); db[coll].push(o); return o.id;
+      };
+      const tagIds = s => s.split(/[,;|]/).map(x => x.trim()).filter(Boolean).map(n => ref('tags', n, x => ({ id: uid('tg'), name: x, color: '#7c5cc4' })));
+      for (const d of data) {
+        const { client, ref: erp, part, tags } = parseLegacy(d.raw);
+        const old = !isNaN(d.id) ? db.projects.find(p => p.id === d.id) : null;
+        const v = {
+          client, erpRef: d.ref || erp, part: d.part || part,
+          typeId: ref('projectTypes', d.type, n => ({ id: uid('typ'), name: n, color: '#6d7783', services: [], active: true })),
+          agencyId: (db.agencies.find(a => norm(a.name) === norm(d.ag)) || {}).id || '',
+          daModelId: ref('daModels', d.da, n => ({ id: daId(n), name: n, category: '', order: 99, active: true })),
+          commercialId: ref('users', d.com, n => ({ id: uid('usr'), firstName: n.split(' ')[0] || n, lastName: n.split(' ').slice(1).join(' '), email: '', roleId: 'r_com', active: true, lastLogin: '' })),
+          city: d.city, address: d.address, requested: d.req, contactName: d.contact, phone: d.phone, notes: d.notes,
+          tags: [...new Set([...tags, ...(C.tags >= 0 ? tagIds(d.tags) : [])])]
+        };
+        if (old) {
+          if (!upd) { nSkip++; continue; }
+          for (const [k, x] of Object.entries(v)) if (x !== '' && x != null && !(Array.isArray(x) && !x.length && C.tags < 0)) old[k] = x;
+          nUpd++; continue;
+        }
+        const id = !isNaN(d.id) && d.id > 0 ? d.id : db.counters.project++;
+        if (id >= db.counters.project) db.counters.project = id + 1;
+        const p = Object.assign({
+          id, opGroupId: '', archived: arch, archivedAt: arch ? D.today() : '', autoArch: false, createdAt: D.now(), createdBy: 'import'
+        }, v, { typeId: v.typeId || (db.projectTypes[0] || {}).id, agencyId: v.agencyId || (db.agencies[0] || {}).id });
+        db.projects.push(p); nNew++;
+        if (steps) {
+          const t = db.projectTypes.find(x => x.id === p.typeId), a = db.agencies.find(x => x.id === p.agencyId);
+          const ts = new Set((t && t.services) || []), circ = a && a.circuit && a.circuit.length ? new Set(a.circuit) : null;
+          for (const s of db.services.filter(s => ts.has(s.id) && (!circ || circ.has(s.id))).sort(byOrder)) db.ops.push(newOp(db, id, s.id, ''));
+        }
+      }
+    }, { undo: true });
+    m.close(); toast(`${nNew} projet(s) créé(s)${nUpd ? `, ${nUpd} mis à jour` : ''}${nSkip ? `, ${nSkip} ignoré(s)` : ''}`, 'ok');
+  };
+}
+async function restoreBackup(data, name) {
+  if (!data || !Array.isArray(data.projects)) return toast('Ce fichier n’est pas une sauvegarde du planning.', 'danger');
+  if (!await superAdmin(`Remplacer toutes les données actuelles par le contenu de <b>${esc(name)}</b> (${data.projects.length} projets) ?`, { ok: 'Restaurer' })) return;
+  mutate('Restauration d’une sauvegarde', db => { const d = migrate(data); d.meta.gen = uid('g'); for (const k of Object.keys(db)) delete db[k]; Object.assign(db, d); });
+  toast('Sauvegarde restaurée', 'ok');
+}
+
+/* ---------- graphiques supplémentaires ---------- */
+const textW = (() => {                         // largeur réelle d'un texte, pour tronquer sans chevauchement
+  let c = null;
+  return (t, px = 12, w = 400) => {
+    if (!c) c = document.createElement('canvas').getContext('2d');
+    c.font = `${w} ${px}px ${getComputedStyle(document.body).fontFamily}`;
+    return c.measureText(String(t)).width;
+  };
+})();
+function fitText(t, max, px = 12, w = 400) {
+  t = String(t ?? '');
+  if (textW(t, px, w) <= max) return t;
+  let lo = 0, hi = t.length;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (textW(t.slice(0, m) + '…', px, w) <= max) lo = m; else hi = m - 1; }
+  return lo ? t.slice(0, lo) + '…' : '';
+}
+function niceMax(v, int) {                     // maximum d'axe donnant 4 graduations rondes
+  if (!(v > 0)) return 1;
+  const raw = v / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const k of [1, 2, 2.5, 3, 4, 5, 6, 8, 10]) { const t = k * mag; if (int && t < 1) continue; if (int && t % 1) continue; if (t >= raw) return t * 4; }
+  return 10 * mag * 4;
+}
+const numSmart = (v, dec) => num(v, dec && !Number.isInteger(Math.round(v * 100) / 100) ? dec : 0);
+function barPath(x, y, w, h, r) {              // barre arrondie côté valeur, carrée sur la ligne de base
+  if (h <= 0 || w <= 0) return '';
+  r = Math.max(0, Math.min(r, w / 2, h));
+  const f = v => +v.toFixed(1);
+  return `M${f(x)} ${f(y + h)}V${f(y + r)}Q${f(x)} ${f(y)} ${f(x + r)} ${f(y)}H${f(x + w - r)}Q${f(x + w)} ${f(y)} ${f(x + w)} ${f(y + r)}V${f(y + h)}Z`;
+}
+function foldOther(rows, max = 6) {            // au-delà de 6 parts, le reste est regroupé en « Autres »
+  const s = rows.filter(r => r.value > 0).sort((a, b) => b.value - a.value);
+  if (s.length <= max) return s;
+  const rest = s.slice(max - 1).reduce((t, r) => t + r.value, 0);
+  return [...s.slice(0, max - 1), { label: 'Autres', value: rest, color: '#8a939f' }];
+}
+function svgLegend(items, x, y, W) {           // légende en ligne, avec retour à la ligne
+  let cx = x, cy = y, out = '';
+  for (const it of items) {
+    const w = 22 + String(it.name).length * 6.4;
+    if (cx + w > W - 8 && cx > x) { cx = x; cy += 18; }
+    out += `<rect x="${cx}" y="${cy - 9}" width="10" height="10" rx="2" fill="${it.color}"/><text x="${cx + 15}" y="${cy}" font-size="11" fill="var(--text-2)">${esc(it.name)}</text>`;
+    cx += w + 10;
+  }
+  return { svg: out, bottom: cy };
+}
+function svgDonut(s, W, H) {
+  const data = s.data || [], tot = data.reduce((t, d) => t + d.value, 0);
+  if (!tot) return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="12" fill="var(--text-3)">Aucune donnée</text></svg>`;
+  const R = Math.min(H / 2 - 10, 96), r = R * .6, cx = R + 12, cy = H / 2;
+  const pt = (rad, a) => `${(cx + rad * Math.cos(a)).toFixed(2)} ${(cy + rad * Math.sin(a)).toFixed(2)}`;
+  let a = -Math.PI / 2, arcs = '';
+  for (const d of data) {
+    const sw = d.value / tot * Math.PI * 2, a0 = a, a1 = a + sw, large = sw > Math.PI ? 1 : 0; a = a1;
+    const tip = `<title>${esc(d.label)} : ${num(d.value)} (${num(d.value / tot * 100, 1)} %)</title>`;
+    arcs += data.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${(R + r) / 2}" fill="none" stroke="${d.color}" stroke-width="${R - r}">${tip}</circle>`
+      : `<path d="M${pt(R, a0)} A${R} ${R} 0 ${large} 1 ${pt(R, a1)} L${pt(r, a1)} A${r} ${r} 0 ${large} 0 ${pt(r, a0)} Z" fill="${d.color}" stroke="var(--surface)" stroke-width="2">${tip}</path>`;
+  }
+  const lx = cx + R + 26, lh = Math.min(24, (H - 16) / data.length), ly = cy - lh * data.length / 2 + lh / 2 + 4;
+  const room = Math.max(40, W - 8 - 92 - lx - 16);
+  const leg = data.map((d, i) => `<rect x="${lx}" y="${ly + i * lh - 9}" width="10" height="10" rx="2" fill="${d.color}"/>
+    <text x="${lx + 16}" y="${ly + i * lh}" font-size="12" fill="var(--text-2)">${esc(fitText(d.label, room, 12))}</text>
+    <text x="${W - 8}" y="${ly + i * lh}" font-size="12" text-anchor="end" fill="var(--text)" font-weight="600">${num(d.value)} <tspan fill="var(--text-3)" font-weight="400">· ${num(d.value / tot * 100, 0)} %</tspan></text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(s.title || '')}">${arcs}
+    <text x="${cx}" y="${cy + 2}" text-anchor="middle" font-size="22" font-weight="700" fill="var(--text)">${num(tot)}</text>
+    <text x="${cx}" y="${cy + 19}" text-anchor="middle" font-size="11" fill="var(--text-3)">${esc(s.unit || 'au total')}</text>${leg}</svg>`;
+}
+function svgLines(s, W, H) {
+  const pl = 44, pr = s.series.length <= 4 ? 110 : 16, pt = 12;
+  const leg = svgLegend(s.series.map(x => ({ name: x.name, color: x.color })), pl, 0, W);
+  const legH = leg.bottom + 18, pb = 24 + legH, w = W - pl - pr, h = H - pt - pb;
+  const all = s.series.flatMap(x => x.values).filter(v => v != null);
+  const max = s.max || niceMax(Math.max(1, (s.ref || 0) * 1.12, ...all), !s.dec);
+  const n = s.labels.length, X = i => pl + (n < 2 ? w / 2 : i * w / (n - 1)), Y = v => pt + h - h * Math.min(1.05, v / max);
+  let out = axis(W, H - legH, max, pl, pr, pt, 24, s.dec);
+  if (s.ref) out += `<line x1="${pl}" x2="${W - pr}" y1="${Y(s.ref)}" y2="${Y(s.ref)}" stroke="var(--text-3)" stroke-dasharray="4 4"/>
+    <text x="${pl + 4}" y="${Y(s.ref) - 4}" font-size="10" fill="var(--text-3)">${esc(s.refLabel || '')}</text>`;
+  const step = Math.max(1, Math.ceil(n / Math.max(3, Math.floor(w / 64))));
+  s.labels.forEach((l, i) => { if (i % step === 0 || i === n - 1) out += `<text x="${X(i).toFixed(1)}" y="${H - legH - 7}" text-anchor="middle" font-size="10" fill="var(--text-3)">${esc(l)}</text>`; });
+  const ends = [];
+  for (const sr of s.series) {
+    let d = '', pen = false;
+    sr.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1) + ' '; pen = true; });
+    out += `<path d="${d}" fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    sr.values.forEach((v, i) => {
+      if (v == null) return;
+      const tip = `<title>${esc(sr.name)} · ${esc((s.full || s.labels)[i])} : ${num(v, s.dec || 0)}${esc(s.unit || '')}</title>`;
+      out += `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="4" fill="${sr.color}" stroke="var(--surface)" stroke-width="2"/>
+        <circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="11" fill="transparent">${tip}</circle>`;
+    });
+    const li = sr.values.map((v, i) => v == null ? -1 : i).filter(i => i >= 0).pop();
+    if (li != null && li >= 0) ends.push({ name: sr.name, x: X(li), y: Y(sr.values[li]), ty: Y(sr.values[li]) });
+  }
+  if (s.series.length <= 4) {                  // libellés en bout de courbe ; si les courbes se rejoignent, la légende suffit
+    ends.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].ty - ends[i - 1].ty < 14) ends[i].ty = ends[i - 1].ty + 14;
+    if (ends.every(e => e.ty - e.y < 30 && e.ty <= pt + h + 2))
+      for (const e of ends) out += `${Math.abs(e.ty - e.y) > 1 ? `<line x1="${e.x + 5}" y1="${e.y}" x2="${W - pr + 6}" y2="${e.ty}" stroke="var(--border-2)"/>` : ''}
+        <text x="${W - pr + 10}" y="${e.ty + 4}" font-size="11" fill="var(--text-2)">${esc(fitText(e.name, pr - 14, 11))}</text>`;
+  }
+  out += `<g transform="translate(0 ${H - legH + 13})">${leg.svg}</g>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(s.title || '')}">${out}</svg>`;
+}
+function svgStack(s, W, H) {
+  const pl = 44, pr = 10, pt = 12;
+  const leg = svgLegend(s.series.map(x => ({ name: x.name, color: x.color })), pl, 0, W);
+  const legH = leg.bottom + 18, pb = 24 + legH, w = W - pl - pr, h = H - pt - pb, n = s.labels.length;
+  const tots = s.labels.map((l, i) => s.series.reduce((t, x) => t + (+x.values[i] || 0), 0));
+  const max = niceMax(Math.max(1, ...tots) * 1.05, !s.dec), bw = w / Math.max(1, n), bar = Math.min(24, bw * .62);
+  let out = axis(W, H - legH, max, pl, pr, pt, 24, s.dec);
+  s.labels.forEach((l, i) => {
+    const x = pl + i * bw + (bw - bar) / 2;
+    let y = pt + h;
+    const segs = s.series.map(x => ({ x, v: +x.values[i] || 0 })).filter(q => q.v > 0);
+    segs.forEach((q, j) => {
+      const sh = h * q.v / max, top = j === segs.length - 1;
+      y -= sh;
+      out += `<path d="${top ? barPath(x, y, bar, sh, 4) : `M${x.toFixed(1)} ${(y + sh).toFixed(1)}V${y.toFixed(1)}H${(x + bar).toFixed(1)}V${(y + sh).toFixed(1)}Z`}" fill="${q.x.color}" stroke="var(--surface)" stroke-width="${segs.length > 1 ? 2 : 0}">
+        <title>${esc(q.x.name)} · ${esc((s.full || s.labels)[i])} : ${numSmart(q.v, s.dec)}${esc(s.unit || '')}</title></path>`;
+    });
+    if (tots[i] > 0) out += `<text x="${(x + bar / 2).toFixed(1)}" y="${(pt + h - h * tots[i] / max - 5).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-2)">${numSmart(tots[i], s.dec)}</text>`;
+    out += `<text x="${(pl + i * bw + bw / 2).toFixed(1)}" y="${H - legH - 7}" text-anchor="middle" font-size="10" fill="var(--text-3)">${esc(l)}</text>`;
+  });
+  out += `<g transform="translate(0 ${H - legH + 13})">${leg.svg}</g>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(s.title || '')}">${out}</svg>`;
+}
+
+/* ---------- diagramme de Gantt ---------- */
+const GANTT_DEF = { mode: 'projets', from: '', weeks: 8, zoom: 18, ag: '', sv: '', ty: '', q: '', arch: false, todo: true };
+function inkOn(hex) {                          // texte blanc ou encre selon la clarté de la barre
+  const h = String(hex || '').replace('#', ''), n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h.padEnd(6, '0').slice(0, 6), 16) || 0;
+  const lin = c => { c /= 255; return c <= .03928 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4); };
+  const L = .2126 * lin(n >> 16 & 255) + .7152 * lin(n >> 8 & 255) + .0722 * lin(n & 255);
+  return L > .36 ? '#15171b' : '#ffffff';
+}
+function ganttData(G) {
+  const from = D.monday(G.from || D.add(D.today(), -7)), to = D.add(from, (+G.weeks || 8) * 7 - 1), rows = [];
+  const inWin = o => o.date && opEnd(o) >= from && o.date <= to;
+  const okOp = p => p && (!G.ty || p.typeId === G.ty) && (!G.q || matchProject(p, G.q));
+  const okProj = p => okOp(p) && (!G.ag || p.agencyId === G.ag);
+  if (G.mode === 'ressources') {
+    for (const sv of DB.services.filter(s => s.active !== false && (!G.sv || s.id === G.sv)).sort(byOrder)) {
+      const staff = staffOfService(sv.id, G.ag || undefined);
+      if (!staff.length) continue;
+      rows.push({ head: sv.name, color: sv.color });
+      for (const s of staff) rows.push({
+        label: label(s), staff: s.id,
+        ops: (idx().opsByStaff.get(s.id) || []).filter(o => o.serviceId === sv.id && inWin(o) && okOp(P(o.projectId))),
+        abs: (idx().absByStaff.get(s.id) || []).filter(a => a.end >= from && a.start <= to)
+      });
+    }
+  } else {
+    const list = [];
+    for (const p of DB.projects) {
+      if ((p.archived && !G.arch) || !okProj(p)) continue;
+      const ops = projOps(p.id).filter(o => !G.sv || o.serviceId === G.sv);
+      if (G.sv && !ops.length) continue;
+      const dated = ops.filter(o => o.date), win = dated.filter(inWin), todo = ops.filter(o => !o.date && stage(o) !== 'done').length;
+      const reqIn = p.requested && p.requested >= from && p.requested <= to;
+      if (!win.length && !reqIn && !(G.todo && todo && !p.archived)) continue;
+      list.push({ p, dated, todo, key: (win[0] && win[0].date) || (dated[0] && dated[0].date) || p.requested || '9999' });
+    }
+    list.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : a.p.id - b.p.id);
+    for (const x of list) rows.push({ label: `#${x.p.id} ${x.p.client}`, sub: x.p.city, proj: x.p.id, ops: x.dated, todo: x.todo, req: x.p.requested, late: !!lateFlag(x.p) });
+  }
+  return { from, to, rows };
+}
+function ganttSVG(gd, G, rowsSub) {
+  const rows = rowsSub || gd.rows, dw = +G.zoom || 18, LW = 260, RH = 26, HH = 44, T = D.today();
+  const days = []; for (let d = gd.from; d <= gd.to; d = D.add(d, 1)) days.push(d);
+  const W = LW + days.length * dw + 14, H = HH + Math.max(1, rows.length) * RH + 4;
+  const xOf = d => LW + D.diff(gd.from, d) * dw;
+  let bg = '', head = '', body = '';
+  days.forEach((d, i) => {
+    const x = LW + i * dw;
+    if (!isWork(d)) bg += `<rect x="${x}" y="${HH}" width="${dw}" height="${H - HH}" fill="var(--surface-3)"/>`;
+    if (d === T) bg += `<rect x="${x}" y="0" width="${dw}" height="${H}" fill="var(--today)"/>`;
+    if (D.dow(d) === 0) {
+      bg += `<line x1="${x}" x2="${x}" y1="0" y2="${H}" stroke="var(--border-2)"/>`;
+      head += `<text x="${x + 5}" y="17" font-size="11" font-weight="650" fill="var(--text-2)">S${D.week(d)}</text>`
+        + (dw * 7 >= 84 ? `<text x="${x + 34}" y="17" font-size="10.5" fill="var(--text-3)">${D.short(d)}</text>` : '');
+    } else if (dw >= 14) bg += `<line x1="${x}" x2="${x}" y1="${HH - 14}" y2="${H}" stroke="var(--border)"/>`;
+    if (dw >= 15) head += `<text x="${x + dw / 2}" y="37" text-anchor="middle" font-size="9.5" fill="${isWork(d) ? 'var(--text-3)' : 'var(--border-2)'}">${D.parse(d).getDate()}</text>`;
+  });
+  rows.forEach((r, i) => {
+    const y = HH + i * RH, mid = y + RH / 2;
+    if (r.head) {
+      body += `<rect x="0" y="${y}" width="${W}" height="${RH}" fill="var(--surface-2)"/><rect x="12" y="${mid - 4}" width="8" height="8" rx="4" fill="${r.color}"/>
+        <text x="27" y="${mid + 4}" font-size="12" font-weight="650" fill="var(--text)">${esc(r.head)}</text>`;
+      return;
+    }
+    body += `<line x1="0" x2="${W}" y1="${y + RH}" y2="${y + RH}" stroke="var(--border)"/>`;
+    const todoTxt = r.todo ? r.todo + ' à planifier' : '', full = r.label + (r.sub ? ' · ' + r.sub : '');
+    const room = LW - 22 - (todoTxt ? textW(todoTxt, 10.5) + 10 : 0);
+    body += `<text x="12" y="${mid + 4}" font-size="12" fill="var(--text)"${r.proj ? ` data-act="open-project" data-id="${r.proj}" style="cursor:pointer"` : ''}><title>${esc(full)}</title>${esc(fitText(full, room, 12))}</text>`;
+    if (r.todo) body += `<text x="${LW - 10}" y="${mid + 4}" text-anchor="end" font-size="10.5" fill="var(--warn)"><title>${r.todo} étape(s) sans date</title>${todoTxt}</text>`;
+    for (const a of r.abs || []) {
+      const t = get('absenceTypes', a.typeId) || { name: 'Absence', color: '#c9a227' };
+      const s0 = a.start < gd.from ? gd.from : a.start, s1 = a.end > gd.to ? gd.to : a.end;
+      const x0 = xOf(s0) + (s0 === a.start && a.startSlot === 'PM' ? dw / 2 : 0), x1 = xOf(s1) + (s1 === a.end && a.endSlot === 'AM' ? dw / 2 : dw);
+      body += `<rect x="${x0 + .5}" y="${y + 5}" width="${Math.max(2, x1 - x0 - 1)}" height="${RH - 10}" rx="3" fill="${t.color}" fill-opacity=".22" stroke="${t.color}" stroke-dasharray="3 2">
+        <title>${esc(t.name + ' · ' + r.label + ' · du ' + D.fmt(a.start) + ' au ' + D.fmt(a.end) + (a.note ? ' — ' + a.note : ''))}</title></rect>`;
+    }
+    const segs = [];
+    for (const o of (r.ops || []).slice().sort((a, b) => a.date < b.date ? -1 : 1)) {
+      const sv = svc(o.serviceId) || {}, end = opEnd(o);
+      if (!o.date || end < gd.from || o.date > gd.to) { segs.push(null); continue; }
+      const hs = opHalves(o), half = sv.mode === 'half';
+      let x0 = o.date < gd.from ? LW : xOf(o.date) + (half && hs[0][1] === 1 ? dw / 2 : 0);
+      let x1 = end > gd.to ? W - 14 : xOf(end) + (half && hs[hs.length - 1][1] === 0 ? dw / 2 : dw);
+      const st = stat(o.statusId) || {}, p = P(o.projectId) || {}, bw = Math.max(3, x1 - x0 - 2);
+      const txt = fitText(G.mode === 'ressources' ? p.client : sv.name, bw - 9, 10.5);
+      const tip = [sv.name, p.client, st.name, staffName(o.staffId) || 'sans ressource', D.fmt(o.date) + (end !== o.date ? ' → ' + D.fmt(end) : ''), o.notes].filter(Boolean).join(' · ');
+      body += `<g data-act="open-op" data-id="${o.id}" style="cursor:pointer"><rect x="${(x0 + 1).toFixed(1)}" y="${y + 5}" width="${bw.toFixed(1)}" height="${RH - 10}" rx="4" fill="${sv.color || '#888'}"
+        ${st.stage === 'done' ? 'fill-opacity=".45"' : ''}${st.stage === 'issue' ? ' stroke="#d1444a" stroke-width="2"' : ''}/>
+        ${txt.length >= 3 ? `<text x="${(x0 + 5).toFixed(1)}" y="${mid + 3.5}" font-size="10.5" fill="${st.stage === 'done' ? 'var(--text)' : inkOn(sv.color)}">${esc(txt)}</text>` : ''}
+        <title>${esc(tip)}</title></g>`;
+      segs.push({ x0: x0 + 1, x1: x0 + 1 + bw });
+    }
+    if (G.mode !== 'ressources') for (let k = 1; k < segs.length; k++) {
+      const a = segs[k - 1], b = segs[k];
+      if (a && b && b.x0 - a.x1 > 6) body += `<line x1="${a.x1.toFixed(1)}" x2="${b.x0.toFixed(1)}" y1="${mid}" y2="${mid}" stroke="var(--text-3)" stroke-width="1"/>`;
+    }
+    if (r.req && r.req >= gd.from && r.req <= gd.to) {
+      const x = xOf(r.req) + dw / 2, c = r.late ? '#d1444a' : 'var(--text-2)';
+      body += `<path d="M${x} ${mid - 6} L${x + 6} ${mid} L${x} ${mid + 6} L${x - 6} ${mid} Z" fill="${c}" stroke="var(--surface)" stroke-width="1.5"><title>Date demandée : ${D.fmt(r.req)}${r.late ? ' (non tenue)' : ''}</title></path>`;
+    }
+  });
+  if (!rows.length) body += `<text x="${LW + 20}" y="${HH + 18}" font-size="12" fill="var(--text-3)">Rien à afficher sur cette période avec ces filtres.</text>`;
+  const todayX = T >= gd.from && T <= gd.to ? xOf(T) + dw / 2 : null;
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Diagramme de Gantt">
+    <rect x="0" y="0" width="${W}" height="${H}" fill="var(--surface)"/>${bg}
+    <rect x="0" y="0" width="${W}" height="${HH}" fill="var(--surface-2)" fill-opacity=".92"/><line x1="0" x2="${W}" y1="${HH}" y2="${HH}" stroke="var(--border-2)"/>${head}
+    <text x="12" y="27" font-size="11.5" font-weight="650" fill="var(--text-2)">${G.mode === 'ressources' ? 'Ressource' : 'Projet'}</text>
+    ${body}
+    <rect x="0" y="0" width="${LW}" height="${H}" fill="none"/><line x1="${LW}" x2="${LW}" y1="0" y2="${H}" stroke="var(--border-2)"/>
+    ${todayX != null ? `<line x1="${todayX}" x2="${todayX}" y1="${HH - 6}" y2="${H}" stroke="var(--primary)" stroke-width="2"/>` : ''}</svg>`;
+}
+function pageGantt() {
+  const G = UI.gantt = Object.assign({}, GANTT_DEF, UI.gantt);
+  if (!G.from) G.from = D.add(D.monday(D.today()), -7);
+  const gd = ganttData(G), svcs = DB.services.filter(s => s.active !== false).sort(byOrder);
+  const sel = (k, list, empty) => `<select class="in" data-on="gantt" data-k="${k}">${selOpts(list, G[k], empty)}</select>`;
+  const opt = (k, pairs) => `<select class="in" data-on="gantt" data-k="${k}">${pairs.map(([v, l]) => `<option value="${v}"${String(G[k]) === String(v) ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+  const nOps = gd.rows.reduce((t, r) => t + (r.ops || []).filter(o => o.date && opEnd(o) >= gd.from && o.date <= gd.to).length, 0);
+  return `${phead('Diagramme de Gantt', `du ${esc(D.fmt(gd.from))} au ${esc(D.fmt(gd.to))} · ${gd.rows.filter(r => !r.head).length} ${G.mode === 'ressources' ? 'ressource(s)' : 'projet(s)'} · ${nOps} opération(s)`,
+    `<div class="row" style="gap:4px">
+       <button class="btn sm ${G.mode !== 'ressources' ? 'pri' : ''}" data-act="g-mode" data-v="projets">${ic('package', 'sm')} Par projet</button>
+       <button class="btn sm ${G.mode === 'ressources' ? 'pri' : ''}" data-act="g-mode" data-v="ressources">${ic('users', 'sm')} Par ressource</button></div>
+     ${xpBtn('gantt')}`)}
+  <div class="toolbar">
+    <button class="btn sm" data-act="g-shift" data-d="-28" title="4 semaines plus tôt">${ic('left', 'sm')}</button>
+    <button class="btn sm" data-act="g-today">Aujourd’hui</button>
+    <button class="btn sm" data-act="g-shift" data-d="28" title="4 semaines plus tard">${ic('right', 'sm')}</button>
+    ${opt('weeks', [[4, '4 semaines'], [8, '8 semaines'], [13, '3 mois'], [26, '6 mois'], [52, '12 mois']])}
+    ${opt('zoom', [[8, 'Compact'], [18, 'Normal'], [32, 'Large']])}
+    <input class="in srchin" id="g_q" data-on="gantt" data-k="q" placeholder="Client, n°, ville…" value="${esc(G.q)}" style="min-width:180px">
+    ${sel('ag', DB.agencies, 'Toutes les agences')}${sel('sv', svcs, 'Tous les services')}
+    ${G.mode !== 'ressources' ? sel('ty', DB.projectTypes, 'Tous les types') + `
+    <label class="sw"><input type="checkbox" data-on="gantt" data-k="todo"${G.todo ? ' checked' : ''}><i></i><span>Projets à planifier</span></label>
+    <label class="sw"><input type="checkbox" data-on="gantt" data-k="arch"${G.arch ? ' checked' : ''}><i></i><span>Archives</span></label>` : ''}
+  </div>
+  <div class="gantt-wrap">${ganttSVG(gd, G)}</div>
+  <div class="lgd" style="margin-top:10px">${svcs.map(s => `<span><i style="--c:${s.color}"></i>${esc(s.name)}</span>`).join('')}
+    <span class="mut">barre pâle = terminée · contour rouge = bloquée${G.mode !== 'ressources' ? ' · ◆ date demandée (rouge si non tenue)' : ' · cadre pointillé = absence'} · trait bleu = aujourd’hui · cliquez une barre pour l’ouvrir</span></div>`;
+}
+
+/* ---------- données des rapports (partagées entre l'écran et les exports) ---------- */
+function activiteData(R) {
+  const days = []; for (let d = R.from; d <= R.to; d = D.add(d, 1)) if (isWork(d)) days.push(d);
+  return DB.services.filter(s => s.active !== false).sort(byOrder).map(sv => {
+    const rows = staffOfService(sv.id).map(s => {
+      const ops = (idx().opsByStaff.get(s.id) || []).filter(o => o.serviceId === sv.id);
+      const done = ops.filter(o => doneInRange(o, R.from, R.to));
+      let cap = 0, used = 0;
+      for (const d of days) {
+        let av = 0; for (const sl of [0, 1]) if (!absenceAt(s.id, d, sl)) av++;
+        if (sv.mode === 'half') {
+          cap += av;
+          used += [0, 1].filter(sl => ((idx().slots.get(s.id) || new Map()).get(d + '|' + sl) || []).some(id => (O(id) || {}).serviceId === sv.id)).length;
+        } else {
+          cap += av / 2 * (+sv.perDay || 1);
+          used += (idx().dayOps.get(s.id + '|' + d) || []).filter(o => o.serviceId === sv.id).length;
+        }
+      }
+      return { s, n: done.length, hours: done.reduce((t, o) => t + opHours(o), 0), pct: cap > 0 ? Math.round(used / cap * 100) : null };
+    }).filter(r => r.n || r.pct);
+    return { sv, rows };
+  }).filter(g => g.rows.length);
+}
+const projetsDone = R => DB.projects.filter(p => p.archived && p.archivedAt >= R.from && p.archivedAt <= R.to);
+function chargeData() {
+  const weeks = []; let w = D.monday(D.today());
+  for (let i = 0; i < 8; i++) { weeks.push(w); w = D.add(w, 7); }
+  return {
+    weeks, rows: DB.services.filter(s => s.active !== false).sort(byOrder).map(sv => {
+      const cells = weeks.map(wk => {
+        let cap = 0, load = 0;
+        for (const d of workDaysOfWeek(wk)) { const l = dayLoad(sv.id, d); cap += l.cap; load += l.load; }
+        return { cap, load, pct: cap > 0 ? Math.round(load / cap * 100) : null };
+      });
+      const bl = backlog(sv.id);
+      return { sv, cells, bl: bl.length, h: bl.reduce((t, o) => t + opHours(o), 0) };
+    })
+  };
+}
+
+Object.assign(ACT, {
+  xp: (el, e) => {
+    if (e) e.stopPropagation();
+    let x; try { x = xpGet(el.dataset.x); } catch (err) { console.error(err); }
+    if (!x) return toast('Rien à exporter ici.', 'warn');
+    const t = x.title || (x.ds && x.ds.title) || '', n = x.ds ? num(x.ds.rows.length) + ' ligne(s)' : x.sheets ? x.sheets.length + ' feuilles' : '';
+    popover(el, `<div style="padding:7px 10px 6px;border-bottom:1px solid var(--border);margin-bottom:3px"><b>Exporter</b>
+        <div class="mut" style="font-size:12px">${esc(t)}${n ? ' · ' + n : ''}</div></div>
+      ${xpFormats(x).map(f => `<div class="pal-i" data-act="xp-go" data-x="${esc(el.dataset.x)}" data-f="${f}">${ic(FMT[f][0])}
+        <span style="display:flex;flex-direction:column;line-height:1.3">${FMT[f][1]}<span class="mut" style="font-size:11.5px">${FMT[f][2]}</span></span></div>`).join('')}`);
+  },
+  'xp-go': async el => {
+    closePop();
+    try { const x = xpGet(el.dataset.x); if (x) await exportAs(el.dataset.f, x); }
+    catch (err) { console.error(err); toast('Export impossible : ' + err.message, 'danger'); }
+  },
+  imp: el => { closePop(); importFile(el.dataset.t || ''); },
+  'g-mode': el => { UI.gantt.mode = el.dataset.v; saveUI(); render(); },
+  'g-shift': el => { UI.gantt.from = D.add(D.monday(UI.gantt.from || D.today()), +el.dataset.d); saveUI(); render(); },
+  'g-today': () => { UI.gantt.from = D.add(D.monday(D.today()), -7); saveUI(); render(); }
+});
+ON.gantt = el => {
+  UI.gantt[el.dataset.k] = el.type === 'checkbox' ? el.checked : (el.dataset.k === 'weeks' || el.dataset.k === 'zoom' ? +el.value : el.value);
+  saveUI(); scheduleRender();
+};
+/* répartitions des projets terminés (rapport « Projets & délais ») */
+function countBy(list, key, coll) {
+  const m = new Map();
+  for (const p of list) m.set(p[key], (m.get(p[key]) || 0) + 1);
+  return [...m.entries()].map(([k, v]) => ({ label: label(get(coll, k)) || 'non renseigné', value: v, color: (get(coll, k) || {}).color }))
+    .sort((a, b) => b.value - a.value);
+}
+const HB = { daModelId: ['daModels', 'Modèle'], typeId: ['projectTypes', 'Type de projet'], agencyId: ['agencies', 'Agence'] };
+XP.hb = key => {
+  const [coll, l] = HB[key] || [], R = UI.rep; if (!coll) return null;
+  return { ds: { title: 'Projets terminés par ' + l.toLowerCase(), sub: `du ${D.fmt(R.from)} au ${D.fmt(R.to)}`, cols: [{ l }, { l: 'Projets terminés', t: 'int' }], rows: countBy(projetsDone(R), key, coll).map(r => [r.label, r.value]) } };
+};
 
 /* =====================================================================
    7. DÉMARRAGE

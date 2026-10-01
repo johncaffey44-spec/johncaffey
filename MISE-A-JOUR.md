@@ -126,3 +126,33 @@ Trois actions de *Paramétrage › Données & sauvegarde* exigent le mot de pass
 
 **Mot de passe oublié :** supprimez `data/superadmin.json` sur le serveur. Le mot de passe d'origine (empreinte `$SUPERADMIN_HASH` dans `api.php`) redevient valable. Pour en définir un autre sans le connaître, remplacez `$SUPERADMIN_HASH` par le résultat de :
 `php -r "echo password_hash('NouveauMotDePasse', PASSWORD_DEFAULT);"`
+
+## 6. Exports, imports et diagrammes
+
+Tout se fait dans le navigateur, sans logiciel ni connexion Internet supplémentaires.
+
+**Bouton « Exporter » (sur chaque écran)** : Excel (.xlsx), CSV, JSON, PDF, copie du tableau, et selon l'écran agenda (.ics) ou image (PNG, SVG). Les filtres en cours sont respectés : on exporte ce qu'on voit.
+
+| Écran | Ce qui est exporté |
+|---|---|
+| Projets en cours / archivés | la liste filtrée (20 colonnes, dont prochaine étape et avancement) |
+| Planning d'un service | les opérations de la semaine affichée ; agenda .ics de toute l'équipe |
+| Diagramme de Gantt | l'image (PNG, SVG, PDF paginé), les opérations de la période, l'agenda .ics |
+| Préparation | la liste des machines à préparer |
+| Absences | toutes les absences (avec jours ouvrés) ; agenda .ics ; graphique annuel par motif |
+| Alertes, journal | la liste affichée |
+| Rapports | les tableaux du rapport ; chaque graphique (icône ⬇) en image ou en données |
+| Tableau de bord | chaque graphique (icône ⬇) |
+| Paramétrage (agences, personnel…) | la liste, avec une colonne ID pour la réimporter |
+| Données & sauvegarde | « Tout exporter » : un classeur Excel d'une feuille par liste, ou un .zip de CSV, ou un JSON |
+
+**PDF** : l'application prépare une page imprimable et ouvre la fenêtre d'impression. Choisissez l'imprimante « Enregistrer au format PDF » (ou « Microsoft Print to PDF »).
+
+**Bouton « Importer »** : Excel (.xlsx), CSV (séparateur ; , ou tabulation, encodage UTF-8 ou Windows) et JSON, vers :
+- **Projets** : les projets déjà présents (même n°) sont ignorés ou mis à jour, au choix.
+- **Absences** : les absences identiques déjà saisies sont ignorées.
+- **Listes de paramétrage** : un élément est mis à jour s'il a le même ID ou le même nom, sinon il est créé.
+
+Méthode conseillée : **exportez la liste en Excel, complétez-la, réimportez-la**. Les en-têtes sont alors reconnus automatiquement. Chaque import peut être annulé juste après (bouton « Annuler » de la notification).
+
+Formats non pris en charge à l'import : `.xls` (ancien Excel) et `.ods` (enregistrez-les en `.xlsx`), et le PDF : un PDF ne contient pas de tableau exploitable de façon fiable.
