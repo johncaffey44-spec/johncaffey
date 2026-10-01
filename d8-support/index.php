@@ -4517,6 +4517,11 @@ if (!preg_match('/^[A-Za-z0-9._-]+\.php$/', $__self)) {
 }
 $__selfH = htmlspecialchars($__self, ENT_QUOTES, 'UTF-8');
 
+// Version de ce fichier, ajoutée aux adresses du style et du script : le
+// navigateur les garde en cache, mais dès qu'index.php est remplacé l'adresse
+// change et la nouvelle version est chargée aussitôt (sans Ctrl+F5).
+$__ver = substr(md5(__FILE__ . '|' . (string) @filemtime(__FILE__) . '|' . (string) @filesize(__FILE__)), 0, 10);
+
 // Ressources statiques servies par le fichier lui-même (CSP « self » conservée,
 // et mises en cache par le navigateur).
 if (isset($_GET['css'])) {
@@ -4573,7 +4578,7 @@ if ($installe) {
     if (!$autorise) {
         http_response_code(403);
         echo '<!doctype html><html lang="fr"><meta charset="utf-8">'
-           . '<title>Vérification</title><link rel="stylesheet" href="' . $__selfH . '?css=1">'
+           . '<title>Vérification</title><link rel="stylesheet" href="' . $__selfH . '?css=1&amp;v=' . $__ver . '">'
            . '<div class="auth"><div class="auth-card"><h1>Accès réservé</h1>'
            . '<p>Cette page est réservée aux administrateurs. '
            . '<a href="' . $__selfH . '">Connectez-vous</a>, puis revenez ici.</p></div></div>';
@@ -4710,7 +4715,7 @@ $verdict = $nb['ko'] ? 'ko' : ($nb['attention'] ? 'attention' : 'ok');
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vérification de l'installation</title>
-<link rel="stylesheet" href="<?= $__selfH ?>?css=1">
+<link rel="stylesheet" href="<?= $__selfH ?>?css=1&amp;v=<?= $__ver ?>">
 <style>
   body { padding: 0; }
   .verif { max-width: 900px; margin: 0 auto; padding: 2rem 1.2rem 3rem; }
@@ -4836,7 +4841,7 @@ header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 <meta name="d8-app" content="<?= $__selfH ?>">
 <title>D8 Support — Tickets informatiques</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2316303A'/%3E%3Cpath d='M7 11h18v3.2a2.8 2.8 0 0 0 0 5.6V23H7v-3.2a2.8 2.8 0 0 0 0-5.6V11z' fill='%23E9EEF0'/%3E%3Cpath d='M19 11v12' stroke='%2316303A' stroke-width='1.4' stroke-dasharray='2 2.4'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="<?= $__selfH ?>?css=1">
+<link rel="stylesheet" href="<?= $__selfH ?>?css=1&amp;v=<?= $__ver ?>">
 </head>
 <body>
 
@@ -4882,7 +4887,7 @@ header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 <div id="modal-root"></div>
 <div id="toast-root" aria-live="polite"></div>
 
-<script src="<?= $__selfH ?>?js=1"></script>
+<script src="<?= $__selfH ?>?js=1&amp;v=<?= $__ver ?>"></script>
 </body>
 </html>
     <?php
