@@ -1,0 +1,5 @@
+# Scripts Windows : octets conservés tels quels (fins de ligne CRLF, BOM UTF-8
+# du .ps1 indispensable à Windows PowerShell 5.1 pour lire les accents),
+# y compris dans le zip « Download ZIP » de GitHub.
+*.cmd -text
+*.ps1 -text
