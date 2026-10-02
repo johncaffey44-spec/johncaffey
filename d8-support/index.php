@@ -1859,6 +1859,13 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .barre-lot .input { flex: 1 1 170px; min-width: 0; min-height: 42px; }
 .barre-lot .btn-ghost { color: #BFD0D6; }
 .barre-lot .btn-ghost:hover { background: var(--chrome-2); }
+.recherche-u { position: relative; display: flex; align-items: center; gap: .8rem; margin: 0 0 .8rem; }
+.recherche-u .ico { position: absolute; left: .7rem; display: inline-flex; color: var(--muted); pointer-events: none; }
+.recherche-u .ico svg { width: 18px; height: 18px; }
+.recherche-u input { flex: 1 1 auto; max-width: 34rem; padding-left: 2.3rem; }
+.recherche-nb { color: var(--muted); font-size: .9rem; white-space: nowrap; }
+#zone-u mark { background: #fde68a; color: inherit; border-radius: 2px; padding: 0; }
+.u-aucun td { text-align: center; color: var(--muted); padding: 1.4rem; }
 .selection-rapide { margin: 0 0 .6rem; color: var(--muted); font-size: .93rem; }
 .liste-noms { margin: .3rem 0 .8rem 1.2rem; max-height: 220px; overflow: auto; }
 .liste-noms li, .liste-resultats li { margin: .15rem 0; }
@@ -5361,6 +5368,32 @@ function vueNouveau() {
 
 /* ================================================ utilisateurs (admin) */
 
+/* Recherche tolérante : sans accents ni majuscules (« eloise » trouve « Éloïse »). */
+function rechercheNorm(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+/* Entoure de <mark> les passages qui correspondent aux termes, en gardant le texte d'origine (accents compris). */
+function surligner(texte, termes) {
+  if (!termes.length) return esc(texte);
+  // Normalisation caractère par caractère : la position dans le texte normalisé renvoie au bon caractère d'origine.
+  const car = Array.from(texte), carte = [];
+  let norm = '';
+  car.forEach((c, i) => { const n = rechercheNorm(c); for (let k = 0; k < n.length; k++) carte.push(i); norm += n; });
+  const marque = new Array(car.length).fill(false);
+  termes.forEach(t => {
+    for (let p = norm.indexOf(t); p !== -1; p = norm.indexOf(t, p + 1)) {
+      for (let k = p; k < p + t.length; k++) marque[carte[k]] = true;
+    }
+  });
+  let html = '', ouvert = false;
+  car.forEach((c, i) => {
+    if (marque[i] && !ouvert) { html += '<mark>'; ouvert = true; }
+    if (!marque[i] && ouvert) { html += '</mark>'; ouvert = false; }
+    html += esc(c);
+  });
+  return html + (ouvert ? '</mark>' : '');
+}
+
 async function vueUtilisateurs() {
   const token = S.vueToken;
   const main = $('#main');
@@ -5393,12 +5426,13 @@ async function vueUtilisateurs() {
   const moi = Number(S.user.id);
   const historique = (u) => Number(u.ticket_count) + Number(u.comment_count) + Number(u.attachment_count) + Number(u.assigned_count);
   const lignes = rows.map(u =>
-    '<tr class="' + (Number(u.active) ? '' : 'u-inactif') + '">' +
+    '<tr class="' + (Number(u.active) ? '' : 'u-inactif') + '" data-uid="' + u.id + '">' +
     '<td class="col-choix sans-label"><input type="checkbox" class="choix u-choix" data-id="' + u.id + '"' +
     (Number(u.id) === moi ? ' disabled title="Votre propre compte"' : '') + ' aria-label="Sélectionner ' + esc(u.name) + '"></td>' +
-    '<td class="sans-label"><span class="t-titre">' + esc(u.name) + '</span>' +
-    (u.phone ? '<span class="t-sub">' + esc(u.phone) + '</span>' : '') + '</td>' +
-    '<td data-l="Identifiant">' + esc(u.login || u.email) +
+    '<td class="sans-label"><span class="t-titre" data-surligner>' + esc(u.name) + '</span>' +
+    (u.phone ? '<span class="t-sub" data-surligner>' + esc(u.phone) + '</span>' : '') + '</td>' +
+    '<td data-l="Identifiant"><span data-surligner>' + esc(u.login || u.email) + '</span>' +
+    (u.login && u.email && u.login !== u.email ? '<span class="t-sub" data-surligner>' + esc(u.email) + '</span>' : '') +
     (u.auth === 'annuaire' ? '<span class="t-sub">compte Windows</span>' : '') + '</td>' +
     '<td data-l="Rôle">' + esc(ROLES[u.role] || u.role) + '</td>' +
     '<td data-l="Tickets">' + u.ticket_count + '</td>' +
@@ -5411,6 +5445,10 @@ async function vueUtilisateurs() {
   const autres = rows.filter(u => Number(u.id) !== moi);
   const jamais = autres.filter(u => !u.last_login), inactifs = autres.filter(u => !Number(u.active));
   $('#zone-u').innerHTML =
+    '<div class="recherche-u">' + ico('loupe') +
+    '<input type="search" id="u-recherche" class="input" autocomplete="off" spellcheck="false" ' +
+    'placeholder="Rechercher un utilisateur : nom, identifiant, email, téléphone, rôle…" aria-label="Rechercher un utilisateur">' +
+    '<span class="recherche-nb" id="u-recherche-nb" aria-live="polite"></span></div>' +
     '<p class="selection-rapide">Sélectionner : ' +
     '<button type="button" class="btn-lien" data-rapide="jamais">les comptes jamais connectés (' + jamais.length + ')</button> · ' +
     '<button type="button" class="btn-lien" data-rapide="inactifs">les comptes désactivés (' + inactifs.length + ')</button></p>' +
@@ -5418,7 +5456,7 @@ async function vueUtilisateurs() {
     '<div class="tbl-wrap"><table class="tbl">' +
     '<thead><tr><th class="col-choix"><input type="checkbox" id="u-tout" aria-label="Tout sélectionner"></th>' +
     '<th>Nom</th><th>Email</th><th>Rôle</th><th>Tickets</th><th>Dernière connexion</th><th>Compte</th><th></th></tr></thead>' +
-    '<tbody>' + lignes + '</tbody></table></div>' +
+    '<tbody>' + lignes + '<tr class="u-aucun hidden"><td colspan="8">Aucun utilisateur ne correspond à cette recherche.</td></tr></tbody></table></div>' +
     '<p class="sous-titre" style="margin-top:.8rem">La colonne « Dernière connexion » aide à repérer les comptes ' +
     "d'anciens salariés qui n'ont jamais été désactivés.</p>";
 
@@ -5427,7 +5465,9 @@ async function vueUtilisateurs() {
   });
 
   /* ---- Sélection multiple : supprimer, désactiver, réactiver ---- */
-  const cases = () => Array.from(document.querySelectorAll('#zone-u .u-choix:not(:disabled)'));
+  // Seules les lignes visibles (non masquées par la recherche) sont sélectionnables :
+  // « Tout sélectionner » puis « Supprimer » ne doit jamais toucher un compte qu'on ne voit pas.
+  const cases = () => Array.from(document.querySelectorAll('#zone-u .u-choix:not(:disabled)')).filter(c => !c.closest('tr').hidden);
   const choisis = () => cases().filter(c => c.checked).map(c => rows.find(u => Number(u.id) === Number(c.dataset.id)));
   const majBarre = () => {
     const sel = choisis(), n = sel.length, barre = $('#barre-lot-u');
@@ -5452,6 +5492,35 @@ async function vueUtilisateurs() {
   cases().forEach(c => c.addEventListener('change', majBarre));
   document.querySelectorAll('#zone-u [data-rapide]').forEach(b => b.addEventListener('click', () =>
     selectionner(b.dataset.rapide === 'jamais' ? (u => !u.last_login) : (u => !Number(u.active)))));
+
+  /* ---- Recherche instantanée (filtre à chaque lettre, sans appel au serveur) ---- */
+  const champ = $('#u-recherche');
+  const parId = new Map(rows.map(u => [String(u.id), u]));
+  const textes = new Map();
+  document.querySelectorAll('#zone-u [data-surligner]').forEach(el => textes.set(el, el.textContent));
+  const filtrer = () => {
+    const termes = rechercheNorm(champ.value).split(/\s+/).filter(Boolean);
+    let n = 0;
+    document.querySelectorAll('#zone-u tbody tr[data-uid]').forEach(tr => {
+      const u = parId.get(tr.dataset.uid);
+      // Uniquement des champs affichés : un mot caché (« actif »…) ferait apparaître des comptes sans raison visible.
+      const foin = rechercheNorm([u.name, u.login, u.email, u.phone, ROLES[u.role] || u.role].join(' '));
+      const ok = termes.every(t => foin.includes(t));
+      tr.hidden = !ok;
+      if (ok) n++;
+      else { const c = tr.querySelector('.u-choix'); if (c) c.checked = false; }
+    });
+    textes.forEach((txt, el) => { el.innerHTML = surligner(txt, termes); });
+    $('#zone-u .u-aucun').classList.toggle('hidden', n > 0);
+    $('#u-recherche-nb').textContent = termes.length ? n + ' sur ' + rows.length : rows.length + ' compte(s)';
+    S.rechercheUsers = champ.value;
+    majBarre();
+  };
+  champ.addEventListener('input', filtrer);
+  champ.addEventListener('keydown', (e) => { if (e.key === 'Escape' && champ.value) { e.preventDefault(); champ.value = ''; filtrer(); } });
+  champ.value = S.rechercheUsers || '';
+  filtrer();
+  champ.focus();
 
   const envoyer = async (op, sel) => {
     let r;
