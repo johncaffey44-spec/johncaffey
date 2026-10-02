@@ -323,6 +323,16 @@ body.kiosk .tbl{font-size:15px}
 #print table{width:100%;border-collapse:collapse;font-size:10.5px}
 #print th,#print td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
 #print th{background:#f0f0f0}
+/* liste de droits à cocher */
+.perm-list{display:flex;flex-direction:column;border:1px solid var(--border-2);border-radius:9px;padding:6px;max-height:52vh;overflow:auto;background:var(--surface)}
+.perm-g{font-size:11.5px;font-weight:650;letter-spacing:.03em;text-transform:uppercase;color:var(--text-3);padding:10px 8px 4px}
+.perm-i{display:flex;gap:11px;align-items:flex-start;padding:7px 8px;border-radius:7px;cursor:pointer}
+.perm-i:hover{background:var(--surface-2)}
+.perm-i input{width:17px;height:17px;margin:2px 0 0;accent-color:var(--primary);flex:none;cursor:pointer}
+.perm-i b{font-weight:600;font-size:13.5px}
+.perm-i small{display:block;color:var(--text-3);font-size:12px;line-height:1.35}
+.perm-i.dis{opacity:.55}
+.perm-i.sup{background:var(--primary-soft)}
 /* exports & diagrammes */
 .gantt-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);box-shadow:var(--sh);max-height:calc(100vh - 230px)}
 .gantt-wrap svg{display:block}
@@ -2827,6 +2837,8 @@ const PERMS = [
   ['super', 'Super administrateur : tous les droits, sans restriction', 'Super administrateur']
 ];
 const permShort = k => (PERMS.find(p => p[0] === k) || [])[2] || k;
+const PERM_GROUPS = [['Projets & planning', ['projects', 'delete', 'planning', 'absences']], ['Consultation & échanges', ['reports', 'export', 'import']],
+  ['Administration', ['admin', 'settings', 'users', 'security', 'data']], ['Super administrateur', ['super']]];
 const KINDS = [['person', 'Personne'], ['team', 'Équipe'], ['vehicle', 'Véhicule / navette'], ['contractor', 'Prestataire']];
 const SCHEMAS = {
   agencies: {
@@ -2961,7 +2973,7 @@ const SCHEMAS = {
     desc: 'Chaque rôle regroupe des droits. « Super administrateur » a tous les droits : seul un super administrateur peut modifier ce rôle ou l’attribuer.',
     fields: [
       { k: 'name', l: 'Nom', t: 'text', req: 1, list: 1 },
-      { k: 'perms', l: 'Droits', t: 'multi', opts: PERMS, list: 1, help: 'Le serveur refuse toute modification qui dépasse les droits de la personne connectée.' }
+      { k: 'perms', l: 'Droits', t: 'perms', opts: PERMS, list: 1, help: 'Le serveur refuse toute modification qui dépasse les droits de la personne connectée.' }
     ]
   }
 };
@@ -3013,6 +3025,15 @@ function fieldHTML(f, v) {
     case 'ref': return `<select class="in" name="${f.k}" id="${id}">${selOpts(DB[f.ref].filter(x => (x.active !== false || x.id === v) && (!f.filter || f.filter(x) || x.id === v)).sort(f.ref === 'staff' || f.ref === 'users' ? byName : byOrder), v, f.req ? '' : '—')}</select>`;
     case 'refs': return `<div class="chips">${DB[f.ref].filter(x => x.active !== false || (v || []).includes(x.id)).sort(byOrder).map(x =>
       `<label class="chip${(v || []).includes(x.id) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="${f.k}" value="${esc(x.id)}"${(v || []).includes(x.id) ? ' checked' : ''}>${esc(label(x))}</label>`).join('')}</div>`;
+    case 'perms': {
+      const sup = (v || []).includes('super'), keys = new Set(f.opts.map(o => o[0]));
+      return `<div class="perm-list" data-perms><div class="row wrap" style="gap:6px;padding:4px 6px 2px">
+          <button type="button" class="btn sm" data-pall="1">Tout cocher</button><button type="button" class="btn sm" data-pall="0">Tout décocher</button>
+          <span class="mut" style="font-size:12px">${(v || []).filter(k => keys.has(k)).length} / ${keys.size} cochés</span></div>
+        ${PERM_GROUPS.map(([g, ks]) => { const items = ks.map(k => f.opts.find(o => o[0] === k)).filter(Boolean); return items.length ? `<div class="perm-g">${esc(g)}</div>` + items.map(o =>
+        `<label class="perm-i${o[0] === 'super' ? ' sup' : ''}${sup && o[0] !== 'super' ? ' dis' : ''}"><input type="checkbox" data-multi="1" name="${f.k}" value="${esc(o[0])}"${(v || []).includes(o[0]) || (sup && o[0] !== 'super') ? ' checked' : ''}${sup && o[0] !== 'super' ? ' disabled' : ''}>
+          <span><b>${esc(o[2] || o[1])}</b><small>${esc(o[1])}</small></span></label>`).join('') : ''; }).join('')}</div>`;
+    }
     case 'multi': return `<div class="chips">${f.opts.map(o =>
       `<label class="chip${(v || []).includes(o[0]) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="${f.k}" value="${esc(o[0])}"${(v || []).includes(o[0]) ? ' checked' : ''}>${esc(o[1])}</label>`).join('')}</div>`;
     default: return `<input class="in" name="${f.k}" id="${id}" value="${esc(v ?? '')}"${f.req ? ' required' : ''}>`;
@@ -3027,13 +3048,15 @@ function crudForm(coll, id) {
   const S = SCHEMAS[coll], it = id ? get(coll, id) : null;
   if (!guardSuper(coll, it)) return;
   const d = it ? Object.assign({}, it, coll === 'roles' ? { perms: isSuperRole(it) ? ['super'] : effPerms(it) } : {})
-    : Object.fromEntries(S.fields.map(f => [f.k, f.def !== undefined ? f.def : (f.t === 'refs' || f.t === 'multi' ? [] : '')]));
+    : Object.fromEntries(S.fields.map(f => [f.k, f.def !== undefined ? f.def : (f.t === 'refs' || f.t === 'multi' || f.t === 'perms' ? [] : '')]));
   const fields = S.fields.map(f => {          // sans le droit super : impossible de créer ou d'attribuer un super administrateur
     if (coll === 'roles' && f.k === 'perms' && !can('super')) return Object.assign({}, f, { opts: f.opts.filter(o => o[0] !== 'super') });
     if (coll === 'users' && f.k === 'roleId' && !can('super')) return Object.assign({}, f, { filter: r => !isSuperRole(r) });
     return f;
   });
-  const body = `<div class="fgrid">${fields.map(f => f.t === 'bool'
+  const body = `<div class="fgrid">${fields.map(f => f.t === 'perms'
+    ? `<div class="fld" style="grid-column:1/-1"><label>${esc(f.l)}</label>${fieldHTML(f, d[f.k])}${f.help ? `<span class="help">${esc(f.help)}</span>` : ''}</div>`
+    : f.t === 'bool'
     ? `<div class="fld"><label>&nbsp;</label>${fieldHTML(f, d[f.k])}${f.help ? `<span class="help">${esc(f.help)}</span>` : ''}</div>`
     : `<div class="fld"><label>${esc(f.l)}${f.req ? ' *' : ''}</label>${fieldHTML(f, d[f.k])}${f.help ? `<span class="help">${esc(f.help)}</span>` : ''}</div>`).join('')}</div>`;
   modal({
@@ -3041,9 +3064,16 @@ function crudForm(coll, id) {
     foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn pri" data-save>Enregistrer</button>`,
     onMount(el, close) {
       el.addEventListener('change', e => { const l = e.target.closest('label.chip'); if (l) l.classList.toggle('sel', e.target.checked); });
+      const pl = $('[data-perms]', el);
+      if (pl) {                                   // « super » coché : tous les droits inclus, les autres cases sont figées
+        const boxes = () => $$('input[name=perms]', pl), count = () => { const c = $('.mut', pl); if (c) c.textContent = boxes().filter(b => b.checked).length + ' / ' + boxes().length + ' cochés'; };
+        const sync = () => { const sup = boxes().some(b => b.value === 'super' && b.checked); boxes().forEach(b => { if (b.value === 'super') return; if (sup) b.checked = true; b.disabled = sup; b.closest('.perm-i').classList.toggle('dis', sup); }); count(); };
+        pl.addEventListener('change', sync);
+        $$('[data-pall]', pl).forEach(btn => btn.onclick = () => { boxes().forEach(b => { if (b.value !== 'super' || btn.dataset.pall === '0') { b.disabled = false; b.checked = btn.dataset.pall === '1' && b.value !== 'super'; } }); sync(); });
+      }
       $('[data-save]', el).onclick = () => {
         const v = formVals(el);
-        for (const f of S.fields) { if (f.t === 'refs' || f.t === 'multi') v[f.k] = v[f.k] || []; if (f.ro) delete v[f.k]; }
+        for (const f of S.fields) { if (f.t === 'refs' || f.t === 'multi' || f.t === 'perms') v[f.k] = v[f.k] || []; if (f.ro) delete v[f.k]; }
         const req = S.fields.find(f => f.req && !String(v[f.k] ?? '').trim());
         if (req) return toast('Le champ « ' + req.l + ' » est obligatoire.', 'danger');
         if (coll === 'roles') { v.v2 = true; if (v.perms.includes('super')) v.perms = ['super']; }
@@ -3083,6 +3113,15 @@ function pageAdmin(kind, q) {
   const accBtn = x => accs && Auth.acc && Auth.acc[x.id] && !(Auth.user && Auth.user.userId === x.id) && (can('super') || !isSuperUser(x))
     ? `<button class="ibtn" data-act="kick" data-id="${esc(x.id)}" title="Forcer la déconnexion">${ic('logout')}</button><button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>` : '';
   let extra = '';
+  if (kind === 'roles') {
+    const sup = DB.roles.find(isSuperRole), holders = sup ? DB.users.filter(u => u.roleId === sup.id) : [];
+    extra = `<div class="card" style="margin-bottom:14px;border-color:#7c5cc455"><div class="card-b row wrap" style="gap:12px">
+      <span class="pill" style="${cvar('#7c5cc4', .16, .4)}">${ic('shield', 'sm')} Super administrateur</span>
+      <span style="flex:1;min-width:260px">${sup ? `Tous les droits, sans restriction. Titulaire(s) : <b>${esc(holders.map(label).join(', ') || 'personne')}</b>.`
+        : 'Ce rôle n’existe pas encore sur cette base : il est créé quand un administrateur le prend avec le mot de passe super administrateur.'}</span>
+      ${can('super') ? '<span class="mut" style="font-size:12.5px">Pour le donner à quelqu’un : Utilisateurs › modifier la fiche › Rôle.</span>'
+        : can('users') ? `<button class="btn pri" data-act="become-super">${ic('shield')} Devenir super administrateur</button>` : ''}</div></div>`;
+  }
   if (kind === 'users') {
     const dorm = DB.users.filter(u => u.active !== false && u.lastLogin && D.diff(u.lastLogin, D.today()) > (DB.settings.dormantDays || 180));
     const never = DB.users.filter(u => u.active !== false && !u.lastLogin).length;
@@ -4011,7 +4050,7 @@ const DS = {
       if (f.t === 'bool') return yesNo(v !== false);
       if (f.t === 'ref') return label(get(f.ref, v));
       if (f.t === 'refs') return (v || []).map(id => label(get(f.ref, id))).filter(Boolean).join(', ');
-      if (f.t === 'multi') return (v || []).map(k => (f.opts.find(o => o[0] === k) || [])[1] || k).join(', ');
+      if (f.t === 'multi' || f.t === 'perms') return (v || []).map(k => (f.opts.find(o => o[0] === k) || [])[1] || k).join(', ');
       if (f.t === 'select') return (f.opts.find(o => o[0] === v) || [])[1] || v || '';
       return v ?? '';
     };
