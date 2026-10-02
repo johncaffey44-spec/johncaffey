@@ -3707,6 +3707,14 @@ function importCSV() { return importFile('projects'); }
 function afterRender() {
   const r = route();
   if (r.seg[0] === 'planning' || r.seg[0] === 'ecran') fitPlanRows();
+  if (r.seg[0] === 'gantt') {                    // Gantt : le cadre descend jusqu'en bas de l'écran
+    const w = $('.gantt-wrap'), lg = w && w.nextElementSibling;
+    if (w) {
+      const avail = Math.max(320, Math.floor(window.innerHeight - w.getBoundingClientRect().top - (lg ? lg.offsetHeight + 14 : 40) - 46));   // 46 : marge basse de la page, pour éviter une barre de défilement
+      w.style.height = w.style.maxHeight = avail + 'px';
+      if (Math.abs(avail - 2 - GANTT_H) > 3) { GANTT_H = avail - 2; w.innerHTML = ganttSVG(ganttData(UI.gantt), UI.gantt); }
+    }
+  }
   if (r.seg[0] !== 'ecran') return;
   const views = screenList();
   const cur = r.seg[1] === 'rotation' ? views[(UI.rotIdx || 0) % views.length] : views.find(v => v.id === r.seg[1]);
@@ -4651,6 +4659,7 @@ function svgStack(s, W, H) {
 }
 
 /* ---------- diagramme de Gantt ---------- */
+let GANTT_H = 0;                               // hauteur disponible mesurée à l'écran (afterRender)
 const GANTT_DEF = { mode: 'projets', from: '', weeks: 8, zoom: 0, ag: '', sv: '', ty: '', q: '', arch: false, todo: true };
 function inkOn(hex) {                          // texte blanc ou encre selon la clarté de la barre
   const h = String(hex || '').replace('#', ''), n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h.padEnd(6, '0').slice(0, 6), 16) || 0;
@@ -4695,9 +4704,10 @@ function ganttSVG(gd, G, rowsSub) {
   const rows = rowsSub || gd.rows, big = { l: 1, xl: 2 }[fsClass()] || 0, LW = [260, 300, 340][big], HH = 44, T = D.today();
   const viewW = (($('#view') || {}).clientWidth || 1200) - 46;
   const dw = +G.zoom || clamp(Math.floor((viewW - LW - 14) / days.length), 8, 80);   // « Ajusté » : toute la largeur de l'écran
-  const RH = rowsSub ? 26 : clamp(Math.floor((window.innerHeight - 300 - HH) / Math.max(1, rows.length)), [26, 30, 34][big], 56);
+  const targetH = rowsSub ? 0 : (GANTT_H || window.innerHeight - 300);   // le diagramme occupe toute la hauteur de l'écran
+  const RH = rowsSub ? 26 : clamp(Math.floor((targetH - HH - 4) / Math.max(1, rows.length)), [26, 30, 34][big], 120);
   const FS = RH >= 44 ? 14 : RH >= 34 ? 13 : 12, BFS = FS - 1.5, BH = Math.min(RH - 10, 32);   // barres plafonnées : lisibles sans être massives
-  const W = LW + days.length * dw + 14, H = HH + Math.max(1, rows.length) * RH + 4;
+  const W = LW + days.length * dw + 14, H = Math.max(HH + Math.max(1, rows.length) * RH + 4, targetH);
   const xOf = d => LW + D.diff(gd.from, d) * dw;
   let bg = '', head = '', body = '';
   days.forEach((d, i) => {
