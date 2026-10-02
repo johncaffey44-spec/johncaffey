@@ -1,13 +1,14 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Schéma salle serveur D8</title>
 <style id="d8-css">
-/* Mise en page : en-tête, onglets, puis l’éditeur en deux colonnes (plan + inspecteur) qui passe en une colonne sous 980 px */
+/* Mise en page : en-tête d’une ligne, onglets, puis le plan qui occupe tout le reste de l’écran ; le panneau de détails glisse par-dessus à droite (en bas sur téléphone) */
 :root{
   --bg:#EDF1F0; --surface:#FFFFFF; --surface-2:#F5F8F7; --ink:#152120; --muted:#566664; --line:#D2DBD9; --line-strong:#A9B8B6;
-  --accent:#0A7573; --accent-ink:#FFFFFF; --accent-soft:#D5ECEA;
+  --accent:#0A7573; --accent-ink:#FFFFFF; --accent-soft:#D5ECEA; --explain:#0B6F6D;
   --ok:#2C8650; --ok-soft:#DDF1E4; --warn:#A86A12; --warn-soft:#FBEBD2; --crit:#BF2F2F; --crit-soft:#F9E0E0;
   --grid:#DCE4E2; --casing:#FFFFFF; --casing-op:1; --zone:#FBFCFC; --zone-head:#E2EAE8; --zone-line:#C4D0CE;
   --cat-net:#0A7573; --cat-wan:#BF2F2F; --cat-srv:#6A4EC6; --cat-end:#2B69D6; --cat-pwr:#B8620F; --cat-env:#178AA0; --cat-tel:#8A572A;
+  --shadow:0 14px 36px rgba(20,40,38,.18);
   --font-display:"Barlow Condensed","Arial Narrow","Roboto Condensed",sans-serif;
   --font-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
@@ -15,36 +16,53 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0E1413; --surface:#162020; --surface-2:#1B2625; --ink:#E1EAE8; --muted:#92A3A1; --line:#283533; --line-strong:#40504E;
-  --accent:#3EC2BE; --accent-ink:#04201F; --accent-soft:#14373A;
+  --accent:#3EC2BE; --accent-ink:#04201F; --accent-soft:#14373A; --explain:#6FD3CF;
   --ok:#5CC488; --ok-soft:#173326; --warn:#E5A94D; --warn-soft:#3A2D15; --crit:#F27373; --crit-soft:#3E1E1E;
   --grid:#18211F; --casing:#B9C7C4; --casing-op:.45; --zone:#121A19; --zone-head:#1C2726; --zone-line:#2E3C3A;
   --cat-net:#3EC2BE; --cat-wan:#F27373; --cat-srv:#A994F2; --cat-end:#6FA0F5; --cat-pwr:#F0A04F; --cat-env:#4CC3D8; --cat-tel:#D2955C;
+  --shadow:0 14px 36px rgba(0,0,0,.5);
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1413; --surface:#162020; --surface-2:#1B2625; --ink:#E1EAE8; --muted:#92A3A1; --line:#283533; --line-strong:#40504E;
-  --accent:#3EC2BE; --accent-ink:#04201F; --accent-soft:#14373A;
+  --accent:#3EC2BE; --accent-ink:#04201F; --accent-soft:#14373A; --explain:#6FD3CF;
   --ok:#5CC488; --ok-soft:#173326; --warn:#E5A94D; --warn-soft:#3A2D15; --crit:#F27373; --crit-soft:#3E1E1E;
   --grid:#18211F; --casing:#B9C7C4; --casing-op:.45; --zone:#121A19; --zone-head:#1C2726; --zone-line:#2E3C3A;
   --cat-net:#3EC2BE; --cat-wan:#F27373; --cat-srv:#A994F2; --cat-end:#6FA0F5; --cat-pwr:#F0A04F; --cat-env:#4CC3D8; --cat-tel:#D2955C;
+  --shadow:0 14px 36px rgba(0,0,0,.5);
   color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5}
-#root{max-width:1560px;margin:0 auto;padding-inline:16px;padding-block:14px 40px}
+#root{max-width:1560px;margin:0 auto;padding-inline:16px;padding-block:10px 40px}
 h1,h2,h3{font-family:var(--font-display);font-weight:600;line-height:1.15;text-wrap:balance;margin:0}
 button,select,input,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--muted)}
 
-.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding-block:6px 14px;border-bottom:2px solid var(--ink)}
-.eyebrow{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.top h1{font-size:clamp(28px,4vw,40px);letter-spacing:.01em}
-.top h1 small{font-family:var(--font-mono);font-size:13px;font-weight:400;color:var(--muted);letter-spacing:0;margin-left:10px}
+/* plein écran : le plan prend toute la hauteur disponible */
+html.d8-full,html.d8-full body{height:100%}
+@media (min-width:701px) and (min-height:521px){
+  html.d8-full body{overflow:hidden}
+  html.d8-full #root{height:100%;display:flex;flex-direction:column;max-width:none;padding-block:8px 12px}
+  html.d8-full #p-schema{flex:1;min-height:0;display:flex;flex-direction:column}
+  html.d8-full .editor{flex:1;min-height:0}
+  html.d8-full .canvas-wrap{flex:1;height:auto}
+}
+#p-schema:fullscreen{background:var(--bg);padding:12px;display:flex;flex-direction:column}
+#p-schema:fullscreen .editor{flex:1;min-height:0}
+#p-schema:fullscreen .canvas-wrap{flex:1;height:auto}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding-block:2px 8px;border-bottom:1px solid var(--line-strong)}
+.brand{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;min-width:0}
+.top h1{font-size:clamp(24px,2.6vw,32px);letter-spacing:.01em}
+.eyebrow{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.btn{border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;padding:7px 12px;font-weight:500;line-height:1.2}
+.btn{border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;padding:6px 11px;font-weight:500;line-height:1.2;white-space:nowrap}
 .btn:hover{border-color:var(--ink)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .btn.primary:hover{filter:brightness(1.08)}
+.btn.soft{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 40%,var(--line));color:var(--ink);font-weight:600}
+.btn.on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
 .btn[disabled]{opacity:.45;cursor:default;filter:none}
 .btn.danger{color:var(--crit);border-color:color-mix(in srgb,var(--crit) 45%,var(--line))}
 .chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11.5px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);white-space:nowrap}
@@ -54,94 +72,123 @@ kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line-stro
 .menu{position:relative}
 .menu summary{list-style:none}
 .menu summary::-webkit-details-marker{display:none}
-.menu-list{position:absolute;right:0;top:calc(100% + 6px);z-index:20;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r);padding:6px;display:grid;gap:2px;min-width:210px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.menu-list{position:absolute;right:0;top:calc(100% + 6px);z-index:30;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r);padding:6px;display:grid;gap:2px;min-width:220px;box-shadow:var(--shadow)}
 .menu-list button{text-align:left;border:0;background:none;padding:7px 10px;border-radius:5px}
 .menu-list button:hover{background:var(--surface-2)}
 .menu-list small{display:block;color:var(--muted);font-size:12px}
 
-.banner{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:14px;padding:10px 14px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);font-size:14px}
+.banner{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:10px;padding:8px 12px;border-radius:var(--r);background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));font-size:14px}
 .banner b{font-family:var(--font-display);font-size:16px;font-weight:600}
-.banner.draft{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
-.lg-line{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
-.lg-line svg{flex:none}
 
-.tabs{display:flex;gap:4px;margin-top:16px;border-bottom:1px solid var(--line);overflow-x:auto}
-.tab{border:0;background:none;padding:9px 14px 10px;font-family:var(--font-display);font-size:17px;font-weight:500;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tabs{display:flex;gap:2px;margin-top:6px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{border:0;background:none;padding:6px 12px 7px;font-family:var(--font-display);font-size:16.5px;font-weight:500;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
 .tab .count{font-family:var(--font-mono);font-size:11px;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line)}
-.panel{padding-top:16px}
+.panel{padding-top:10px}
 
 /* éditeur */
-.editor{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
-@media (max-width:980px){.editor{grid-template-columns:minmax(0,1fr)}}
-.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r) var(--r) 0 0;border-bottom:0}
+.editor{display:flex;flex-direction:column;min-width:0}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 8px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r) var(--r) 0 0;border-bottom:0}
+.tright{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-left:auto}
 .tgroup{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
-.tgroup button{border:0;background:var(--surface);padding:6px 10px;min-width:34px;line-height:1.2}
+.tgroup button{border:0;background:var(--surface);padding:5px 10px;min-width:32px;line-height:1.25}
 .tgroup button+button{border-left:1px solid var(--line)}
 .tgroup button.on{background:var(--ink);color:var(--surface)}
 .tgroup button:hover:not(.on){background:var(--surface-2)}
 .tgroup button[disabled]{opacity:.4;cursor:default}
 .tsel{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
-.tsel select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 6px;color:var(--ink);max-width:210px}
-.tchk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.tsel select,.tadd{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 6px;color:var(--ink);max-width:190px}
+.tchk{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink);white-space:nowrap}
+.tchk input{accent-color:var(--accent)}
 .sw{display:inline-block;width:18px;height:4px;border-radius:2px;background:var(--c);vertical-align:middle}
-.hint{font-size:13px;color:var(--muted);padding:6px 10px;background:var(--surface-2);border:1px solid var(--line);border-top:0;border-bottom:0}
-.hint.active{background:var(--accent-soft);color:var(--ink)}
-.canvas-wrap{position:relative;height:min(72vh,720px);min-height:380px;border:1px solid var(--line);background:var(--surface-2);overflow:hidden;touch-action:none}
-@media (max-width:600px){.canvas-wrap{height:56vh;min-height:300px}}
+.canvas-wrap{position:relative;height:72vh;min-height:340px;border:1px solid var(--line);background:var(--surface-2);overflow:hidden;touch-action:none}
 #board{display:block;width:100%;height:100%;user-select:none;-webkit-user-select:none;cursor:grab}
 #board.panning{cursor:grabbing}
 #board.linking{cursor:crosshair}
-.legend{display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 var(--r) var(--r)}
-.lchip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:3px 10px 3px 8px;font-size:12.5px}
-.lchip .sw{width:20px;height:5px}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 8px;background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 var(--r) var(--r)}
+.lg-title{font-family:var(--font-display);font-weight:600;font-size:14px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.lchip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:2px 10px 2px 8px;font-size:13px}
+.lchip .sw{width:22px;height:5px}
 .lchip .n{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
 .lchip.off{opacity:.42;text-decoration:line-through}
-.zoomtag{position:absolute;right:10px;bottom:8px;font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 6px;pointer-events:none}
+.lg-sep{width:1px;align-self:stretch;background:var(--line);margin-inline:4px}
+.lg-line{display:inline-flex;align-items:center;gap:6px;color:var(--ink);font-size:13px;white-space:nowrap}
+.lg-line svg{flex:none}
+.lg-note{font-size:12.5px;color:var(--muted);margin-left:auto}
+.zoomtag{position:absolute;left:10px;bottom:8px;font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 6px;pointer-events:none}
+.modehint{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;background:var(--ink);color:var(--surface);border-radius:999px;padding:6px 14px;font-size:14px;box-shadow:var(--shadow);max-width:calc(100% - 24px);text-align:center}
+.modehint kbd{color:var(--surface);border-color:currentColor}
+
+/* aide de lecture */
+.guide{position:absolute;left:12px;top:12px;z-index:5;width:min(440px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow);display:grid;gap:10px}
+.guide h3{font-size:22px}
+.guide ul{margin:0;padding-left:18px;display:grid;gap:7px;font-size:14.5px}
+.guide .row{display:flex;flex-wrap:wrap;gap:8px}
+.keyline{display:inline-block;vertical-align:middle;margin-inline:2px}
 
 /* SVG */
 .gridline{stroke:var(--grid);stroke-width:1}
 .gridbg{fill:url(#gridpat)}
-.zbox{fill:var(--zone);stroke:var(--zone-line);stroke-width:1.2}
+.zbox{fill:var(--zone);stroke:var(--zone-line);stroke-width:1.3}
 .zhead{fill:var(--zone-head);cursor:move}
-.zlabel{font-family:var(--font-display);font-size:14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;fill:var(--muted);pointer-events:none}
+.zlabel{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;fill:var(--ink);pointer-events:none}
+.zcap{font-family:var(--font-body);font-size:12.5px;fill:var(--muted);pointer-events:none}
 .zresize{fill:var(--zone-line);cursor:nwse-resize}
 .zone.sel .zbox{stroke:var(--accent);stroke-width:2}
-.lhit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
-.lcase{fill:none;stroke:var(--casing);stroke-opacity:var(--casing-op);stroke-width:7;stroke-linecap:round}
-.lcore{fill:none;stroke-width:3.2;stroke-linecap:round}
-.link.sel .lcase{stroke:var(--accent);stroke-opacity:.55;stroke-width:11}
-.link.sel .lcore{stroke-width:4.2}
+.lhit{fill:none;stroke:transparent;stroke-width:18;cursor:pointer}
+.lcase{fill:none;stroke:var(--casing);stroke-opacity:var(--casing-op);stroke-width:7.5;stroke-linecap:round}
+.lcore{fill:none;stroke-width:3.4;stroke-linecap:round}
+.link.sel .lcase{stroke:var(--accent);stroke-opacity:.55;stroke-width:12}
+.link.sel .lcore{stroke-width:4.6}
 .link:hover .lcase{stroke:var(--accent);stroke-opacity:.35}
-.plabel{font-family:var(--font-mono);font-size:10px;fill:var(--ink);paint-order:stroke;stroke:var(--surface-2);stroke-width:3.5px;stroke-linejoin:round;pointer-events:none}
+.link.dim{opacity:.12}
+.link.onpath .lcore{stroke-width:5.2}
+.link.onpath .lcase{stroke-width:10}
+.lflow{fill:none;stroke:#FFFFFF;stroke-width:2.2;stroke-dasharray:2 13;stroke-linecap:round;pointer-events:none}
+@media (prefers-reduced-motion:no-preference){.lflow{animation:flow 1.1s linear infinite}.lflow.rev{animation-direction:reverse}@keyframes flow{to{stroke-dashoffset:-15}}}
+.plabel{font-family:var(--font-mono);font-size:10.5px;fill:var(--ink);paint-order:stroke;stroke:var(--surface-2);stroke-width:3.5px;stroke-linejoin:round;pointer-events:none}
 .mpill{fill:var(--surface);stroke:var(--line-strong)}
-.mtext{font-family:var(--font-mono);font-size:10px;fill:var(--ink)}
-.vmark{fill:var(--warn);}
-.vmark-t{font-family:var(--font-display);font-size:11px;font-weight:700;fill:var(--surface)}
+.mtext{font-family:var(--font-body);font-size:11.5px;font-weight:500;fill:var(--ink)}
+.vmark{fill:var(--warn)}
+.vmark-t{font-family:var(--font-display);font-size:12px;font-weight:700;fill:var(--surface)}
 .node{cursor:pointer}
-.nbox{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.4}
-.node.st-suppose .nbox{stroke-dasharray:6 4}
-.node.st-verifier .nbox{stroke:var(--warn);stroke-dasharray:2 3;stroke-width:1.8}
-.node.sel .nbox{stroke:var(--accent);stroke-width:2.6;stroke-dasharray:none}
-.node.src .nbox{stroke:var(--accent);stroke-width:3;stroke-dasharray:none}
-.node.linkable:hover .nbox{stroke:var(--accent);stroke-width:2.4}
+.node.dim{opacity:.18}
+.nbox{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.5}
+.node.st-suppose .nbox{stroke-dasharray:7 4}
+.node.st-verifier .nbox{stroke:var(--warn);stroke-dasharray:2 3;stroke-width:1.9}
+.node.sel .nbox,.node.onpath .nbox{stroke:var(--accent);stroke-width:2.8;stroke-dasharray:none}
+.node.src .nbox{stroke:var(--accent);stroke-width:3.2;stroke-dasharray:none}
+.node.linkable:hover .nbox{stroke:var(--accent);stroke-width:2.6}
 .ntile{fill-opacity:.15}
 .nicon{fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.nlabel{font-family:var(--font-display);font-size:15px;font-weight:600;fill:var(--ink)}
-.nsub{font-family:var(--font-body);font-size:11.5px;fill:var(--muted)}
+.nlabel{font-family:var(--font-display);font-size:17px;font-weight:600;fill:var(--ink)}
+.nsub{font-family:var(--font-body);font-size:12.5px;fill:var(--muted)}
+.nexpl{font-family:var(--font-body);font-size:12.5px;font-weight:600;fill:var(--explain)}
 .nalert{fill:var(--crit)}
-.nalert-t{font-family:var(--font-display);font-size:12px;font-weight:700;fill:#fff;pointer-events:none}
-.cat-net{fill:var(--cat-net);stroke:var(--cat-net)} .cat-wan{fill:var(--cat-wan);stroke:var(--cat-wan)} .cat-srv{fill:var(--cat-srv);stroke:var(--cat-srv)}
-.cat-end{fill:var(--cat-end);stroke:var(--cat-end)} .cat-pwr{fill:var(--cat-pwr);stroke:var(--cat-pwr)} .cat-env{fill:var(--cat-env);stroke:var(--cat-env)} .cat-tel{fill:var(--cat-tel);stroke:var(--cat-tel)}
-.ntile.cat-net,.ntile.cat-wan,.ntile.cat-srv,.ntile.cat-end,.ntile.cat-pwr,.ntile.cat-env,.ntile.cat-tel{stroke:none}
-.nicon.cat-net,.nicon.cat-wan,.nicon.cat-srv,.nicon.cat-end,.nicon.cat-pwr,.nicon.cat-env,.nicon.cat-tel{fill:none}
+.nalert-t{font-family:var(--font-display);font-size:13px;font-weight:700;fill:#FFFFFF;pointer-events:none}
+.stepb{fill:var(--accent);stroke:var(--surface);stroke-width:2.5}
+.stepb-t{font-family:var(--font-display);font-size:14px;font-weight:700;fill:var(--accent-ink);pointer-events:none}
+.ntile.cat-net{fill:var(--cat-net)} .ntile.cat-wan{fill:var(--cat-wan)} .ntile.cat-srv{fill:var(--cat-srv)} .ntile.cat-end{fill:var(--cat-end)}
+.ntile.cat-pwr{fill:var(--cat-pwr)} .ntile.cat-env{fill:var(--cat-env)} .ntile.cat-tel{fill:var(--cat-tel)}
+.nicon.cat-net{stroke:var(--cat-net)} .nicon.cat-wan{stroke:var(--cat-wan)} .nicon.cat-srv{stroke:var(--cat-srv)} .nicon.cat-end{stroke:var(--cat-end)}
+.nicon.cat-pwr{stroke:var(--cat-pwr)} .nicon.cat-env{stroke:var(--cat-env)} .nicon.cat-tel{stroke:var(--cat-tel)}
+#measure{visibility:hidden}
 
-/* inspecteur */
-.insp{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:12px;min-width:0}
-@media (min-width:981px){.insp{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);max-height:calc(100vh - 24px);overflow:auto}}
-.insp-head{display:grid;gap:2px}
+/* panneau de détails */
+.insp{position:absolute;top:10px;right:10px;bottom:10px;z-index:7;width:min(380px,calc(100% - 20px));overflow:auto;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;padding:14px;display:grid;gap:12px;align-content:start;box-shadow:var(--shadow)}
+@media (max-width:700px){.insp{top:auto;left:8px;right:8px;bottom:8px;width:auto;max-height:64%}}
+.insp-top{display:flex;align-items:flex-start;gap:10px}
+.insp-head{display:grid;gap:2px;min-width:0;flex:1}
+.x{flex:none;width:32px;height:32px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);font-size:20px;line-height:1}
+.x:hover{border-color:var(--ink)}
 .kind{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.insp h3{font-size:22px}
+.insp h3{font-size:24px}
+.about{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:14.5px;line-height:1.45}
+.about b{font-family:var(--font-display);font-size:15px;letter-spacing:.03em;text-transform:uppercase;display:block;margin-bottom:2px}
+.alertbox{background:var(--crit-soft);color:var(--ink);border-left:3px solid var(--crit);border-radius:6px;padding:8px 10px;font-size:14px}
+.pathbox{display:grid;gap:6px;font-size:13.5px;color:var(--muted)}
+.pathbox .row{display:flex;gap:6px}
+.pathbox select{flex:1;min-width:0;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;color:var(--ink)}
 .field{display:grid;gap:4px;font-size:13px;color:var(--muted)}
 .field input,.field select,.field textarea{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;color:var(--ink);font-size:14px;width:100%;min-width:0}
 .field textarea{resize:vertical;min-height:84px;line-height:1.45}
@@ -154,9 +201,9 @@ kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line-stro
 .seg-row input{accent-color:var(--accent);margin:0}
 .seg-row label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
 .swatches{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.swatches button{width:24px;height:24px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line-strong);background:var(--c);padding:0}
+.swatches button{width:26px;height:26px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line-strong);background:var(--c);padding:0}
 .swatches button.on{box-shadow:0 0 0 2px var(--accent)}
-.swatches input[type=color]{width:34px;height:28px;padding:0 2px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface)}
+.swatches input[type=color]{width:36px;height:30px;padding:0 2px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface)}
 .sub-h{font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
 .conn{list-style:none;margin:0;padding:0;display:grid;gap:2px}
 .conn button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:none;padding:5px 6px;border-radius:5px;font-size:13.5px}
@@ -165,6 +212,7 @@ kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line-stro
 .conn .sw{flex:none}
 .row-actions{display:flex;flex-wrap:wrap;gap:6px}
 .addlink{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+.addlink select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px;color:var(--ink);min-width:0}
 .addlink .btn{grid-column:1/-1}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .stat{border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--surface-2)}
@@ -175,7 +223,16 @@ kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line-stro
 .flag i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:7px;background:var(--warn)}
 .flag.crit i{background:var(--crit)}
 .flag small{display:block;color:var(--muted);font-size:12px}
-.help{font-size:13px;color:var(--muted);display:grid;gap:4px;margin:0;padding-left:18px}
+.help{font-size:13px;color:var(--muted);margin:0}
+.steps{list-style:none;margin:0;padding:0;display:grid}
+.step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:start}
+.step .num{width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-family:var(--font-display);font-weight:700;font-size:15px;display:grid;place-items:center}
+.step button{border:0;background:none;padding:0;text-align:left;font-weight:600;font-size:15px}
+.step button:hover{text-decoration:underline}
+.step p{margin:1px 0 0;font-size:13.5px;color:var(--muted)}
+.hop{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;font-size:12.5px;color:var(--muted);padding:4px 0}
+.hop i{justify-self:center;width:3px;height:100%;min-height:22px;border-radius:2px;background:var(--c)}
+.tag{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn);margin-left:6px;vertical-align:1px;white-space:nowrap}
 
 /* onglets de lecture */
 .cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;align-items:start}
@@ -222,6 +279,11 @@ table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{text-align:left;padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}
 th{font-family:var(--font-display);font-size:14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border-top:0}
 td .sw{width:34px;height:7px}
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:16px;align-items:start}
+.gloss dl{margin:0;display:grid}
+.gloss dt{font-family:var(--font-display);font-size:18px;font-weight:600;padding-top:10px;border-top:1px solid var(--line)}
+.gloss dt:first-of-type{border-top:0;padding-top:0}
+.gloss dd{margin:2px 0 10px;max-width:62ch}
 .notes-area{width:100%;min-height:140px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:10px;color:var(--ink);font:inherit;resize:vertical}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:9px 16px;border-radius:8px;font-size:14px;z-index:50;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
 @media (prefers-reduced-motion:no-preference){.toast{animation:toastIn .18s ease-out}@keyframes toastIn{from{transform:translate(-50%,8px);opacity:0}}}
@@ -238,21 +300,22 @@ td .sw{width:34px;height:7px}
   const TITLE = 'Schéma salle serveur D8';
   const FONT_LINK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">';
   const DEFAULT_RESET = ':root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}';
-  const W = 184, H = 52, SNAP = 10;
+  const W = 230, SNAP = 10, LAYOUT_V = 2;
+  const nh = () => (prefs.explain ? 78 : 58);
 
   const CABLES = {
-    wan:      { label: 'WAN / opérateur',            color: '#D63B3B', use: 'Tout ce qui est avant le pare-feu : box, routeur opérateur, lien Internet.' },
-    fibre_sm: { label: 'Fibre monomode OS2',         color: '#E2B100', use: 'Gaine jaune normalisée : liaison opérateur, inter-bâtiments, longues distances.' },
-    fibre_mm: { label: 'Fibre multimode OM3/OM4',    color: '#14AFC4', use: 'Gaine aqua normalisée : liaisons courtes entre baies.' },
-    uplink:   { label: 'Inter-switch / uplink',      color: '#2E9B57', use: 'Liens entre switchs (cœur ↔ accès), agrégations LACP.' },
-    server:   { label: 'Serveurs',                   color: '#7A5AD8', use: 'Serveurs rack, NAS, serveur IA.' },
-    user:     { label: 'Postes utilisateurs',        color: '#2D6FE0', use: 'Brassage panneau → switch des prises de bureaux.' },
-    wifi:     { label: 'Bornes Wi-Fi (PoE)',         color: '#D94F98', use: 'Ports PoE vers les bornes Wi-Fi.' },
-    voip:     { label: 'Téléphonie IP',              color: '#5F6B7A', use: 'Téléphones IP, autocommutateur IP.' },
-    tel:      { label: 'Cuivre téléphonique',        color: '#A0632C', use: 'Paires du répartiteur : lignes analogiques, alarme, ascenseur.' },
-    mgmt:     { label: 'Administration / console',   color: '#24272C', use: 'iLO / iDRAC, ports de management, console KVM (VGA, USB).' },
-    power:    { label: 'Alimentation 230 V',         color: '#E8781C', use: 'Coffret → onduleur → PDU → équipements. Pas du réseau, mais à documenter.' },
-    other:    { label: 'Autre / inconnu',            color: '#9AA5A3', use: 'En attendant d’identifier le rôle du câble.' }
+    wan:      { label: 'Lien opérateur (WAN)',    color: '#D63B3B', use: 'Tout ce qui est avant le pare-feu : la box, le routeur de l’opérateur, le lien Internet.' },
+    fibre_sm: { label: 'Fibre optique monomode',  color: '#E2B100', use: 'Gaine jaune normalisée : arrivée opérateur, liaisons entre bâtiments ou étages, longues distances.' },
+    fibre_mm: { label: 'Fibre optique multimode', color: '#14AFC4', use: 'Gaine aqua normalisée : liaisons courtes entre baies.' },
+    uplink:   { label: 'Entre switchs',           color: '#2E9B57', use: 'Les liens qui relient les switchs entre eux (switch principal ↔ switchs d’étage).' },
+    server:   { label: 'Vers les serveurs',       color: '#7A5AD8', use: 'Raccordement des serveurs, du NAS et du serveur IA.' },
+    user:     { label: 'Vers les bureaux',        color: '#2D6FE0', use: 'Du switch au panneau de brassage, puis par les murs jusqu’aux prises des bureaux.' },
+    wifi:     { label: 'Vers le Wi-Fi',           color: '#D94F98', use: 'Vers les bornes Wi-Fi, souvent alimentées par le câble lui-même (PoE).' },
+    voip:     { label: 'Téléphonie IP',           color: '#5F6B7A', use: 'Téléphones qui passent par le réseau informatique.' },
+    tel:      { label: 'Ligne téléphone cuivre',  color: '#A0632C', use: 'Paires de fils du répartiteur : lignes classiques, alarme, ascenseur.' },
+    mgmt:     { label: 'Administration, console', color: '#24272C', use: 'Écran-clavier de secours (VGA, USB) et cartes de gestion des serveurs (iLO, iDRAC).' },
+    power:    { label: 'Électricité 230 V',       color: '#E8781C', use: 'Tableau électrique → onduleur → multiprises → équipements. Ce n’est pas du réseau, mais une coupure arrête tout.' },
+    other:    { label: 'Autre / inconnu',         color: '#9AA5A3', use: 'En attendant d’identifier le rôle du câble.' }
   };
   const STATUS = {
     observe:  { label: 'Vu dans la vidéo', dash: '' },
@@ -287,92 +350,123 @@ td .sw{width:34px;height:7px}
     other: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8v5M12 16h.01'
   };
   const TYPES = {
-    internet: { label: 'Internet / opérateur', cat: 'wan', icon: 'cloud' },
-    ont:      { label: 'Box / ONT / modem',    cat: 'wan', icon: 'box' },
-    router:   { label: 'Routeur',              cat: 'net', icon: 'router' },
-    firewall: { label: 'Pare-feu',             cat: 'net', icon: 'firewall' },
-    switch:   { label: 'Switch',               cat: 'net', icon: 'switch' },
-    patch:    { label: 'Panneau de brassage',  cat: 'net', icon: 'patch' },
-    odf:      { label: 'Tiroir optique',       cat: 'net', icon: 'odf' },
-    server:   { label: 'Serveur rack',         cat: 'srv', icon: 'server' },
-    tower:    { label: 'Serveur tour / PC',    cat: 'srv', icon: 'tower' },
-    nas:      { label: 'NAS / stockage',       cat: 'srv', icon: 'nas' },
-    kvm:      { label: 'Console / KVM',        cat: 'srv', icon: 'kvm' },
-    rep:      { label: 'Répartiteur téléphonique', cat: 'tel', icon: 'rep' },
-    analog:   { label: 'Ligne analogique',     cat: 'tel', icon: 'phone' },
-    wall:     { label: 'Prise murale RJ45',    cat: 'end', icon: 'wall' },
-    users:    { label: 'Postes utilisateurs',  cat: 'end', icon: 'users' },
-    printer:  { label: 'Imprimante',           cat: 'end', icon: 'printer' },
-    wifi:     { label: 'Borne Wi-Fi',          cat: 'end', icon: 'wifi' },
-    phone:    { label: 'Téléphone IP',         cat: 'end', icon: 'phone' },
-    screen:   { label: 'Écran',                cat: 'end', icon: 'screen' },
-    camera:   { label: 'Caméra IP',            cat: 'end', icon: 'camera' },
-    elec:     { label: 'Coffret électrique',   cat: 'pwr', icon: 'elec' },
-    ups:      { label: 'Onduleur',             cat: 'pwr', icon: 'ups' },
-    pdu:      { label: 'PDU / multiprise',     cat: 'pwr', icon: 'pdu' },
-    ac:       { label: 'Climatisation',        cat: 'env', icon: 'ac' },
-    sensor:   { label: 'Sonde T° / humidité',  cat: 'env', icon: 'sensor' },
-    other:    { label: 'Autre',                cat: 'net', icon: 'other' }
+    internet: { label: 'Internet / opérateur', cat: 'wan', icon: 'cloud', explain: 'Le réseau du fournisseur',
+      about: 'Le réseau de ton fournisseur d’accès. Tout ce qui vient d’Internet passe d’abord par lui avant d’entrer dans le bâtiment.' },
+    ont:      { label: 'Box / ONT / modem', cat: 'wan', icon: 'box', explain: 'Traduit la ligne opérateur',
+      about: 'Le boîtier posé par l’opérateur. Il transforme le signal de la ligne (fibre, cuivre ou 4G) en réseau que tes équipements comprennent. C’est la « box » version entreprise.' },
+    router:   { label: 'Routeur', cat: 'net', icon: 'router', explain: 'Fait le lien avec Internet',
+      about: 'La passerelle entre ton réseau et Internet : il sait où envoyer chaque paquet de données. En entreprise, il est souvent fourni et géré par l’opérateur.' },
+    firewall: { label: 'Pare-feu', cat: 'net', icon: 'firewall', explain: 'Filtre ce qui entre et sort',
+      about: 'Le gardien de l’entrée. Il laisse passer ce qui est autorisé et bloque le reste, dans les deux sens. Sans lui, le réseau est directement exposé.' },
+    switch:   { label: 'Switch', cat: 'net', icon: 'switch', explain: 'Multiprise du réseau',
+      about: 'Une multiprise intelligente pour le réseau. Chaque câble branché dessus relie un appareil aux autres. Les voyants verts clignotent quand des données passent.' },
+    patch:    { label: 'Panneau de brassage', cat: 'net', icon: 'patch', explain: 'Relie la baie aux bureaux',
+      about: 'Une rangée de prises numérotées dans la baie. Chaque prise part dans les murs jusqu’à une prise de bureau. Un cordon court relie ensuite cette prise à un port du switch.' },
+    odf:      { label: 'Tiroir optique', cat: 'net', icon: 'odf', explain: 'Raccorde la fibre optique',
+      about: 'Le tiroir où arrivent les fibres optiques, qui transportent de la lumière sur de longues distances. Ne regarde jamais un connecteur en face : le laser est invisible et dangereux pour les yeux.' },
+    server:   { label: 'Serveur rack', cat: 'srv', icon: 'server', explain: 'Ordinateur qui rend service',
+      about: 'Un ordinateur conçu pour tourner jour et nuit et rendre un service à tout le monde : fichiers partagés, comptes, sauvegardes, applications. Il se range dans une baie.' },
+    tower:    { label: 'Serveur tour / PC', cat: 'srv', icon: 'tower', explain: 'PC utilisé en serveur',
+      about: 'Un ordinateur classique utilisé comme serveur. Ça fonctionne, mais sans les protections d’un vrai serveur : une seule alimentation, souvent un seul disque.' },
+    nas:      { label: 'NAS / stockage', cat: 'srv', icon: 'nas', explain: 'Disques partagés',
+      about: 'Un boîtier rempli de disques, accessible par le réseau, pour stocker et partager des fichiers.' },
+    kvm:      { label: 'Console / KVM', cat: 'srv', icon: 'kvm', explain: 'Écran-clavier des serveurs',
+      about: 'Un écran, un clavier et une souris partagés entre les serveurs. On s’en sert pour intervenir directement sur un serveur qui ne répond plus à distance.' },
+    rep:      { label: 'Répartiteur téléphonique', cat: 'tel', icon: 'rep', explain: 'Arrivée des lignes télécom',
+      about: 'Le tableau où arrivent les lignes téléphoniques en cuivre de l’opérateur, et d’où elles repartent vers les postes ou les équipements (alarme, ascenseur…).' },
+    analog:   { label: 'Ligne analogique', cat: 'tel', icon: 'phone', explain: 'Ligne téléphone classique',
+      about: 'Une ligne téléphonique « à l’ancienne » sur fil de cuivre. Elle sert souvent à des équipements discrets mais importants : alarme, ascenseur, fax.' },
+    wall:     { label: 'Prise murale RJ45', cat: 'end', icon: 'wall', explain: 'Prise réseau dans le mur',
+      about: 'La prise réseau dans le mur. Derrière, un câble passe dans les murs jusqu’au panneau de brassage de la baie.' },
+    users:    { label: 'Postes utilisateurs', cat: 'end', icon: 'users', explain: 'Ordinateurs du personnel',
+      about: 'Les ordinateurs du personnel. Chacun est branché sur une prise murale, ou passe par le Wi-Fi.' },
+    printer:  { label: 'Imprimante', cat: 'end', icon: 'printer', explain: 'Imprime via le réseau',
+      about: 'Imprimantes et copieurs branchés au réseau : tout le monde peut imprimer dessus.' },
+    wifi:     { label: 'Borne Wi-Fi', cat: 'end', icon: 'wifi', explain: 'Diffuse le Wi-Fi',
+      about: 'Une borne fixée au plafond ou au mur qui diffuse le Wi-Fi. Elle reçoit souvent son courant par le câble réseau lui-même (PoE).' },
+    phone:    { label: 'Téléphone IP', cat: 'end', icon: 'phone', explain: 'Téléphone sur le réseau',
+      about: 'Un téléphone qui passe par le réseau informatique au lieu d’une ligne téléphonique classique.' },
+    screen:   { label: 'Écran', cat: 'end', icon: 'screen', explain: 'Écran branché au réseau',
+      about: 'Un écran branché au réseau, par exemple pour afficher le planning dans l’atelier.' },
+    camera:   { label: 'Caméra IP', cat: 'end', icon: 'camera', explain: 'Vidéosurveillance',
+      about: 'Une caméra de surveillance branchée au réseau.' },
+    elec:     { label: 'Coffret électrique', cat: 'pwr', icon: 'elec', explain: 'Arrivée du courant',
+      about: 'Le tableau électrique, avec ses disjoncteurs. Il faut savoir lequel alimente les baies, pour ne pas tout couper par erreur.' },
+    ups:      { label: 'Onduleur', cat: 'pwr', icon: 'ups', explain: 'Batterie en cas de coupure',
+      about: 'Une grosse batterie entre la prise et les équipements. Pendant une coupure, il les garde allumés quelques minutes, le temps de les éteindre proprement.' },
+    pdu:      { label: 'PDU / multiprise', cat: 'pwr', icon: 'pdu', explain: 'Multiprise de la baie',
+      about: 'Une multiprise faite pour la baie, parfois avec mesure de consommation ou commande à distance.' },
+    ac:       { label: 'Climatisation', cat: 'env', icon: 'ac', explain: 'Refroidit la salle',
+      about: 'Les équipements chauffent beaucoup. Sans froid, ils ralentissent puis s’arrêtent pour se protéger.' },
+    sensor:   { label: 'Sonde T° / humidité', cat: 'env', icon: 'sensor', explain: 'Alerte s’il fait trop chaud',
+      about: 'Une sonde qui mesure la température et l’humidité, et envoie une alerte par mail ou SMS si un seuil est dépassé.' },
+    other:    { label: 'Autre', cat: 'net', icon: 'other', explain: 'Équipement à identifier',
+      about: 'Équipement dont le rôle reste à identifier.' }
   };
 
-  /* ---------- reconstitution d’après la vidéo (état de départ) ---------- */
+  /* ---------- reconstitution d’après la vidéo, disposée de gauche à droite ---------- */
+  const COLX = [40, 330, 620, 910, 1200];
+  const ROWY = [86, 182, 278, 374, 470];
+  const MIDY = 654, LOWY = 838;
   function defaultState() {
-    const n = (id, type, label, sub, x, y, status, video, notes, alert) =>
-      ({ id, type, label, sub: sub || '', x, y, status, video: video || '', ip: '', notes: notes || '', alert: alert || '' });
+    const n = (id, type, label, sub, x, y, status, video, notes, alert, explain) =>
+      ({ id, type, label, sub: sub || '', explain: explain || '', x, y, status, video: video || '', ip: '', notes: notes || '', alert: alert || '' });
     const l = (id, from, to, cable, status, label, notes) =>
       ({ id, from, to, cable, color: '', fromPort: '', toPort: '', label: label || '', status, notes: notes || '' });
+    const [c1, c2, c3, c4, c5] = COLX, [r1, r2, r3, r4, r5] = ROWY;
     return {
-      v: 1, updatedAt: '', notes: '', checks: {},
+      v: LAYOUT_V, updatedAt: '', notes: '', checks: {},
       zones: [
-        { id: 'z1', label: 'Arrivées opérateurs', x: 20, y: 60, w: 250, h: 530 },
-        { id: 'z2', label: 'Baie de brassage · bâti turquoise', x: 280, y: 60, w: 640, h: 530 },
-        { id: 'z3', label: 'Baie serveurs · bâti noir', x: 950, y: 60, w: 230, h: 330 },
-        { id: 'z4', label: 'Hors baie · au sol', x: 950, y: 410, w: 230, h: 180 },
-        { id: 'z5', label: 'Bâtiment · utilisateurs', x: 1210, y: 60, w: 230, h: 530 },
-        { id: 'z6', label: 'Énergie & climat', x: 20, y: 620, w: 1420, h: 130 }
+        { id: 'z1', label: '1 · Arrivées', caption: 'Internet et téléphone entrent ici.', x: 20, y: 20, w: 270, h: 544 },
+        { id: 'z2', label: '2 · Entrée et sécurité', caption: 'Passage vers Internet, filtrage.', x: 310, y: 20, w: 270, h: 544 },
+        { id: 'z3', label: '3 · Switchs', caption: 'Distribuent le réseau partout.', x: 600, y: 20, w: 270, h: 544 },
+        { id: 'z4', label: '4 · Brassage', caption: 'Relient la baie aux prises murales.', x: 890, y: 20, w: 270, h: 544 },
+        { id: 'z5', label: '5 · Bureaux et atelier', caption: 'Ce qui est branché au bout.', x: 1180, y: 20, w: 270, h: 544 },
+        { id: 'z6', label: 'Serveurs · baie noire', caption: 'Les ordinateurs qui rendent un service à tous.', x: 20, y: 588, w: 850, h: 160 },
+        { id: 'z7', label: 'Serveur IA · posé au sol', caption: 'Le PC qui publie les pages HTML.', x: 890, y: 588, w: 560, h: 160 },
+        { id: 'z8', label: 'Électricité et climat', caption: 'Sans courant ni froid, rien ne tourne.', x: 20, y: 772, w: 1430, h: 160 }
       ],
       nodes: [
-        n('inet', 'internet', 'Internet / opérateur', 'Réseau du fournisseur', 43, 100, 'suppose', '', 'Point d’entrée logique. Note ici le nom du ou des opérateurs, les références de contrat et le numéro du support.'),
-        n('ont', 'ont', 'Box / modem opérateur', 'Étagère sous la baie', 43, 210, 'verifier', '0:47–0:50', 'Petits boîtiers à voyants verts posés sur l’étagère. À identifier : box, ONT fibre, modem SDSL, routeur 4G de secours…'),
-        n('rep', 'rep', 'Répartiteur téléphonique', 'Paires cuivre', 43, 350, 'observe', '0:20 · 0:48', 'Fils fins multicolores sur réglettes : arrivée cuivre de l’opérateur et distribution interne.'),
-        n('analog', 'analog', 'Lignes analogiques', 'Alarme, ascenseur, fax ?', 43, 460, 'verifier', '', 'Ce qui passe encore sur le cuivre est souvent oublié : transmetteur d’alarme, téléalarme d’ascenseur, fax, TPE. Le réseau cuivre ferme progressivement en France d’ici 2030.'),
-        n('odf', 'odf', 'Tiroir optique', 'Fibres jaunes · laser', 300, 100, 'observe', '0:44–0:47', 'Cordons fibre jaunes groupés et pictogramme laser. Jaune = monomode OS2 en général. Ne jamais regarder un connecteur en face.'),
-        n('rtr', 'router', 'Routeur modulaire', 'Opérateur ? · cartes', 300, 200, 'observe', '0:38–0:41', 'Châssis gris à modules avec ports cuivre. Ce type de routeur est souvent fourni et géré par l’opérateur : vérifie à qui il appartient avant d’y toucher.'),
-        n('fw', 'firewall', 'Pare-feu', 'Non identifié', 300, 300, 'verifier', '', 'Aucun pare-feu reconnaissable dans la vidéo. S’il n’y en a pas, supprime ce bloc et relie le routeur au switch cœur, puis traite le sujet dans la check-list.'),
-        n('red', 'patch', 'Panneau ports rouges', 'Rôle inconnu', 300, 420, 'observe', '0:39 · 0:43', 'Panneau ou équipement blanc à inserts rouges. Le rouge sert souvent au WAN ou à la téléphonie.'),
-        n('core', 'switch', 'Switch cœur', '1U haut de baie', 508, 150, 'observe', '0:40', 'Équipement 1U à voyants verts en haut de baie. Le rôle de cœur est une hypothèse.'),
-        n('sw1', 'switch', 'Switch accès n°1', '48 ports', 508, 260, 'observe', '0:24–0:34', 'Le nombre exact de switchs n’est pas vérifiable : vidéo floue et en mouvement.'),
-        n('sw2', 'switch', 'Switch accès n°2', '48 ports', 508, 360, 'observe', '0:42–0:45', ''),
-        n('sw3', 'switch', 'Switch accès n°3', '48 ports', 508, 460, 'suppose', '0:44', ''),
-        n('ppg', 'patch', 'Panneau inserts verts', 'Haut de baie', 716, 150, 'observe', '0:38–0:40', 'Inserts verts : peut-être un code couleur d’origine (téléphonie ? étage ?). À identifier.'),
-        n('ppa', 'patch', 'Panneaux RJ45 A', 'Prises des bureaux', 716, 260, 'observe', '0:24–0:30', 'Brassage dense, cordons trop longs formant des boucles, quelques étiquettes adhésives.'),
-        n('ppb', 'patch', 'Panneaux RJ45 B', 'Prises des bureaux', 716, 360, 'observe', '0:30–0:36', ''),
-        n('kvm', 'kvm', 'Console écran + clavier', 'Tablette coulissante', 973, 100, 'observe', '0:10–0:14 · 0:54', 'Connecteur VGA bleu : console reliée en direct ou via un switch KVM.'),
-        n('srv1', 'server', 'Serveur rack n°1', 'Rôle à documenter', 973, 200, 'observe', '1:01–1:03', 'Rôle inconnu : contrôleur de domaine, fichiers, sauvegarde, virtualisation ?'),
-        n('srv2', 'server', 'Serveur rack n°2', 'Rôle à documenter', 973, 300, 'observe', '0:56–1:03', 'Posé à plat, cordon d’alimentation passant par-dessus.', 'Voyants rouges/orange en façade (1:02) : disque en défaut ?'),
-        n('ia', 'tower', 'Serveur IA', 'Tour au sol · pages HTML', 973, 440, 'observe', '0:00–0:09', 'D’après la voix : héberge les fichiers HTML publiés sur le réseau privé (planning D8 : planning-d8.html + api.php ?). Note son IP et son nom DNS.', 'Sur la moquette, branché au mur sans onduleur visible'),
-        n('wall', 'wall', 'Prise murale RJ45', 'Derrière le serveur IA', 973, 520, 'observe', '0:08', 'Cordons blanc et bleu vers la prise murale, sous quatre prises 230 V.'),
-        n('users', 'users', 'Postes utilisateurs', 'Bureaux', 1233, 100, 'suppose', '', ''),
-        n('print', 'printer', 'Imprimantes / copieurs', 'Bureaux', 1233, 190, 'suppose', '', ''),
-        n('wifi', 'wifi', 'Bornes Wi-Fi', 'PoE ?', 1233, 280, 'suppose', '', ''),
-        n('phone', 'phone', 'Téléphones IP', 'S’il y a de la ToIP', 1233, 370, 'verifier', '', ''),
-        n('screens', 'screen', 'Écrans d’atelier', 'Planning D8', 1233, 460, 'suppose', '', 'Les vues écran du planning (#/ecran/…) interrogent le serveur IA en continu.'),
-        n('elec', 'elec', 'Coffret électrique', 'Pictogramme danger', 43, 670, 'observe', '1:20', 'Note le numéro du disjoncteur qui alimente chaque baie.'),
-        n('ups', 'ups', 'Onduleur', 'À confirmer', 300, 670, 'verifier', '1:28', 'Équipement au sol avec voyant orange : batterie en charge, sur batterie, surcharge, ou autre chose ?', 'Voyant orange vu au sol (1:28)'),
-        n('pdu', 'pdu', 'PDU / multiprises', 'Baies', 508, 670, 'verifier', '', ''),
-        n('ac', 'ac', 'Climatiseur armoire', 'Unité unique', 973, 670, 'observe', '1:18–1:21', 'Une seule unité visible, à côté d’une fenêtre exposée.', 'Point unique de défaillance pour la température'),
-        n('sensor', 'sensor', 'Sonde T° / humidité', 'Non vue', 1233, 670, 'verifier', '', 'Aucune sonde visible. Sans alerte, une panne de clim se découvre quand les équipements s’arrêtent.')
+        n('inet', 'internet', 'Internet', 'Réseau de l’opérateur', c1, r1, 'suppose', '', 'Point d’entrée logique. Note ici le nom du ou des opérateurs, les références de contrat et le numéro du support.'),
+        n('ont', 'ont', 'Box / modem opérateur', 'Étagère sous la baie', c1, r2, 'verifier', '0:47–0:50', 'Petits boîtiers à voyants verts posés sur l’étagère. À identifier : box, ONT fibre, modem SDSL, routeur 4G de secours…'),
+        n('rep', 'rep', 'Répartiteur téléphone', 'Mur de la salle', c1, r3, 'observe', '0:20 · 0:48', 'Fils fins multicolores sur réglettes : arrivée cuivre de l’opérateur et distribution interne.'),
+        n('analog', 'analog', 'Lignes téléphoniques', 'Alarme, ascenseur, fax ?', c1, r4, 'verifier', '', 'Ce qui passe encore sur le cuivre est souvent oublié : transmetteur d’alarme, téléalarme d’ascenseur, fax, TPE. Le réseau cuivre ferme progressivement en France d’ici 2030.'),
+        n('odf', 'odf', 'Tiroir fibre optique', 'Bas de la baie turquoise', c2, r1, 'observe', '0:44–0:47', 'Cordons fibre jaunes groupés et pictogramme laser. Ces fibres peuvent être l’arrivée de l’opérateur ou des liaisons vers d’autres baies ou étages : relie le tiroir au bon équipement quand tu sauras.'),
+        n('rtr', 'router', 'Routeur', 'Haut de baie · opérateur ?', c2, r2, 'observe', '0:38–0:41', 'Châssis gris à modules avec ports cuivre. Ce type de routeur est souvent fourni et géré par l’opérateur : vérifie à qui il appartient avant d’y toucher.'),
+        n('fw', 'firewall', 'Pare-feu', 'Pas vu dans la vidéo', c2, r3, 'verifier', '', 'Aucun pare-feu reconnaissable dans la vidéo. S’il n’y en a pas, supprime ce bloc, relie le routeur au switch principal, et traite le sujet dans la check-list.'),
+        n('red', 'patch', 'Panneau à ports rouges', 'Haut de baie turquoise', c2, r4, 'observe', '0:39 · 0:43', 'Panneau ou équipement blanc à inserts rouges. Le rouge sert souvent au lien opérateur ou à la téléphonie.', '', 'Rôle encore inconnu'),
+        n('core', 'switch', 'Switch principal', 'Haut de baie turquoise', c3, r1, 'observe', '0:40', 'Équipement 1U à voyants verts en haut de baie. Son rôle de switch principal (cœur de réseau) est une hypothèse.', '', 'Le switch central du réseau'),
+        n('sw1', 'switch', 'Switch n°1', '48 ports · baie turquoise', c3, r2, 'observe', '0:24–0:34', 'Le nombre exact de switchs n’est pas vérifiable : vidéo floue et en mouvement.'),
+        n('sw2', 'switch', 'Switch n°2', '48 ports · baie turquoise', c3, r3, 'observe', '0:42–0:45', ''),
+        n('sw3', 'switch', 'Switch n°3', '48 ports · baie turquoise', c3, r4, 'suppose', '0:44', ''),
+        n('ppg', 'patch', 'Panneau inserts verts', 'Haut de baie turquoise', c4, r1, 'observe', '0:38–0:40', 'Inserts verts : peut-être un code couleur d’origine (téléphonie ? étage ?). À identifier.'),
+        n('ppa', 'patch', 'Panneau de brassage A', 'Prises des bureaux', c4, r2, 'observe', '0:24–0:30', 'Brassage dense, cordons trop longs formant des boucles, quelques étiquettes adhésives.'),
+        n('ppb', 'patch', 'Panneau de brassage B', 'Prises des bureaux', c4, r3, 'observe', '0:30–0:36', ''),
+        n('wall', 'wall', 'Prise murale RJ45', 'Derrière le serveur IA', c4, r4, 'observe', '0:08', 'Cordons blanc et bleu vers la prise murale, sous quatre prises 230 V.'),
+        n('users', 'users', 'PC des bureaux', 'Postes du personnel', c5, r1, 'suppose', '', ''),
+        n('print', 'printer', 'Imprimantes, copieurs', 'Bureaux', c5, r2, 'suppose', '', ''),
+        n('wifi', 'wifi', 'Bornes Wi-Fi', 'Plafonds · PoE ?', c5, r3, 'suppose', '', ''),
+        n('phone', 'phone', 'Téléphones IP', 'S’il y a de la ToIP', c5, r4, 'verifier', '', ''),
+        n('screens', 'screen', 'Écrans d’atelier', 'Planning D8', c5, r5, 'suppose', '', 'Les vues écran du planning (#/ecran/…) interrogent le serveur IA en continu.', '', 'Affichent le planning'),
+        n('kvm', 'kvm', 'Console écran-clavier', 'Tablette de la baie noire', c1, MIDY, 'observe', '0:10–0:14 · 0:54', 'Connecteur VGA bleu : console reliée en direct ou via un switch KVM. Elle sert probablement aussi au serveur n°2.'),
+        n('srv1', 'server', 'Serveur n°1', 'Baie noire · rôle ?', c2, MIDY, 'observe', '1:01–1:03', 'Rôle inconnu : comptes utilisateurs, fichiers, sauvegarde, virtualisation ?'),
+        n('srv2', 'server', 'Serveur n°2', 'Baie noire · rôle ?', c3, MIDY, 'observe', '0:56–1:03', 'Posé à plat, cordon d’alimentation passant par-dessus.', 'Voyants rouges/orange en façade (1:02) : disque en défaut ?'),
+        n('ia', 'tower', 'Serveur IA', 'PC tour posé au sol', c5, MIDY, 'observe', '0:00–0:09', 'D’après la voix : héberge les fichiers HTML publiés sur le réseau privé (planning D8 : planning-d8.html + api.php ?). Note son IP et son nom DNS.', 'Sur la moquette, branché au mur sans onduleur visible', 'Publie les pages HTML'),
+        n('sensor', 'sensor', 'Sonde de température', 'Pas vue dans la vidéo', c1, LOWY, 'verifier', '', 'Aucune sonde visible. Sans alerte, une panne de clim se découvre quand les équipements s’arrêtent.'),
+        n('pdu', 'pdu', 'Multiprises des baies', 'PDU · à confirmer', c2, LOWY, 'verifier', '', 'Alimentent probablement aussi les switchs de la baie turquoise.'),
+        n('ups', 'ups', 'Onduleur', 'Au sol · à confirmer', c3, LOWY, 'verifier', '1:28', 'Équipement au sol avec voyant orange : batterie en charge, sur batterie, surcharge, ou autre chose ?', 'Voyant orange vu au sol (1:28)'),
+        n('elec', 'elec', 'Tableau électrique', 'Mur de la salle', c4, LOWY, 'observe', '1:20', 'Note le numéro du disjoncteur qui alimente chaque baie.'),
+        n('ac', 'ac', 'Climatiseur', 'Une seule unité', c5, LOWY, 'observe', '1:18–1:21', 'Une seule unité visible, à côté d’une fenêtre exposée.', 'Une seule clim : si elle tombe en panne, la salle chauffe')
       ],
       links: [
-        l('l1', 'inet', 'odf', 'fibre_sm', 'suppose', 'Arrivée fibre ?', 'Fibre opérateur ou liaison inter-bâtiments.'),
         l('l2', 'inet', 'rtr', 'wan', 'suppose', 'Lien opérateur'),
         l('l3', 'inet', 'ont', 'wan', 'verifier', '2ᵉ accès ?'),
-        l('l4', 'inet', 'rep', 'tel', 'suppose', 'Paires cuivre'),
+        l('l4', 'inet', 'rep', 'tel', 'suppose', 'Lignes cuivre'),
         l('l5', 'rep', 'analog', 'tel', 'verifier'),
         l('l6', 'rtr', 'fw', 'wan', 'verifier'),
         l('l7', 'ont', 'fw', 'wan', 'verifier'),
-        l('l8', 'fw', 'core', 'uplink', 'verifier', '', 'Sans pare-feu : relier directement le routeur au switch cœur.'),
-        l('l9', 'odf', 'core', 'fibre_sm', 'suppose', '', 'Cordons jaunes vus à 0:44 ; extrémités non lisibles.'),
+        l('l8', 'fw', 'core', 'uplink', 'verifier', '', 'Sans pare-feu : relier directement le routeur au switch principal.'),
+        l('l9', 'odf', 'core', 'fibre_sm', 'suppose', 'Fibres jaunes', 'Cordons jaunes vus à 0:44 ; extrémités non lisibles.'),
         l('l10', 'red', 'rtr', 'wan', 'verifier', 'Ports rouges ?'),
         l('l11', 'core', 'sw1', 'uplink', 'suppose'),
         l('l12', 'core', 'sw2', 'uplink', 'suppose'),
@@ -380,7 +474,7 @@ td .sw{width:34px;height:7px}
         l('l14', 'sw1', 'ppg', 'user', 'verifier'),
         l('l15', 'sw1', 'ppa', 'user', 'observe', '', 'Dizaines de cordons blancs et gris, sans code couleur.'),
         l('l16', 'sw2', 'ppb', 'user', 'observe'),
-        l('l17', 'ppa', 'users', 'user', 'suppose', 'Câblage capillaire'),
+        l('l17', 'ppa', 'users', 'user', 'suppose', 'Câbles dans les murs'),
         l('l18', 'ppa', 'print', 'user', 'suppose'),
         l('l19', 'ppb', 'wifi', 'wifi', 'suppose'),
         l('l20', 'ppb', 'phone', 'voip', 'verifier'),
@@ -388,12 +482,11 @@ td .sw{width:34px;height:7px}
         l('l22', 'sw3', 'srv1', 'server', 'suppose'),
         l('l23', 'sw3', 'srv2', 'server', 'suppose'),
         l('l24', 'kvm', 'srv1', 'mgmt', 'observe', 'VGA', 'Connecteur VGA bleu vu à 0:12.'),
-        l('l25', 'kvm', 'srv2', 'mgmt', 'suppose'),
         l('l26', 'ia', 'wall', 'server', 'observe', '', 'Cordons blanc et bleu vers la prise murale (0:08).'),
-        l('l27', 'wall', 'ppb', 'server', 'suppose', 'Capillaire'),
+        l('l27', 'wall', 'ppb', 'server', 'suppose', 'Câble dans le mur'),
         l('l28', 'elec', 'ups', 'power', 'verifier'),
         l('l29', 'ups', 'pdu', 'power', 'verifier'),
-        l('l30', 'pdu', 'sw2', 'power', 'suppose'),
+        l('l30', 'pdu', 'srv1', 'power', 'suppose'),
         l('l31', 'pdu', 'srv2', 'power', 'suppose'),
         l('l32', 'elec', 'ia', 'power', 'observe', 'Prise murale directe', 'Branché sur les prises murales, pas d’onduleur visible (0:08).'),
         l('l33', 'elec', 'ac', 'power', 'suppose')
@@ -436,7 +529,6 @@ td .sw{width:34px;height:7px}
     { t: '1:24–1:28', title: 'Équipement au sol avec voyant orange', conf: 'verifier', node: 'ups',
       text: 'Zone sombre, boîtier au sol avec un voyant orange et des voyants verts. Probablement un onduleur.' }
   ];
-
   const CHECKS = [
     { id: 'g1', title: 'Vu dans la vidéo : à traiter vite', items: [
       { id: 'c1', p: 'crit', ref: '1:00 · 1:04', t: 'Sortir les cartons et les planches de bois de la salle', why: 'C’est de la charge combustible collée à des équipements sous tension. Les baies ont besoin de tablettes métalliques.' },
@@ -506,6 +598,47 @@ td .sw{width:34px;height:7px}
       { id: 'c51', p: 'bon', t: 'Classeur de la salle à jour', why: 'Un classeur bleu est posé sur le tabouret (1:20) : s’il contient la documentation, mets-y ce schéma imprimé.' }
     ] }
   ];
+  const LEXIQUE = [
+    { title: 'Le matériel', terms: [
+      ['Baie', 'Armoire métallique standard (19 pouces) où l’on visse switchs, panneaux et serveurs. Sa hauteur se compte en « U » : 1 U = 4,45 cm.'],
+      ['Switch', 'Multiprise intelligente du réseau. Chaque appareil branché dessus peut parler aux autres. Un switch de 48 ports relie 48 appareils.'],
+      ['Routeur', 'Passerelle entre ton réseau et un autre réseau, en général Internet.'],
+      ['Pare-feu', 'Filtre qui décide ce qui a le droit d’entrer et de sortir du réseau.'],
+      ['Box / ONT / modem', 'Boîtier de l’opérateur qui traduit le signal de la ligne (fibre, cuivre, 4G) en réseau utilisable.'],
+      ['Serveur', 'Ordinateur qui tourne en permanence pour rendre un service à tout le monde : fichiers, comptes, applications, sauvegardes.'],
+      ['NAS', 'Boîtier rempli de disques, accessible par le réseau, pour stocker des fichiers.'],
+      ['KVM', 'Keyboard-Video-Mouse : un seul écran, clavier et souris pour plusieurs serveurs.'],
+      ['iLO / iDRAC', 'Carte de gestion intégrée aux serveurs HP (iLO) ou Dell (iDRAC) : elle permet de surveiller et de redémarrer un serveur à distance, même planté.'],
+      ['Répartiteur', 'Tableau où arrivent les lignes téléphoniques en cuivre et d’où elles repartent vers les postes et équipements.']
+    ] },
+    { title: 'Les câbles', terms: [
+      ['Panneau de brassage', 'Rangée de prises numérotées dans la baie. Chacune est reliée par un câble dans les murs à une prise de bureau.'],
+      ['Câble capillaire', 'Câble posé dans les murs et faux plafonds, du panneau de la baie jusqu’à la prise murale. On ne le touche pas : on le « brasse ».'],
+      ['Brassage, cordon, jarretière', 'Brasser, c’est relier avec un cordon court (la jarretière) une prise du panneau à un port du switch.'],
+      ['RJ45', 'La prise réseau classique, un peu plus large qu’une prise de téléphone.'],
+      ['Fibre monomode / multimode', 'Deux familles de fibre optique. La monomode (gaine jaune) va très loin, la multimode (gaine aqua) sert aux courtes distances.'],
+      ['SFP', 'Petit module qu’on glisse dans un switch pour y brancher une fibre optique.'],
+      ['Uplink', 'Le câble qui relie un switch à un autre switch plus haut dans la chaîne.'],
+      ['PoE', 'Power over Ethernet : le câble réseau transporte aussi le courant, pour alimenter une borne Wi-Fi, un téléphone ou une caméra sans prise électrique.']
+    ] },
+    { title: 'Les notions réseau', terms: [
+      ['LAN / WAN', 'Le LAN, c’est ton réseau local, à l’intérieur. Le WAN, c’est l’extérieur : Internet, l’opérateur.'],
+      ['Adresse IP', 'Le numéro d’un appareil sur le réseau, comme une adresse postale (par exemple 192.168.1.20).'],
+      ['DHCP', 'Le service qui donne automatiquement une adresse IP à chaque appareil qui se branche.'],
+      ['DNS', 'Le service qui traduit un nom (planning.d8.local) en adresse IP.'],
+      ['VLAN', 'Réseau virtuel : on découpe un même switch en plusieurs réseaux séparés (bureaux, téléphones, invités…) qui ne se voient pas sans autorisation.'],
+      ['ToIP', 'Téléphonie sur IP : les téléphones passent par le réseau informatique.'],
+      ['Boucle réseau', 'Deux prises d’un même réseau reliées par erreur : le trafic tourne en rond et peut bloquer tout le réseau. Le protocole STP l’empêche.'],
+      ['LLDP / CDP', 'Messages par lesquels les équipements réseau annoncent à leurs voisins qui ils sont : idéal pour savoir qui est branché où.']
+    ] },
+    { title: 'Électricité et salle', terms: [
+      ['Onduleur (ASI)', 'Batterie entre la prise et les équipements : elle les garde allumés pendant une coupure, le temps de les arrêter proprement.'],
+      ['PDU', 'Multiprise conçue pour la baie, parfois avec mesure de consommation.'],
+      ['RAID', 'Plusieurs disques qui travaillent ensemble pour qu’une panne de disque ne fasse rien perdre. Un voyant orange ou rouge sur un disque : à remplacer vite.'],
+      ['Point unique de défaillance', 'Un élément dont la panne arrête tout, faute de remplaçant : une seule clim, un seul serveur, un seul lien Internet.'],
+      ['Règle 3-2-1', 'Trois copies des données, sur deux supports différents, dont une hors du site ou hors ligne.']
+    ] }
+  ];
 
   /* ---------- état ---------- */
   const $ = (s, r) => (r || document).querySelector(s);
@@ -514,6 +647,7 @@ td .sw{width:34px;height:7px}
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const snap = (v) => Math.round(v / SNAP) * SNAP;
   const uid = (p) => p + Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 5);
+  const DRAFT_KEY = 'd8-schema-draft-v2';
   const store = {
     get(k, s) { try { const v = (s ? sessionStorage : localStorage).getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
     set(k, v, s) { try { (s ? sessionStorage : localStorage).setItem(k, JSON.stringify(v)); } catch (e) { /* stockage indisponible */ } },
@@ -523,10 +657,21 @@ td .sw{width:34px;height:7px}
   function validState(s) {
     return s && Array.isArray(s.nodes) && Array.isArray(s.links) && Array.isArray(s.zones);
   }
+  function migrate(s) {
+    if ((s.v || 1) >= LAYOUT_V) return s;
+    const d = defaultState(), pos = {};
+    d.nodes.forEach((n) => { pos[n.id] = { x: n.x, y: n.y }; });
+    s.nodes.forEach((n) => { if (pos[n.id]) { n.x = pos[n.id].x; n.y = pos[n.id].y; } else { n.x = Math.round(n.x * 1.25); n.y = Math.round(n.y * 1.3); } });
+    if (s.zones.every((z) => /^z[1-6]$/.test(z.id))) s.zones = d.zones;
+    s.v = LAYOUT_V;
+    return s;
+  }
   function normalize(s) {
+    s = migrate(s);
     s.checks = s.checks && typeof s.checks === 'object' ? s.checks : {};
     s.notes = typeof s.notes === 'string' ? s.notes : '';
-    s.nodes.forEach((n) => { ['label', 'sub', 'ip', 'notes', 'alert', 'video'].forEach((k) => { if (typeof n[k] !== 'string') n[k] = ''; }); if (!TYPES[n.type]) n.type = 'other'; if (!STATUS[n.status]) n.status = 'suppose'; n.x = +n.x || 0; n.y = +n.y || 0; });
+    s.zones.forEach((z) => { if (typeof z.caption !== 'string') z.caption = ''; if (typeof z.label !== 'string') z.label = ''; });
+    s.nodes.forEach((n) => { ['label', 'sub', 'ip', 'notes', 'alert', 'video', 'explain'].forEach((k) => { if (typeof n[k] !== 'string') n[k] = ''; }); if (!TYPES[n.type]) n.type = 'other'; if (!STATUS[n.status]) n.status = 'suppose'; n.x = +n.x || 0; n.y = +n.y || 0; });
     s.links = s.links.filter((l) => l && l.from !== l.to);
     s.links.forEach((l) => { ['color', 'fromPort', 'toPort', 'label', 'notes'].forEach((k) => { if (typeof l[k] !== 'string') l[k] = ''; }); if (!CABLES[l.cable]) l.cable = 'other'; if (!STATUS[l.status]) l.status = 'suppose'; });
     return s;
@@ -540,13 +685,13 @@ td .sw{width:34px;height:7px}
     return defaultState();
   }
 
+  const prefs = Object.assign({ tab: 'schema', hidden: [], ports: true, explain: true, hideDone: false, cable: 'user', guideSeen: false }, store.get('d8-schema-ui') || {});
   let state = loadState();
   let savedJSON = JSON.stringify(state);
   let undoStack = [], redoStack = [];
-  const prefs = Object.assign({ tab: 'schema', hidden: [], ports: true, hideDone: false, cable: 'user' }, store.get('d8-schema-ui') || {});
   const stash = store.get('d8-schema-stash', true); store.del('d8-schema-stash', true);
   if (stash && stash.tab) prefs.tab = stash.tab;
-  const ui = { sel: stash && stash.sel ? stash.sel : null, mode: 'select', linkFrom: null, view: { x: 0, y: 0, k: 1 }, drag: null, pendingSnap: null };
+  const ui = { sel: stash && stash.sel ? stash.sel : null, panel: null, path: null, mode: 'select', linkFrom: null, view: { x: 0, y: 0, k: 1 }, userView: false, drag: null, pendingSnap: null, guide: !prefs.guideSeen };
   const cap = { inViewer: !!(window.claude && window.claude.use), artifact: null, resolved: false, readOnly: false, saving: false };
   let toastTimer = null;
 
@@ -554,42 +699,72 @@ td .sw{width:34px;height:7px}
   const linkById = (id) => state.links.find((l) => l.id === id);
   const zoneById = (id) => state.zones.find((z) => z.id === id);
   const cableColor = (l) => l.color || (CABLES[l.cable] || CABLES.other).color;
+  const explainOf = (n) => n.explain || (TYPES[n.type] || TYPES.other).explain;
   const isDirty = () => JSON.stringify(state) !== savedJSON;
   const savePrefs = () => store.set('d8-schema-ui', prefs);
 
   function snapshot() { return JSON.stringify(state); }
   function pushUndo(snap) { undoStack.push(snap); if (undoStack.length > 80) undoStack.shift(); redoStack = []; }
   function commit(snap) { if (snap !== snapshot()) { pushUndo(snap); changed(); } }
-  function changed() {
-    store.set('d8-schema-draft', { at: Date.now(), state });
-    renderStatus(); renderUndo();
-  }
+  function changed() { store.set(DRAFT_KEY, { at: Date.now(), state }); renderStatus(); renderUndo(); }
   function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); state = JSON.parse(undoStack.pop()); fixSel(); renderAll(); changed(); }
   function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); state = JSON.parse(redoStack.pop()); fixSel(); renderAll(); changed(); }
   function fixSel() {
+    ui.path = null;
     if (!ui.sel) return;
     const ok = ui.sel.kind === 'node' ? byId(ui.sel.id) : ui.sel.kind === 'link' ? linkById(ui.sel.id) : zoneById(ui.sel.id);
     if (!ok) ui.sel = null;
   }
 
+  /* ---------- mesure du texte (évite qu’un libellé déborde de sa boîte) ---------- */
+  const fitCache = new Map();
+  function fitText(str, cls, maxW) {
+    str = String(str || '');
+    if (!str) return { t: '', fs: 0 };
+    const key = cls + '|' + maxW + '|' + str;
+    if (fitCache.has(key)) return fitCache.get(key);
+    const m = document.getElementById('measure');
+    let res = null;
+    if (m) {
+      m.setAttribute('class', cls); m.style.fontSize = ''; m.textContent = str;
+      let w = m.getComputedTextLength();
+      if (w > 0) {
+        if (w <= maxW) res = { t: str, fs: 0, w };
+        else {
+          const base = parseFloat(getComputedStyle(m).fontSize) || 14;
+          const fs = base * Math.max(0.84, maxW / w);
+          m.style.fontSize = fs + 'px'; w = m.getComputedTextLength();
+          let t = str;
+          while (w > maxW && t.length > 3) { t = t.slice(0, -1); m.textContent = t.trimEnd() + '…'; w = m.getComputedTextLength(); }
+          res = { t: t === str ? str : t.trimEnd() + '…', fs, w };
+        }
+        m.style.fontSize = '';
+        fitCache.set(key, res);
+      }
+    }
+    if (!res) { const max = Math.max(4, Math.floor(maxW / 7.2)); res = { t: str.length > max ? str.slice(0, max - 1) + '…' : str, fs: 0, w: Math.min(maxW, str.length * 6.6) }; }
+    return res;
+  }
+  function svgText(str, cls, x, y, maxW, extra) {
+    const f = fitText(str, cls, maxW);
+    return `<text class="${cls}" x="${x}" y="${y}"${f.fs ? ` style="font-size:${f.fs.toFixed(1)}px"` : ''}${extra || ''}>${esc(f.t)}</text>`;
+  }
+
   /* ---------- squelette de la page ---------- */
+  function lineKey(dash) { return `<svg class="keyline" width="30" height="8" aria-hidden="true"><line x1="2" y1="4" x2="28" y2="4" stroke="currentColor" stroke-width="3" stroke-linecap="round" ${dash ? `stroke-dasharray="${dash}"` : ''}/></svg>`; }
   function shell() {
     const typeOpts = Object.entries(TYPES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
     const cableOpts = Object.entries(CABLES).map(([k, c]) => `<option value="${k}">${esc(c.label)}</option>`).join('');
-    const dash = (d, c) => `<svg width="30" height="8" aria-hidden="true"><line x1="2" y1="4" x2="28" y2="4" stroke="${c}" stroke-width="3" stroke-linecap="round" ${d ? `stroke-dasharray="${d}"` : ''}/></svg>`;
     return `
 <header class="top">
-  <div>
-    <div class="eyebrow">Schéma réseau · reconstitué depuis la vidéo du 2 oct. 2026, 09:28</div>
-    <h1>Salle serveur D8<small id="updated"></small></h1>
-  </div>
+  <div class="brand"><h1>Salle serveur D8</h1><span class="eyebrow" id="updated">Schéma réseau · d’après la vidéo du 2 oct. 2026</span></div>
   <div class="actions">
     <span id="saveState" class="chip" role="status" aria-live="polite"></span>
     <button id="btnSave" class="btn primary" type="button">Enregistrer</button>
     <details class="menu" id="exportMenu"><summary class="btn">Exporter</summary>
       <div class="menu-list">
         <button type="button" data-export="png">Image PNG<small>Pour un mail ou une impression</small></button>
-        <button type="button" data-export="svg">Image SVG<small>Vectoriel, modifiable dans draw.io / Inkscape</small></button>
+        <button type="button" data-export="svg">Image SVG<small>Vectoriel, ouvrable dans draw.io ou Inkscape</small></button>
         <button type="button" data-export="json">Données JSON<small>Sauvegarde réimportable</small></button>
         <button type="button" data-export="html">Page HTML autonome<small>À héberger sur ton serveur web</small></button>
       </div></details>
@@ -598,74 +773,102 @@ td .sw{width:34px;height:7px}
   </div>
 </header>
 <div class="banner" id="draftBanner" hidden></div>
-<div class="banner">
-  <b>Hypothèse de travail</b>
-  <span>Reconstitué à partir d’une vidéo floue de 89 s : rien ici ne remplace un relevé de ports.</span>
-  <span class="lg-line">${dash('', 'currentColor')}vu</span>
-  <span class="lg-line">${dash(STATUS.suppose.dash, 'currentColor')}supposé</span>
-  <span class="lg-line">${dash(STATUS.verifier.dash, 'currentColor')}à vérifier</span>
-</div>
 <nav class="tabs" role="tablist" aria-label="Sections">
   <button class="tab" role="tab" id="tab-schema" data-tab="schema" aria-controls="p-schema">Schéma</button>
   <button class="tab" role="tab" id="tab-video" data-tab="video" aria-controls="p-video">Vu dans la vidéo<span class="count">${VIDEO.length}</span></button>
   <button class="tab" role="tab" id="tab-checks" data-tab="checks" aria-controls="p-checks">À ne pas oublier<span class="count" id="checkCount"></span></button>
   <button class="tab" role="tab" id="tab-colors" data-tab="colors" aria-controls="p-colors">Code couleur</button>
+  <button class="tab" role="tab" id="tab-gloss" data-tab="gloss" aria-controls="p-gloss">Lexique</button>
 </nav>
 <section class="panel" id="p-schema" role="tabpanel" aria-labelledby="tab-schema">
   <div class="editor">
-    <div style="min-width:0">
-      <div class="toolbar">
-        <div class="tgroup" role="group" aria-label="Outil">
-          <button type="button" id="tSelect" class="on">Sélection</button>
-          <button type="button" id="tLink">Relier <kbd>L</kbd></button>
-        </div>
-        <label class="tsel"><span class="sw" id="tCableSw"></span><select id="tCable" aria-label="Type du prochain câble">${cableOpts}</select></label>
-        <label class="tsel"><select id="tAdd" aria-label="Ajouter un équipement"><option value="">+ Équipement…</option>${typeOpts}</select></label>
-        <button type="button" class="btn" id="tZone">+ Zone</button>
-        <div class="tgroup" role="group" aria-label="Historique">
-          <button type="button" id="tUndo" title="Annuler (Ctrl+Z)" aria-label="Annuler">↶</button>
-          <button type="button" id="tRedo" title="Rétablir (Ctrl+Y)" aria-label="Rétablir">↷</button>
-        </div>
-        <div class="tgroup" role="group" aria-label="Zoom">
-          <button type="button" id="tZoomOut" aria-label="Dézoomer">−</button>
-          <button type="button" id="tFit">Ajuster</button>
-          <button type="button" id="tZoomIn" aria-label="Zoomer">+</button>
-        </div>
-        <label class="tchk"><input type="checkbox" id="tPorts"> Ports et repères</label>
+    <div class="toolbar">
+      <div class="tgroup" role="group" aria-label="Outil">
+        <button type="button" id="tSelect" class="on">Sélection</button>
+        <button type="button" id="tLink" title="Touche L">Relier</button>
       </div>
-      <div class="hint" id="hint"></div>
-      <div class="canvas-wrap" id="canvasWrap">
-        <svg id="board" xmlns="http://www.w3.org/2000/svg" role="application" aria-label="Schéma réseau modifiable">
-          <defs><pattern id="gridpat" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" class="gridline"/></pattern></defs>
-          <g id="vp">
-            <rect class="gridbg" data-bg="1" x="-4000" y="-4000" width="9000" height="9000"/>
-            <g id="layerZones"></g><g id="layerLinks"></g><g id="layerNodes"></g>
-          </g>
-        </svg>
-        <span class="zoomtag" id="zoomTag"></span>
+      <label class="tsel"><span class="sw" id="tCableSw"></span><select id="tCable" aria-label="Type du prochain câble">${cableOpts}</select></label>
+      <select id="tAdd" class="tadd" aria-label="Ajouter un équipement"><option value="">+ Équipement…</option>${typeOpts}</select>
+      <button type="button" class="btn" id="tZone">+ Zone</button>
+      <div class="tgroup" role="group" aria-label="Historique">
+        <button type="button" id="tUndo" title="Annuler (Ctrl+Z)" aria-label="Annuler">↶</button>
+        <button type="button" id="tRedo" title="Rétablir (Ctrl+Y)" aria-label="Rétablir">↷</button>
       </div>
-      <div class="legend" id="legend" aria-label="Filtrer par type de câble"></div>
+      <div class="tgroup" role="group" aria-label="Zoom">
+        <button type="button" id="tZoomOut" aria-label="Dézoomer">−</button>
+        <button type="button" id="tFit" title="Tout afficher">Ajuster</button>
+        <button type="button" id="tZoomIn" aria-label="Zoomer">+</button>
+      </div>
+      <div class="tright">
+        <button type="button" class="btn soft" id="tDemo">Trajet d’un PC vers Internet</button>
+        <label class="tchk"><input type="checkbox" id="tExplain"> Explications</label>
+        <label class="tchk"><input type="checkbox" id="tPorts"> Repères</label>
+        <button type="button" class="btn" id="tOverview">Résumé</button>
+        <button type="button" class="btn" id="tHelp">Aide</button>
+        <button type="button" class="btn" id="tFull" hidden>Plein écran</button>
+      </div>
     </div>
-    <aside class="insp" id="insp" aria-label="Propriétés"></aside>
+    <div class="canvas-wrap" id="canvasWrap">
+      <svg id="board" xmlns="http://www.w3.org/2000/svg" role="application" aria-label="Schéma réseau modifiable">
+        <defs><pattern id="gridpat" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" class="gridline"/></pattern></defs>
+        <text id="measure" x="-9999" y="-9999" aria-hidden="true"></text>
+        <g id="vp">
+          <rect class="gridbg" x="-4000" y="-4000" width="9000" height="9000"/>
+          <g id="layerZones"></g><g id="layerLinks"></g><g id="layerNodes"></g>
+        </g>
+      </svg>
+      <div class="modehint" id="modeHint" hidden></div>
+      <div class="guide" id="guide" hidden>
+        <h3>Comment lire ce schéma</h3>
+        <ul>
+          <li><b>Chaque boîte est un équipement.</b> La ligne colorée sous son nom dit à quoi il sert.</li>
+          <li><b>Chaque trait est un câble.</b> Sa couleur dit son usage : légende sous le plan.</li>
+          <li>${lineKey('')} <b>vu</b> dans la vidéo, ${lineKey(STATUS.suppose.dash)} <b>supposé</b>, ${lineKey(STATUS.verifier.dash)} <b>à vérifier</b> sur place.</li>
+          <li><b>De gauche à droite</b>, on suit les données d’Internet jusqu’aux bureaux. Dessous : les serveurs, puis l’électricité.</li>
+          <li><b>Clique</b> une boîte ou un câble pour l’expliquer ou le modifier. Pastille rouge = problème repéré.</li>
+        </ul>
+        <div class="row"><button type="button" class="btn primary" data-act="demo">Voir le trajet d’un PC vers Internet</button><button type="button" class="btn" data-act="guide-close">J’ai compris</button></div>
+      </div>
+      <aside class="insp" id="insp" aria-label="Détails" hidden></aside>
+      <span class="zoomtag" id="zoomTag"></span>
+    </div>
+    <div class="legend" id="legend" aria-label="Légende et filtres"></div>
   </div>
 </section>
 <section class="panel" id="p-video" role="tabpanel" aria-labelledby="tab-video" hidden></section>
 <section class="panel" id="p-checks" role="tabpanel" aria-labelledby="tab-checks" hidden></section>
 <section class="panel" id="p-colors" role="tabpanel" aria-labelledby="tab-colors" hidden></section>
+<section class="panel" id="p-gloss" role="tabpanel" aria-labelledby="tab-gloss" hidden></section>
 <div class="sr" id="live" aria-live="polite"></div>`;
   }
 
-  /* ---------- dessin du schéma ---------- */
-  function sideOf(n, o) {
-    const dx = (o.x + W / 2) - (n.x + W / 2), dy = (o.y + H / 2) - (n.y + H / 2);
-    if (Math.abs(dx) * H * 1.6 > Math.abs(dy) * W) return dx >= 0 ? 'R' : 'L';
-    return dy >= 0 ? 'B' : 'T';
+  /* ---------- géométrie des câbles ---------- */
+  function center(n) { const h = nh(); return { x: n.x + W / 2, y: n.y + h / 2 }; }
+  function blocked(a, b, axis) {
+    const h = nh(), ca = center(a), cb = center(b);
+    return state.nodes.some((n) => {
+      if (n === a || n === b) return false;
+      const c = center(n);
+      if (axis === 'v') return Math.abs(c.x - ca.x) < W * 0.75 && c.y > Math.min(ca.y, cb.y) + 2 && c.y < Math.max(ca.y, cb.y) - 2;
+      return Math.abs(c.y - ca.y) < h && c.x > Math.min(ca.x, cb.x) + 2 && c.x < Math.max(ca.x, cb.x) - 2;
+    });
+  }
+  function sidesFor(a, b) {
+    const h = nh(), ca = center(a), cb = center(b), dx = cb.x - ca.x, dy = cb.y - ca.y;
+    if (Math.abs(dx) < W * 0.75) {
+      if (Math.abs(dy) < h) return dx >= 0 ? ['R', 'L'] : ['L', 'R'];
+      if (blocked(a, b, 'v')) return ['R', 'R'];
+      return dy > 0 ? ['B', 'T'] : ['T', 'B'];
+    }
+    if (Math.abs(dy) < h * 0.75 && blocked(a, b, 'h')) return ['B', 'B'];
+    return dx > 0 ? ['R', 'L'] : ['L', 'R'];
   }
   function portPoint(n, s, off) {
-    if (s === 'R') return { x: n.x + W, y: n.y + H / 2 + off };
-    if (s === 'L') return { x: n.x, y: n.y + H / 2 + off };
+    const h = nh();
+    if (s === 'R') return { x: n.x + W, y: n.y + h / 2 + off };
+    if (s === 'L') return { x: n.x, y: n.y + h / 2 + off };
     if (s === 'T') return { x: n.x + W / 2 + off, y: n.y };
-    return { x: n.x + W / 2 + off, y: n.y + H };
+    return { x: n.x + W / 2 + off, y: n.y + h };
   }
   function ctrl(p, s, d) {
     if (s === 'R') return { x: p.x + d, y: p.y };
@@ -673,17 +876,19 @@ td .sw{width:34px;height:7px}
     if (s === 'T') return { x: p.x, y: p.y - d };
     return { x: p.x, y: p.y + d };
   }
-  function bez(p0, p1, p2, p3, t) {
+  function bez(p, t) {
     const u = 1 - t;
-    return { x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
-             y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y };
+    return { x: u * u * u * p[0].x + 3 * u * u * t * p[1].x + 3 * u * t * t * p[2].x + t * t * t * p[3].x,
+             y: u * u * u * p[0].y + 3 * u * u * t * p[1].y + 3 * u * t * t * p[2].y + t * t * t * p[3].y };
   }
-  function visibleLinks() { return state.links.filter((l) => !prefs.hidden.includes(l.cable) && byId(l.from) && byId(l.to)); }
+  function shownLinks(forExport) {
+    const onPath = ui.path && !forExport ? new Set(ui.path.links) : null;
+    return state.links.filter((l) => byId(l.from) && byId(l.to) && (!prefs.hidden.includes(l.cable) || (onPath && onPath.has(l.id))));
+  }
   function geometry(links) {
-    const ends = new Map(), geo = {};
+    const h = nh(), ends = new Map(), geo = {};
     links.forEach((l) => {
-      const a = byId(l.from), b = byId(l.to);
-      const sa = sideOf(a, b), sb = sideOf(b, a);
+      const a = byId(l.from), b = byId(l.to), [sa, sb] = sidesFor(a, b);
       geo[l.id] = { a, b, sa, sb, oa: 0, ob: 0 };
       [[a.id + '|' + sa, 'a', b], [b.id + '|' + sb, 'b', a]].forEach(([k, end, other]) => {
         if (!ends.has(k)) ends.set(k, []);
@@ -693,70 +898,97 @@ td .sw{width:34px;height:7px}
     ends.forEach((arr, k) => {
       const s = k.split('|')[1], horiz = s === 'L' || s === 'R';
       arr.sort((p, q) => (horiz ? p.other.y - q.other.y : p.other.x - q.other.x) || (p.l.id < q.l.id ? -1 : 1));
-      const len = horiz ? H - 14 : W - 24, cnt = arr.length;
-      const sp = cnt > 1 ? Math.min(horiz ? 9 : 16, len / (cnt - 1)) : 0;
+      const len = horiz ? h - 18 : W - 40, cnt = arr.length;
+      const sp = cnt > 1 ? Math.min(horiz ? 10 : 18, len / (cnt - 1)) : 0;
       arr.forEach((e, i) => { geo[e.l.id][e.end === 'a' ? 'oa' : 'ob'] = (i - (cnt - 1) / 2) * sp; });
     });
     Object.values(geo).forEach((g) => {
       const A = portPoint(g.a, g.sa, g.oa), B = portPoint(g.b, g.sb, g.ob);
-      const dist = Math.hypot(B.x - A.x, B.y - A.y), d = clamp(dist / 2.6, 22, 130);
+      let d;
+      if (g.sa === g.sb) d = (g.sa === 'R' || g.sa === 'L') ? 34 + Math.min(60, Math.abs(B.y - A.y) * 0.12) : 26 + Math.min(50, Math.abs(B.x - A.x) * 0.08);
+      else d = clamp(Math.abs((g.sa === 'R' || g.sa === 'L') ? B.x - A.x : B.y - A.y) * 0.5, 18, 160);
       g.p = [A, ctrl(A, g.sa, d), ctrl(B, g.sb, d), B];
-      g.d = `M${A.x.toFixed(1)} ${A.y.toFixed(1)}C${g.p[1].x.toFixed(1)} ${g.p[1].y.toFixed(1)} ${g.p[2].x.toFixed(1)} ${g.p[2].y.toFixed(1)} ${B.x.toFixed(1)} ${B.y.toFixed(1)}`;
+      const f = (v) => v.toFixed(1);
+      g.d = `M${f(A.x)} ${f(A.y)}C${f(g.p[1].x)} ${f(g.p[1].y)} ${f(g.p[2].x)} ${f(g.p[2].y)} ${f(B.x)} ${f(B.y)}`;
     });
     return geo;
   }
-  function trunc(s, max) { s = String(s || ''); return s.length > max ? s.slice(0, max - 1) + '…' : s; }
 
+  /* ---------- dessin ---------- */
   function zonesMarkup(forExport) {
     return state.zones.map((z) => {
       const sel = !forExport && ui.sel && ui.sel.kind === 'zone' && ui.sel.id === z.id ? ' sel' : '';
       return `<g class="zone${sel}" data-kind="zone" data-id="${esc(z.id)}" transform="translate(${z.x} ${z.y})">
-<rect class="zbox" width="${z.w}" height="${z.h}" rx="10"/>
-<path class="zhead" data-kind="zonehead" data-id="${esc(z.id)}" d="M0 10a10 10 0 0 1 10-10h${z.w - 20}a10 10 0 0 1 10 10v20H0z"/>
-<text class="zlabel" x="12" y="20">${esc(z.label)}</text>
+<rect class="zbox" width="${z.w}" height="${z.h}" rx="12"/>
+<path class="zhead" data-kind="zonehead" data-id="${esc(z.id)}" d="M0 12a12 12 0 0 1 12-12h${Math.max(0, z.w - 24)}a12 12 0 0 1 12 12v40H0z"/>
+${svgText(z.label, 'zlabel', 14, 22, z.w - 28)}${z.caption ? svgText(z.caption, 'zcap', 14, 41, z.w - 28) : ''}
 ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(z.id)}" x="${z.w - 16}" y="${z.h - 16}" width="14" height="14" rx="3"/>`}
 </g>`;
     }).join('');
   }
+  function freeSpot(g, ts, wpx, hpx, rects) {
+    for (const t of ts) {
+      const m = bez(g.p, t);
+      const box = { x: m.x - wpx / 2, y: m.y - hpx / 2, w: wpx, h: hpx };
+      if (!rects.some((r) => box.x < r.x + r.w && box.x + box.w > r.x && box.y < r.y + r.h && box.y + box.h > r.y)) return m;
+    }
+    return null;
+  }
   function linksMarkup(forExport) {
-    const links = visibleLinks(), geo = geometry(links);
+    const links = shownLinks(forExport), geo = geometry(links);
+    const path = !forExport && ui.path ? ui.path : null;
+    const nhh = nh(), rects = state.nodes.map((n) => ({ x: n.x - 3, y: n.y - 3, w: W + 6, h: nhh + 6 }));
     return links.map((l) => {
       const g = geo[l.id], st = STATUS[l.status] || STATUS.suppose;
+      const pi = path ? path.links.indexOf(l.id) : -1;
       const sel = !forExport && ui.sel && ui.sel.kind === 'link' && ui.sel.id === l.id ? ' sel' : '';
+      const cls = path ? (pi >= 0 ? ' onpath' : ' dim') : '';
       const dash = st.dash ? ` stroke-dasharray="${st.dash}"` : '';
       let extra = '';
-      if (prefs.ports || forExport) {
-        const lab = (t, pt, cls) => t ? `<text class="${cls}" x="${pt.x.toFixed(1)}" y="${(pt.y - 5).toFixed(1)}" text-anchor="middle">${esc(trunc(t, 22))}</text>` : '';
-        extra += lab(l.fromPort, bez(g.p[0], g.p[1], g.p[2], g.p[3], 0.16), 'plabel');
-        extra += lab(l.toPort, bez(g.p[0], g.p[1], g.p[2], g.p[3], 0.84), 'plabel');
+      if ((prefs.ports || forExport) && !(path && pi < 0)) {
+        const lab = (t, ts) => {
+          if (!t) return '';
+          const f = fitText(t, 'plabel', 140), pt = freeSpot(g, ts, f.w + 6, 14, rects) || bez(g.p, ts[0]);
+          return svgText(t, 'plabel', pt.x.toFixed(1), (pt.y + 3.5).toFixed(1), 140, ' text-anchor="middle"');
+        };
+        extra += lab(l.fromPort, [0.16, 0.24, 0.32, 0.4]) + lab(l.toPort, [0.84, 0.76, 0.68, 0.6]);
         if (l.label) {
-          const m = bez(g.p[0], g.p[1], g.p[2], g.p[3], 0.5), t = trunc(l.label, 26), w = t.length * 6.1 + 12;
-          extra += `<rect class="mpill" x="${(m.x - w / 2).toFixed(1)}" y="${(m.y - 9).toFixed(1)}" width="${w.toFixed(1)}" height="18" rx="9"/><text class="mtext" x="${m.x.toFixed(1)}" y="${(m.y + 3.5).toFixed(1)}" text-anchor="middle">${esc(t)}</text>`;
+          const f = fitText(l.label, 'mtext', 170), wpx = f.w + 18, m = freeSpot(g, [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78], wpx, 20, rects);
+          if (m) extra += `<rect class="mpill" x="${(m.x - wpx / 2).toFixed(1)}" y="${(m.y - 10).toFixed(1)}" width="${wpx.toFixed(1)}" height="20" rx="10"/>${svgText(l.label, 'mtext', m.x.toFixed(1), (m.y + 4).toFixed(1), 170, ' text-anchor="middle"')}`;
         }
       }
-      if (l.status === 'verifier' && !(prefs.ports && l.label)) {
-        const m = bez(g.p[0], g.p[1], g.p[2], g.p[3], 0.5);
-        extra += `<circle class="vmark" cx="${m.x.toFixed(1)}" cy="${m.y.toFixed(1)}" r="7"/><text class="vmark-t" x="${m.x.toFixed(1)}" y="${(m.y + 4).toFixed(1)}" text-anchor="middle">?</text>`;
+      if (l.status === 'verifier' && !(path && pi < 0) && !extra.includes('class="mpill"')) {
+        const m = freeSpot(g, [0.5, 0.4, 0.6, 0.3, 0.7], 18, 18, rects) || bez(g.p, 0.5);
+        extra += `<circle class="vmark" cx="${m.x.toFixed(1)}" cy="${m.y.toFixed(1)}" r="8"/><text class="vmark-t" x="${m.x.toFixed(1)}" y="${(m.y + 4.2).toFixed(1)}" text-anchor="middle">?</text>`;
       }
-      const tip = `${(CABLES[l.cable] || CABLES.other).label} · ${byId(l.from).label} → ${byId(l.to).label}`;
-      return `<g class="link${sel}" data-kind="link" data-id="${esc(l.id)}"><title>${esc(tip)}</title>
-<path class="lhit" d="${g.d}"/><path class="lcase" d="${g.d}"/><path class="lcore" d="${g.d}" stroke="${esc(cableColor(l))}"${dash}${l.cable === 'power' ? ' stroke-width="2.4"' : ''}/>${extra}</g>`;
+      let flow = '';
+      if (pi >= 0) flow = `<path class="lflow${l.from === path.nodes[pi] ? '' : ' rev'}" d="${g.d}"/>`;
+      const tip = `${(CABLES[l.cable] || CABLES.other).label} · ${byId(l.from).label} → ${byId(l.to).label} · ${st.label}`;
+      return `<g class="link${sel}${cls}" data-kind="link" data-id="${esc(l.id)}"><title>${esc(tip)}</title>
+<path class="lhit" d="${g.d}"/><path class="lcase" d="${g.d}"/><path class="lcore" d="${g.d}" stroke="${esc(cableColor(l))}"${dash}${l.cable === 'power' && pi < 0 ? ' stroke-width="2.6"' : ''}/>${flow}${extra}</g>`;
     }).join('');
   }
   function nodesMarkup(forExport) {
+    const h = nh(), path = !forExport && ui.path ? ui.path : null;
+    const tileY = h > 60 ? 10 : 9;
     return state.nodes.map((n) => {
       const t = TYPES[n.type] || TYPES.other;
       const sel = !forExport && ui.sel && ui.sel.kind === 'node' && ui.sel.id === n.id ? ' sel' : '';
       const src = !forExport && ui.linkFrom === n.id ? ' src' : '';
       const lk = !forExport && ui.mode === 'link' ? ' linkable' : '';
-      const alert = n.alert ? `<circle class="nalert" cx="${W - 4}" cy="4" r="9"/><text class="nalert-t" x="${W - 4}" y="8.5" text-anchor="middle">!</text>` : '';
-      return `<g class="node st-${n.status}${sel}${src}${lk}" data-kind="node" data-id="${esc(n.id)}" transform="translate(${n.x} ${n.y})">
-<title>${esc(n.label + (n.sub ? ' — ' + n.sub : '') + (n.alert ? '\n⚠ ' + n.alert : ''))}</title>
-<rect class="nbox" width="${W}" height="${H}" rx="7"/>
-<rect class="ntile cat-${t.cat}" x="7" y="7" width="38" height="38" rx="5"/>
-<path class="nicon cat-${t.cat}" transform="translate(14 14)" d="${ICONS[t.icon] || ICONS.other}"/>
-<text class="nlabel" x="53" y="23">${esc(trunc(n.label, 19))}</text>
-<text class="nsub" x="53" y="40">${esc(trunc(n.sub || t.label, 23))}</text>${alert}
+      const pi = path ? path.nodes.indexOf(n.id) : -1;
+      const pc = path ? (pi >= 0 ? ' onpath' : ' dim') : '';
+      const alert = n.alert ? `<circle class="nalert" cx="${W - 4}" cy="4" r="10"/><text class="nalert-t" x="${W - 4}" y="8.6" text-anchor="middle">!</text>` : '';
+      const step = pi >= 0 ? `<circle class="stepb" cx="2" cy="2" r="14"/><text class="stepb-t" x="2" y="7" text-anchor="middle">${pi + 1}</text>` : '';
+      const lines = h > 60
+        ? svgText(n.label, 'nlabel', 60, 27, W - 70) + svgText(n.sub || t.label, 'nsub', 60, 46, W - 70) + svgText(explainOf(n), 'nexpl', 60, 66, W - 70)
+        : svgText(n.label, 'nlabel', 60, 26, W - 70) + svgText(n.sub || t.label, 'nsub', 60, 44, W - 70);
+      return `<g class="node st-${n.status}${sel}${src}${lk}${pc}" data-kind="node" data-id="${esc(n.id)}" transform="translate(${n.x} ${n.y})">
+<title>${esc(n.label + ' — ' + explainOf(n) + (n.alert ? '\n⚠ ' + n.alert : ''))}</title>
+<rect class="nbox" width="${W}" height="${h}" rx="9"/>
+<rect class="ntile cat-${t.cat}" x="10" y="${tileY}" width="40" height="40" rx="7"/>
+<path class="nicon cat-${t.cat}" transform="translate(18 ${tileY + 8})" d="${ICONS[t.icon] || ICONS.other}"/>
+${lines}${alert}${step}
 </g>`;
     }).join('');
   }
@@ -773,19 +1005,30 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
     $('#zoomTag').textContent = Math.round(v.k * 100) + ' %';
   }
   function bounds() {
-    const xs = [], ys = [];
+    const h = nh(), xs = [], ys = [];
     state.zones.forEach((z) => { xs.push(z.x, z.x + z.w); ys.push(z.y, z.y + z.h); });
-    state.nodes.forEach((n) => { xs.push(n.x, n.x + W); ys.push(n.y, n.y + H); });
+    state.nodes.forEach((n) => { xs.push(n.x, n.x + W); ys.push(n.y, n.y + h); });
     if (!xs.length) return { x: 0, y: 0, w: 800, h: 500 };
     const x = Math.min(...xs), y = Math.min(...ys);
     return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
   }
   function fit() {
     const r = $('#board').getBoundingClientRect();
-    if (!r.width) return;
-    const b = bounds(), pad = 24;
-    const k = clamp(Math.min((r.width - pad * 2) / b.w, (r.height - pad * 2) / b.h), 0.2, 1.6);
+    if (r.width < 60 || r.height < 60) return;
+    const b = bounds(), pad = 16;
+    const k = clamp(Math.min((r.width - pad * 2) / b.w, (r.height - pad * 2) / b.h), 0.2, 1.8);
     ui.view = { k, x: (r.width - b.w * k) / 2 - b.x * k, y: Math.min(pad, (r.height - b.h * k) / 2) - b.y * k };
+    ui.userView = false;
+    applyView();
+  }
+  function fitBounds(b) {
+    const r = $('#board').getBoundingClientRect(), pad = 28;
+    const side = r.width > 700, insetR = side ? Math.min(400, r.width * 0.5) + 10 : 0, insetB = side ? 0 : r.height * 0.64;
+    const aw = r.width - insetR - pad * 2, ah = r.height - insetB - pad * 2;
+    if (aw < 80 || ah < 80) return;
+    const k = clamp(Math.min(aw / b.w, ah / b.h), 0.2, 1.2);
+    ui.view = { k, x: pad + (aw - b.w * k) / 2 - b.x * k, y: pad + (ah - b.h * k) / 2 - b.y * k };
+    ui.userView = true;
     applyView();
   }
   function zoomAt(f, sx, sy) {
@@ -794,6 +1037,7 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
     const v = ui.view, k = clamp(v.k * f, 0.2, 3);
     const wx = (sx - v.x) / v.k, wy = (sy - v.y) / v.k;
     ui.view = { k, x: sx - wx * k, y: sy - wy * k };
+    ui.userView = true;
     applyView();
   }
   function toWorld(e) {
@@ -803,6 +1047,57 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
   function viewCenter() {
     const r = $('#board').getBoundingClientRect(), v = ui.view;
     return { x: (r.width / 2 - v.x) / v.k, y: (r.height / 2 - v.y) / v.k };
+  }
+  function reveal(n) {
+    const r = $('#board').getBoundingClientRect(), v = ui.view, h = nh();
+    const sx = n.x * v.k + v.x, sy = n.y * v.k + v.y;
+    const rightLimit = r.width - (ui.sel || ui.path || ui.panel ? Math.min(400, r.width * 0.5) : 0);
+    if (sx < 0 || sy < 0 || sx + W * v.k > rightLimit || sy + h * v.k > r.height) {
+      ui.view.x = rightLimit / 2 - (n.x + W / 2) * v.k; ui.view.y = r.height / 2 - (n.y + h / 2) * v.k; ui.userView = true; applyView();
+    }
+  }
+
+  /* ---------- trajets ---------- */
+  function computePath(fromId, toId) {
+    const dist = {}, prev = {}, done = new Set(), adj = {};
+    state.nodes.forEach((n) => { dist[n.id] = Infinity; adj[n.id] = []; });
+    if (!(fromId in dist) || !(toId in dist)) return null;
+    state.links.forEach((l) => {
+      if (l.cable === 'power' || !adj[l.from] || !adj[l.to]) return;
+      const w = 1 + (l.status === 'suppose' ? 0.2 : l.status === 'verifier' ? 0.5 : 0);
+      adj[l.from].push([l.to, l, w]); adj[l.to].push([l.from, l, w]);
+    });
+    dist[fromId] = 0;
+    for (;;) {
+      let u = null, best = Infinity;
+      Object.keys(dist).forEach((id) => { if (!done.has(id) && dist[id] < best) { best = dist[id]; u = id; } });
+      if (u === null || u === toId) break;
+      done.add(u);
+      adj[u].forEach(([v, l, w]) => { if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; prev[v] = { u, l }; } });
+    }
+    if (dist[toId] === Infinity) return null;
+    const nodes = [toId], links = [];
+    let c = toId;
+    while (c !== fromId) { const p = prev[c]; links.unshift(p.l.id); nodes.unshift(p.u); c = p.u; }
+    return { from: fromId, to: toId, nodes, links };
+  }
+  function showPath(fromId, toId) {
+    const p = computePath(fromId, toId);
+    if (!p) { toast('Aucun câble ne relie ces deux équipements sur le schéma.'); return; }
+    if (!ui.path) ui.autoBefore = !ui.userView;
+    ui.path = p; ui.sel = null; ui.panel = null;
+    if (ui.mode === 'link') setMode('select');
+    hideGuide(); renderCanvas(); renderInspector();
+    const ns = p.nodes.map(byId), hh = nh();
+    const x0 = Math.min(...ns.map((n) => n.x)), y0 = Math.min(...ns.map((n) => n.y));
+    fitBounds({ x: x0 - 20, y: y0 - 20, w: Math.max(...ns.map((n) => n.x + W)) - x0 + 40, h: Math.max(...ns.map((n) => n.y + hh)) - y0 + 40 });
+    say(`Trajet en ${p.nodes.length} étapes affiché.`);
+  }
+  function demoPath() {
+    const from = state.nodes.find((n) => n.type === 'users') || state.nodes.find((n) => n.type === 'tower');
+    const to = state.nodes.find((n) => n.type === 'internet');
+    if (!from || !to) { toast('Il faut un équipement « Postes utilisateurs » et un « Internet » sur le schéma.'); return; }
+    showPath(from.id, to.id);
   }
 
   /* ---------- interactions sur le plan ---------- */
@@ -820,8 +1115,8 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
       } else if (kind === 'link') {
         ui.drag = Object.assign(base, { kind, id });
       } else if (kind === 'zonehead') {
-        const z = zoneById(id);
-        const inside = state.nodes.filter((n) => n.x + W / 2 > z.x && n.x + W / 2 < z.x + z.w && n.y + H / 2 > z.y && n.y + H / 2 < z.y + z.h).map((n) => ({ n, x: n.x, y: n.y }));
+        const z = zoneById(id), h = nh();
+        const inside = state.nodes.filter((n) => n.x + W / 2 > z.x && n.x + W / 2 < z.x + z.w && n.y + h / 2 > z.y && n.y + h / 2 < z.y + z.h).map((n) => ({ n, x: n.x, y: n.y }));
         ui.drag = Object.assign(base, { kind, id, ox: z.x, oy: z.y, wx: w.x, wy: w.y, inside });
       } else if (kind === 'zoneresize') {
         const z = zoneById(id);
@@ -839,7 +1134,7 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
       if (!d.moved && Math.hypot(dx, dy) < 4) return;
       d.moved = true;
       const w = toWorld(e);
-      if (d.kind === 'pan') { ui.view.x = d.vx + dx; ui.view.y = d.vy + dy; applyView(); return; }
+      if (d.kind === 'pan') { ui.view.x = d.vx + dx; ui.view.y = d.vy + dy; ui.userView = true; applyView(); return; }
       if (d.kind === 'node' && ui.mode === 'select') {
         const n = byId(d.id); n.x = snap(d.ox + w.x - d.wx); n.y = snap(d.oy + w.y - d.wy);
         $('#layerLinks').innerHTML = linksMarkup(false); $('#layerNodes').innerHTML = nodesMarkup(false);
@@ -849,7 +1144,7 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
         d.inside.forEach((it) => { it.n.x = it.x + ddx; it.n.y = it.y + ddy; });
         renderCanvas();
       } else if (d.kind === 'zoneresize') {
-        const z = zoneById(d.id); z.w = Math.max(160, snap(d.ow + w.x - d.wx)); z.h = Math.max(80, snap(d.oh + w.y - d.wy));
+        const z = zoneById(d.id); z.w = Math.max(200, snap(d.ow + w.x - d.wx)); z.h = Math.max(100, snap(d.oh + w.y - d.wy));
         $('#layerZones').innerHTML = zonesMarkup(false);
       }
     });
@@ -874,39 +1169,45 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
   function clickOn(kind, id) {
     if (ui.mode === 'link') {
       if (kind !== 'node') { if (kind === 'pan' || kind === 'bg') setMode('select'); return; }
-      if (!ui.linkFrom) { ui.linkFrom = id; renderCanvas(); renderHint(); return; }
-      if (ui.linkFrom === id) { ui.linkFrom = null; renderCanvas(); renderHint(); return; }
+      if (!ui.linkFrom) { ui.linkFrom = id; renderCanvas(); renderModeHint(); return; }
+      if (ui.linkFrom === id) { ui.linkFrom = null; renderCanvas(); renderModeHint(); return; }
       addLink(ui.linkFrom, id, prefs.cable);
       return;
     }
+    if (ui.guide) hideGuide();
     if (kind === 'node' || kind === 'link') select({ kind, id });
     else if (kind === 'zonehead' || kind === 'zoneresize') select({ kind: 'zone', id });
-    else select(null);
+    else closeDrawer();
   }
   function select(sel, keepInspector) {
-    ui.sel = sel;
+    ui.sel = sel; ui.path = null; ui.panel = null;
     renderCanvas();
     if (!keepInspector || !$('#insp').contains(document.activeElement)) renderInspector();
+  }
+  function closeDrawer() {
+    const hadPath = !!ui.path;
+    ui.sel = null; ui.path = null; ui.panel = null; renderCanvas(); renderInspector();
+    if (hadPath && ui.autoBefore) fit();
   }
   function setMode(m) {
     ui.mode = m; ui.linkFrom = null;
     $('#tSelect').classList.toggle('on', m === 'select');
     $('#tLink').classList.toggle('on', m === 'link');
     $('#board').classList.toggle('linking', m === 'link');
-    renderCanvas(); renderHint();
+    if (m === 'link' && ui.path) { ui.path = null; renderInspector(); }
+    renderCanvas(); renderModeHint();
   }
-  function renderHint() {
-    const h = $('#hint');
-    h.classList.toggle('active', ui.mode === 'link');
-    if (ui.mode === 'link') {
-      const c = CABLES[prefs.cable];
-      h.innerHTML = ui.linkFrom
-        ? `Câble <b>${esc(c.label)}</b> depuis <b>${esc(byId(ui.linkFrom).label)}</b> : clique l’équipement d’arrivée. <kbd>Échap</kbd> pour annuler.`
-        : `Câble <b>${esc(c.label)}</b> : clique l’équipement de départ.`;
-    } else {
-      h.innerHTML = 'Glisse un équipement pour le déplacer, glisse le fond pour te déplacer, <kbd>Ctrl</kbd> + molette pour zoomer. Clique un câble pour changer sa couleur, ses ports ou son statut.';
-    }
+  function renderModeHint() {
+    const h = $('#modeHint');
+    h.hidden = ui.mode !== 'link';
+    if (ui.mode !== 'link') return;
+    const c = CABLES[prefs.cable];
+    h.innerHTML = ui.linkFrom
+      ? `Câble « ${esc(c.label)} » depuis <b>${esc(byId(ui.linkFrom).label)}</b> : clique l’arrivée. <kbd>Échap</kbd> annule.`
+      : `Câble « ${esc(c.label)} » : clique l’équipement de départ.`;
   }
+  function hideGuide() { ui.guide = false; prefs.guideSeen = true; savePrefs(); renderGuide(); }
+  function renderGuide() { $('#guide').hidden = !ui.guide; $('#tHelp').classList.toggle('on', ui.guide); }
 
   function addLink(from, to, cable) {
     const snap0 = snapshot();
@@ -915,19 +1216,19 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
     if (prefs.hidden.includes(cable)) { prefs.hidden = prefs.hidden.filter((c) => c !== cable); savePrefs(); }
     ui.mode = 'select'; ui.linkFrom = null;
     $('#tSelect').classList.add('on'); $('#tLink').classList.remove('on'); $('#board').classList.remove('linking');
-    commit(snap0); renderHint(); renderLegend();
+    commit(snap0); renderModeHint(); renderLegend();
     select({ kind: 'link', id: l.id });
     say('Câble ajouté. Renseigne ses ports dans le panneau de droite.');
   }
   function addNode(type) {
     const snap0 = snapshot(), c = viewCenter(), t = TYPES[type];
-    const n = { id: uid('n'), type, label: t.label, sub: '', x: snap(c.x - W / 2), y: snap(c.y - H / 2), status: 'suppose', video: '', ip: '', notes: '', alert: '' };
+    const n = { id: uid('n'), type, label: t.label, sub: '', explain: '', x: snap(c.x - W / 2), y: snap(c.y - nh() / 2), status: 'suppose', video: '', ip: '', notes: '', alert: '' };
     state.nodes.push(n); commit(snap0); select({ kind: 'node', id: n.id });
     setTimeout(() => { const f = $('#f-label'); if (f) { f.focus(); f.select(); } }, 0);
   }
   function addZone() {
     const snap0 = snapshot(), c = viewCenter();
-    const z = { id: uid('z'), label: 'Nouvelle zone', x: snap(c.x - 150), y: snap(c.y - 90), w: 300, h: 180 };
+    const z = { id: uid('z'), label: 'Nouvelle zone', caption: '', x: snap(c.x - 150), y: snap(c.y - 90), w: 300, h: 180 };
     state.zones.unshift(z); commit(snap0); select({ kind: 'zone', id: z.id });
   }
   function removeSelected() {
@@ -940,17 +1241,47 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
     say('Élément supprimé. Ctrl+Z pour annuler.');
   }
 
-  /* ---------- inspecteur ---------- */
+  /* ---------- panneau de détails ---------- */
+  const closeBtn = '<button type="button" class="x" data-act="close" aria-label="Fermer le panneau">×</button>';
   function statusRadios(cur, name) {
     return `<fieldset class="seg"><legend>Statut</legend><div class="seg-row">${Object.entries(STATUS).map(([k, s]) =>
       `<label><input type="radio" name="${name}" id="${name}-${k}" data-f="status" value="${k}"${cur === k ? ' checked' : ''}>${esc(s.label)}</label>`).join('')}</div></fieldset>`;
   }
   function renderInspector() {
-    const box = $('#insp'), s = ui.sel;
-    if (s && s.kind === 'node' && byId(s.id)) return inspectNode(box, byId(s.id));
-    if (s && s.kind === 'link' && linkById(s.id)) return inspectLink(box, linkById(s.id));
-    if (s && s.kind === 'zone' && zoneById(s.id)) return inspectZone(box, zoneById(s.id));
+    const box = $('#insp');
+    let mode = null;
+    if (ui.path) mode = 'path';
+    else if (ui.sel && ui.sel.kind === 'node' && byId(ui.sel.id)) mode = 'node';
+    else if (ui.sel && ui.sel.kind === 'link' && linkById(ui.sel.id)) mode = 'link';
+    else if (ui.sel && ui.sel.kind === 'zone' && zoneById(ui.sel.id)) mode = 'zone';
+    else if (ui.panel === 'overview') mode = 'overview';
+    box.hidden = !mode;
+    $('#tOverview').classList.toggle('on', mode === 'overview');
+    if (!mode) { box.innerHTML = ''; return; }
+    if (mode === 'path') return inspectPath(box);
+    if (mode === 'node') return inspectNode(box, byId(ui.sel.id));
+    if (mode === 'link') return inspectLink(box, linkById(ui.sel.id));
+    if (mode === 'zone') return inspectZone(box, zoneById(ui.sel.id));
     inspectOverview(box);
+  }
+  function inspectPath(box) {
+    const p = ui.path, a = byId(p.from), b = byId(p.to);
+    let html = '';
+    p.nodes.forEach((id, i) => {
+      const n = byId(id);
+      html += `<li class="step"><span class="num">${i + 1}</span><div><button type="button" data-step="${esc(id)}">${esc(n.label)}</button>${n.status === 'verifier' ? '<span class="tag">à vérifier</span>' : ''}<p>${esc(explainOf(n))}</p></div></li>`;
+      if (i < p.links.length) {
+        const l = linkById(p.links[i]);
+        html += `<li class="hop"><i style="--c:${esc(cableColor(l))}"></i><span>câble ${esc(CABLES[l.cable].label.toLowerCase())} · ${esc(STATUS[l.status].label.toLowerCase())}</span></li>`;
+      }
+    });
+    const unsure = p.links.some((id) => linkById(id).status !== 'observe');
+    box.innerHTML = `
+<div class="insp-top"><div class="insp-head"><span class="kind">Trajet des données · ${p.nodes.length} étapes</span><h3>${esc(a.label)} → ${esc(b.label)}</h3></div>${closeBtn}</div>
+<p class="help">Voici par où passent les données, d’après le schéma actuel. Les points blancs qui avancent montrent le sens de lecture ; en réalité les données circulent dans les deux sens.</p>
+<ol class="steps">${html}</ol>
+${unsure ? '<p class="help">Une partie de ce trajet est supposée ou à vérifier : confirme-la sur place avant de t’y fier pour un dépannage.</p>' : ''}
+<div class="row-actions"><button type="button" class="btn" data-act="close">Fermer le trajet</button></div>`;
   }
   function inspectOverview(box) {
     const cnt = { observe: 0, suppose: 0, verifier: 0 };
@@ -958,42 +1289,46 @@ ${forExport ? '' : `<rect class="zresize" data-kind="zoneresize" data-id="${esc(
     const alerts = state.nodes.filter((n) => n.alert);
     const todo = state.nodes.filter((n) => n.status === 'verifier');
     box.innerHTML = `
-<div class="insp-head"><span class="kind">Vue d’ensemble</span><h3>${state.nodes.length} équipements, ${state.links.length} câbles</h3></div>
+<div class="insp-top"><div class="insp-head"><span class="kind">Résumé</span><h3>${state.nodes.length} équipements, ${state.links.length} câbles</h3></div>${closeBtn}</div>
 <div class="stats">
   <div class="stat"><b>${cnt.observe}</b><span>vus</span></div>
   <div class="stat"><b>${cnt.suppose}</b><span>supposés</span></div>
   <div class="stat"><b>${cnt.verifier}</b><span>à vérifier</span></div>
 </div>
-<div class="sub-h">Alertes (${alerts.length})</div>
-<div>${alerts.map((n) => `<button type="button" class="flag crit" data-goto-node="${esc(n.id)}"><i></i><span>${esc(n.label)}<small>${esc(n.alert)}</small></span></button>`).join('') || '<p class="help">Aucune alerte.</p>'}</div>
+<div class="sub-h">Problèmes repérés (${alerts.length})</div>
+<div>${alerts.map((n) => `<button type="button" class="flag crit" data-goto-node="${esc(n.id)}"><i></i><span>${esc(n.label)}<small>${esc(n.alert)}</small></span></button>`).join('') || '<p class="help">Aucun.</p>'}</div>
 <div class="sub-h">Équipements à vérifier (${todo.length})</div>
 <div>${todo.map((n) => `<button type="button" class="flag" data-goto-node="${esc(n.id)}"><i></i><span>${esc(n.label)}<small>${esc(n.sub)}</small></span></button>`).join('') || '<p class="help">Rien à vérifier.</p>'}</div>
-<div class="sub-h">Mode d’emploi</div>
-<ul class="help">
-  <li>Clique un équipement ou un câble pour le modifier ici.</li>
-  <li><b>Relier</b> (ou touche <kbd>L</kbd>) : clique le départ puis l’arrivée. Le câble prend le type choisi dans la barre.</li>
-  <li>Clique un type de câble sous le plan pour le masquer ou l’afficher.</li>
-  <li><kbd>Suppr</kbd> efface la sélection, <kbd>Ctrl</kbd>+<kbd>Z</kbd> annule, <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistre.</li>
-</ul>`;
+<div class="row-actions"><button type="button" class="btn soft" data-act="demo">Trajet d’un PC vers Internet</button></div>`;
   }
   function inspectNode(box, n) {
-    const typeOpts = Object.entries(TYPES).map(([k, t]) => `<option value="${k}"${n.type === k ? ' selected' : ''}>${esc(t.label)}</option>`).join('');
+    const t = TYPES[n.type] || TYPES.other;
+    const typeOpts = Object.entries(TYPES).map(([k, ty]) => `<option value="${k}"${n.type === k ? ' selected' : ''}>${esc(ty.label)}</option>`).join('');
     const links = state.links.filter((l) => l.from === n.id || l.to === n.id);
     const others = state.nodes.filter((o) => o.id !== n.id).sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+    const inet = state.nodes.find((o) => o.type === 'internet' && o.id !== n.id);
+    const pathOpts = others.map((o) => `<option value="${esc(o.id)}"${inet && o.id === inet.id ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
     const cableOpts = Object.entries(CABLES).map(([k, c]) => `<option value="${k}"${prefs.cable === k ? ' selected' : ''}>${esc(c.label)}</option>`).join('');
     box.innerHTML = `
-<div class="insp-head"><span class="kind">Équipement · ${esc((TYPES[n.type] || TYPES.other).label)}</span><h3 id="inspTitle">${esc(n.label)}</h3></div>
+<div class="insp-top"><div class="insp-head"><span class="kind">Équipement · ${esc(t.label)} · ${esc(STATUS[n.status].label.toLowerCase())}</span><h3 id="inspTitle">${esc(n.label)}</h3></div>${closeBtn}</div>
+<div class="about"><b>C’est quoi ?</b>${esc(t.about)}</div>
+${n.alert ? `<div class="alertbox"><b>Problème repéré :</b> ${esc(n.alert)}</div>` : ''}
+${n.notes ? `<p style="margin:0;font-size:14px">${esc(n.notes)}</p>` : ''}
+<div class="pathbox"><span>Voir par où passent les données jusqu’à</span>
+  <div class="row"><select id="f-pathto" aria-label="Destination du trajet">${pathOpts}</select><button type="button" class="btn primary" data-act="path">Montrer</button></div></div>
+<div class="sub-h">Modifier</div>
 <label class="field"><span>Nom</span><input id="f-label" data-f="label" value="${esc(n.label)}" autocomplete="off"></label>
-<label class="field"><span>Rôle, modèle, emplacement</span><input id="f-sub" data-f="sub" value="${esc(n.sub)}" autocomplete="off"></label>
-<label class="field"><span>Type</span><select id="f-type" data-f="type">${typeOpts}</select></label>
+<label class="field"><span>Emplacement, modèle</span><input id="f-sub" data-f="sub" value="${esc(n.sub)}" autocomplete="off"></label>
+<label class="field"><span>Explication courte (ligne colorée)</span><input id="f-explain" data-f="explain" value="${esc(n.explain)}" placeholder="${esc(t.explain)}" autocomplete="off"></label>
+<label class="field"><span>Type d’équipement</span><select id="f-type" data-f="type">${typeOpts}</select></label>
 ${statusRadios(n.status, 'f-nstatus')}
 <div class="two">
-  <label class="field"><span>IP / VLAN</span><input id="f-ip" data-f="ip" value="${esc(n.ip)}" placeholder="192.168.10.20 · V10" autocomplete="off"></label>
-  <label class="field"><span>Repère vidéo</span><input id="f-video" data-f="video" value="${esc(n.video)}" placeholder="0:42" autocomplete="off"></label>
+  <label class="field"><span>Adresse IP / VLAN</span><input id="f-ip" data-f="ip" value="${esc(n.ip)}" placeholder="192.168.10.20 · V10" autocomplete="off"></label>
+  <label class="field"><span>Moment de la vidéo</span><input id="f-video" data-f="video" value="${esc(n.video)}" placeholder="0:42" autocomplete="off"></label>
 </div>
-<label class="field"><span>Alerte (vide si rien à signaler)</span><input id="f-alert" data-f="alert" value="${esc(n.alert)}" autocomplete="off"></label>
+<label class="field"><span>Problème repéré (vide si rien)</span><input id="f-alert" data-f="alert" value="${esc(n.alert)}" autocomplete="off"></label>
 <label class="field"><span>Notes</span><textarea id="f-notes" data-f="notes" rows="4">${esc(n.notes)}</textarea></label>
-<div class="sub-h">Câbles (${links.length})</div>
+<div class="sub-h">Câbles branchés (${links.length})</div>
 <ul class="conn">${links.map((l) => { const o = byId(l.from === n.id ? l.to : l.from); return `<li><button type="button" data-goto-link="${esc(l.id)}"><span class="sw" style="--c:${esc(cableColor(l))}"></span>${l.from === n.id ? '→' : '←'} ${esc(o ? o.label : '?')}<small>${esc(l.from === n.id ? l.fromPort : l.toPort) || esc(STATUS[l.status].label)}</small></button></li>`; }).join('')}</ul>
 <div class="addlink">
   <select id="f-newto" aria-label="Relier à">${others.map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join('')}</select>
@@ -1007,13 +1342,16 @@ ${statusRadios(n.status, 'f-nstatus')}
 </div>`;
   }
   function inspectLink(box, l) {
-    const a = byId(l.from), b = byId(l.to);
+    const a = byId(l.from), b = byId(l.to), c = CABLES[l.cable];
     const nodeOpts = (cur) => state.nodes.slice().sort((x, y) => x.label.localeCompare(y.label, 'fr')).map((o) => `<option value="${esc(o.id)}"${o.id === cur ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
-    const cableOpts = Object.entries(CABLES).map(([k, c]) => `<option value="${k}"${l.cable === k ? ' selected' : ''}>${esc(c.label)}</option>`).join('');
+    const cableOpts = Object.entries(CABLES).map(([k, cc]) => `<option value="${k}"${l.cable === k ? ' selected' : ''}>${esc(cc.label)}</option>`).join('');
     const cur = cableColor(l).toLowerCase();
-    const sw = Object.entries(CABLES).map(([k, c]) => `<button type="button" data-color="${c.color}" class="${cur === c.color.toLowerCase() ? 'on' : ''}" style="--c:${c.color}" title="${esc(c.label)}" aria-label="Couleur ${esc(c.label)}"></button>`).join('');
+    const sw = Object.entries(CABLES).map(([k, cc]) => `<button type="button" data-color="${cc.color}" class="${cur === cc.color.toLowerCase() ? 'on' : ''}" style="--c:${cc.color}" title="${esc(cc.label)}" aria-label="Couleur ${esc(cc.label)}"></button>`).join('');
     box.innerHTML = `
-<div class="insp-head"><span class="kind">Câble · ${esc(CABLES[l.cable].label)}</span><h3 id="inspTitle">${esc(a.label)} → ${esc(b.label)}</h3></div>
+<div class="insp-top"><div class="insp-head"><span class="kind">Câble · ${esc(STATUS[l.status].label.toLowerCase())}</span><h3>${esc(a.label)} → ${esc(b.label)}</h3></div>${closeBtn}</div>
+<div class="about"><b>${esc(c.label)}</b>${esc(c.use)}</div>
+${l.notes ? `<p style="margin:0;font-size:14px">${esc(l.notes)}</p>` : ''}
+<div class="sub-h">Modifier</div>
 <div class="two">
   <label class="field"><span>Départ</span><select id="f-from" data-f="from">${nodeOpts(l.from)}</select></label>
   <label class="field"><span>Arrivée</span><select id="f-to" data-f="to">${nodeOpts(l.to)}</select></label>
@@ -1023,13 +1361,12 @@ ${statusRadios(n.status, 'f-nstatus')}
   <div class="swatches">${sw}<input type="color" id="f-color" data-f="color" value="${esc(cableColor(l))}" aria-label="Autre couleur"></div>
   ${l.color ? '<div><button type="button" class="btn" data-act="colorreset">Revenir à la couleur du type</button></div>' : ''}</div>
 <div class="two">
-  <label class="field"><span>Port départ</span><input id="f-fromPort" data-f="fromPort" value="${esc(l.fromPort)}" placeholder="Gi1/0/24" autocomplete="off"></label>
-  <label class="field"><span>Port arrivée</span><input id="f-toPort" data-f="toPort" value="${esc(l.toPort)}" placeholder="Panneau A-12" autocomplete="off"></label>
+  <label class="field"><span>Port au départ</span><input id="f-fromPort" data-f="fromPort" value="${esc(l.fromPort)}" placeholder="Gi1/0/24" autocomplete="off"></label>
+  <label class="field"><span>Port à l’arrivée</span><input id="f-toPort" data-f="toPort" value="${esc(l.toPort)}" placeholder="Panneau A-12" autocomplete="off"></label>
 </div>
-<label class="field"><span>Repère, longueur ou VLAN</span><input id="f-llabel" data-f="label" value="${esc(l.label)}" placeholder="1 m · VLAN 10" autocomplete="off"></label>
+<label class="field"><span>Repère affiché sur le câble</span><input id="f-llabel" data-f="label" value="${esc(l.label)}" placeholder="1 m · VLAN 10" autocomplete="off"></label>
 ${statusRadios(l.status, 'f-lstatus')}
 <label class="field"><span>Notes</span><textarea id="f-lnotes" data-f="notes" rows="3">${esc(l.notes)}</textarea></label>
-<p class="help" style="padding:0;list-style:none">${esc(CABLES[l.cable].use)}</p>
 <div class="row-actions">
   <button type="button" class="btn" data-act="swap">Inverser le sens</button>
   <button type="button" class="btn danger" data-act="del">Supprimer le câble</button>
@@ -1037,9 +1374,10 @@ ${statusRadios(l.status, 'f-lstatus')}
   }
   function inspectZone(box, z) {
     box.innerHTML = `
-<div class="insp-head"><span class="kind">Zone</span><h3 id="inspTitle">${esc(z.label)}</h3></div>
+<div class="insp-top"><div class="insp-head"><span class="kind">Zone</span><h3 id="inspTitle">${esc(z.label)}</h3></div>${closeBtn}</div>
 <label class="field"><span>Nom de la zone</span><input id="f-zlabel" data-f="label" value="${esc(z.label)}" autocomplete="off"></label>
-<p class="help" style="padding:0">Glisse le bandeau de la zone pour la déplacer avec ses équipements, le coin en bas à droite pour la redimensionner.</p>
+<label class="field"><span>Phrase d’explication</span><input id="f-zcaption" data-f="caption" value="${esc(z.caption)}" autocomplete="off"></label>
+<p class="help">Glisse le bandeau de la zone pour la déplacer avec ses équipements, le coin en bas à droite pour la redimensionner.</p>
 <div class="row-actions"><button type="button" class="btn danger" data-act="del">Supprimer la zone</button></div>`;
   }
   function selectedObj() {
@@ -1048,13 +1386,14 @@ ${statusRadios(l.status, 'f-lstatus')}
   }
   function bindInspector() {
     const box = $('#insp');
+    box.addEventListener('pointerdown', (e) => e.stopPropagation());
     box.addEventListener('focusin', () => { if (ui.pendingSnap == null) ui.pendingSnap = snapshot(); });
     box.addEventListener('focusout', () => { setTimeout(() => { if (!box.contains(document.activeElement)) ui.pendingSnap = null; }, 0); });
     box.addEventListener('input', (e) => {
       const f = e.target.dataset.f, o = selectedObj();
       if (!f || !o) return;
       if (ui.pendingSnap == null) ui.pendingSnap = snapshot();
-      let v = e.target.value;
+      const v = e.target.value;
       if ((f === 'from' || f === 'to') && (v === (f === 'from' ? o.to : o.from))) { e.target.value = o[f]; say('Un câble doit relier deux équipements différents.'); return; }
       o[f] = v;
       if (f === 'label' && ui.sel.kind !== 'link' && $('#inspTitle')) $('#inspTitle').textContent = v;
@@ -1064,20 +1403,24 @@ ${statusRadios(l.status, 'f-lstatus')}
       const f = e.target.dataset.f;
       if (!f) return;
       if (ui.pendingSnap != null) { commit(ui.pendingSnap); ui.pendingSnap = snapshot(); }
-      if (['cable', 'color', 'from', 'to', 'type'].includes(f)) { renderLegend(); renderInspector(); }
+      if (['cable', 'color', 'from', 'to', 'type', 'status'].includes(f)) { renderLegend(); renderInspector(); }
     });
     box.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
       const o = selectedObj();
       if (b.dataset.gotoNode) return focusItem('node', b.dataset.gotoNode);
       if (b.dataset.gotoLink) return focusItem('link', b.dataset.gotoLink);
+      if (b.dataset.step) { const n = byId(b.dataset.step); if (n) reveal(n); return; }
       if (b.dataset.color && o) { const s0 = snapshot(); o.color = b.dataset.color.toLowerCase() === CABLES[o.cable].color.toLowerCase() ? '' : b.dataset.color; commit(s0); renderCanvas(); renderInspector(); return; }
       const act = b.dataset.act; if (!act) return;
+      if (act === 'close') return closeDrawer();
+      if (act === 'demo') return demoPath();
+      if (act === 'path' && o) return showPath(o.id, $('#f-pathto').value);
       if (act === 'colorreset' && o) { const s0 = snapshot(); o.color = ''; commit(s0); renderCanvas(); renderInspector(); }
       if (act === 'swap' && o) { const s0 = snapshot(); [o.from, o.to] = [o.to, o.from]; [o.fromPort, o.toPort] = [o.toPort, o.fromPort]; commit(s0); renderCanvas(); renderInspector(); }
       if (act === 'del') removeSelected();
-      if (act === 'dup' && o) { const s0 = snapshot(); const c = Object.assign({}, o, { id: uid('n'), label: o.label + ' (copie)', x: o.x + 20, y: o.y + 70 }); state.nodes.push(c); commit(s0); select({ kind: 'node', id: c.id }); }
-      if (act === 'linkfrom' && o) { setMode('link'); ui.linkFrom = o.id; renderCanvas(); renderHint(); }
+      if (act === 'dup' && o) { const s0 = snapshot(); const c = Object.assign({}, o, { id: uid('n'), label: o.label + ' (copie)', x: o.x + 20, y: o.y + nh() + 20 }); state.nodes.push(c); commit(s0); select({ kind: 'node', id: c.id }); }
+      if (act === 'linkfrom' && o) { setMode('link'); ui.linkFrom = o.id; renderCanvas(); renderModeHint(); }
       if (act === 'addlink' && o) { const to = $('#f-newto').value, cb = $('#f-newcable').value; if (to) { prefs.cable = cb; savePrefs(); $('#tCable').value = cb; syncCableSwatch(); addLink(o.id, to, cb); } }
     });
   }
@@ -1086,18 +1429,16 @@ ${statusRadios(l.status, 'f-lstatus')}
     if (kind === 'link') { const l = linkById(id); if (l && prefs.hidden.includes(l.cable)) { prefs.hidden = prefs.hidden.filter((c) => c !== l.cable); savePrefs(); renderLegend(); } }
     select({ kind, id });
     const n = kind === 'node' ? byId(id) : null;
-    if (n) {
-      const r = $('#board').getBoundingClientRect(), v = ui.view;
-      const sx = n.x * v.k + v.x, sy = n.y * v.k + v.y;
-      if (sx < 0 || sy < 0 || sx > r.width - W * v.k || sy > r.height - H * v.k) { ui.view.x = r.width / 2 - (n.x + W / 2) * v.k; ui.view.y = r.height / 2 - (n.y + H / 2) * v.k; applyView(); }
-    }
+    if (n) requestAnimationFrame(() => reveal(n));
   }
 
-  /* ---------- légende / filtres ---------- */
+  /* ---------- légende ---------- */
   function renderLegend() {
     const counts = {}; state.links.forEach((l) => { counts[l.cable] = (counts[l.cable] || 0) + 1; });
-    $('#legend').innerHTML = Object.entries(CABLES).filter(([k]) => counts[k]).map(([k, c]) =>
-      `<button type="button" class="lchip${prefs.hidden.includes(k) ? ' off' : ''}" data-cable="${k}" aria-pressed="${!prefs.hidden.includes(k)}" title="${esc(c.use)}"><span class="sw" style="--c:${c.color}"></span>${esc(c.label)}<span class="n">${counts[k]}</span></button>`).join('');
+    $('#legend').innerHTML = `<span class="lg-title">Câbles</span>` + Object.entries(CABLES).filter(([k]) => counts[k]).map(([k, c]) =>
+      `<button type="button" class="lchip${prefs.hidden.includes(k) ? ' off' : ''}" data-cable="${k}" aria-pressed="${!prefs.hidden.includes(k)}" title="${esc(c.use)} (clic : masquer ou afficher)"><span class="sw" style="--c:${c.color}"></span>${esc(c.label)}<span class="n">${counts[k]}</span></button>`).join('') +
+      `<span class="lg-sep"></span><span class="lg-line">${lineKey('')}vu</span><span class="lg-line">${lineKey(STATUS.suppose.dash)}supposé</span><span class="lg-line">${lineKey(STATUS.verifier.dash)}à vérifier</span>` +
+      `<span class="lg-note">Reconstitué d’après une vidéo floue : à confirmer sur place.</span>`;
   }
   function syncCableSwatch() { $('#tCableSw').style.setProperty('--c', CABLES[prefs.cable].color); }
 
@@ -1169,14 +1510,14 @@ ${items.map((i) => `<div class="item${state.checks[i.id] ? ' done' : ''}"><input
   <div class="card">
     <h2>Code couleur proposé</h2>
     <p>Le schéma l’utilise par défaut. Change la couleur d’un câble précis dans son panneau si ta baie suit une autre règle : l’important est qu’elle soit écrite et respectée.</p>
-    <div class="table-wrap"><table><thead><tr><th>Couleur</th><th>Usage</th><th>Pourquoi</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Couleur</th><th>Usage</th><th>À quoi ça sert</th></tr></thead><tbody>
     ${Object.values(CABLES).map((c) => `<tr><td><span class="sw" style="--c:${c.color}"></span></td><td><b>${esc(c.label)}</b></td><td>${esc(c.use)}</td></tr>`).join('')}
     </tbody></table></div>
   </div>
   <div style="display:grid;gap:16px;min-width:0">
     <div class="card"><h2>Constaté dans la vidéo</h2>
       <div class="table-wrap"><table><tbody>${seen.map(([a, b]) => `<tr><td><b>${a}</b></td><td>${b}</td></tr>`).join('')}</tbody></table></div>
-      <p style="margin-top:10px">Aucune logique de couleur n’apparaît. Ne recolore pas tout d’un coup : remplace les cordons au fil des interventions, en commençant par le WAN, les uplinks et les serveurs.</p></div>
+      <p style="margin-top:10px">Aucune logique de couleur n’apparaît. Ne recolore pas tout d’un coup : remplace les cordons au fil des interventions, en commençant par le lien opérateur, les liens entre switchs et les serveurs.</p></div>
     <div class="card"><h2>Couleurs normalisées de la fibre</h2>
       <div class="table-wrap"><table><tbody>
         <tr><td><span class="sw" style="--c:#E2B100"></span></td><td><b>Jaune</b></td><td>Monomode OS1 / OS2</td></tr>
@@ -1189,13 +1530,17 @@ ${items.map((i) => `<div class="item${state.checks[i.id] ? ' done' : ''}"><input
   </div>
 </div>`;
   }
+  function renderGloss() {
+    $('#p-gloss').innerHTML = `<div class="gloss">${LEXIQUE.map((g) => `<div class="card"><h2>${esc(g.title)}</h2><dl>${g.terms.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join('')}</dl></div>`).join('')}</div>`;
+  }
 
   /* ---------- onglets, statut, toasts ---------- */
   function setTab(t) {
     prefs.tab = t; savePrefs();
+    document.documentElement.classList.toggle('d8-full', t === 'schema');
     $$('.tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
-    ['schema', 'video', 'checks', 'colors'].forEach((k) => { $('#p-' + k).hidden = k !== t; });
-    if (t === 'schema') requestAnimationFrame(() => { if (!ui.fitted) { fit(); ui.fitted = true; } });
+    ['schema', 'video', 'checks', 'colors', 'gloss'].forEach((k) => { $('#p-' + k).hidden = k !== t; });
+    if (t === 'schema') requestAnimationFrame(() => { fitCache.clear(); renderCanvas(); if (!ui.userView) fit(); });
   }
   function fmtDate(iso) {
     if (!iso) return '';
@@ -1203,7 +1548,7 @@ ${items.map((i) => `<div class="item${state.checks[i.id] ? ' done' : ''}"><input
   }
   function renderStatus() {
     const chip = $('#saveState'), btn = $('#btnSave'), dirty = isDirty();
-    $('#updated').textContent = state.updatedAt ? 'modifié le ' + fmtDate(state.updatedAt) : '';
+    $('#updated').textContent = 'Schéma réseau · ' + (state.updatedAt ? 'modifié le ' + fmtDate(state.updatedAt) : 'd’après la vidéo du 2 oct. 2026');
     chip.className = 'chip';
     if (cap.readOnly) { chip.classList.add('ro'); chip.textContent = 'Lecture seule'; btn.textContent = 'Exporter le JSON'; btn.disabled = false; return; }
     if (cap.saving) { chip.textContent = 'Enregistrement…'; btn.disabled = true; return; }
@@ -1221,7 +1566,9 @@ ${items.map((i) => `<div class="item${state.checks[i.id] ? ' done' : ''}"><input
   }
   function renderUndo() { $('#tUndo').disabled = !undoStack.length; $('#tRedo').disabled = !redoStack.length; }
   function toast(msg) {
-    let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+    let t = $('.toast');
+    if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); }
+    (document.fullscreenElement || document.body).appendChild(t);
     t.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 3600);
   }
   function say(msg) { $('#live').textContent = msg; }
@@ -1249,7 +1596,7 @@ ${items.map((i) => `<div class="item${state.checks[i.id] ? ' done' : ''}"><input
     const next = JSON.parse(snapshot()); next.updatedAt = new Date().toISOString();
     cap.saving = true; renderStatus();
     store.set('d8-schema-stash', { tab: prefs.tab, sel: ui.sel }, true);
-    store.set('d8-schema-draft', { at: Date.now(), state: next });
+    store.set(DRAFT_KEY, { at: Date.now(), state: next });
     const attempt = () => cap.artifact.publish(buildDocument(next));
     try {
       try { await attempt(); }
@@ -1269,26 +1616,27 @@ ${items.map((i) => `<div class="item${state.checks[i.id] ? ' done' : ''}"><input
   }
 
   /* ---------- export / import ---------- */
-  const EXPORT_CSS = `.zbox{fill:#FBFCFC;stroke:#C4D0CE;stroke-width:1.2}.zhead{fill:#E2EAE8}.zlabel{font:600 14px "Barlow Condensed","Arial Narrow",sans-serif;letter-spacing:.04em;text-transform:uppercase;fill:#566664}
-.lhit{fill:none;stroke:none}.lcase{fill:none;stroke:#fff;stroke-width:7;stroke-linecap:round}.lcore{fill:none;stroke-width:3.2;stroke-linecap:round}
-.plabel{font:10px "IBM Plex Mono",Consolas,monospace;fill:#152120;paint-order:stroke;stroke:#fff;stroke-width:3.5px}.mpill{fill:#fff;stroke:#A9B8B6}.mtext{font:10px "IBM Plex Mono",Consolas,monospace;fill:#152120}
-.vmark{fill:#A86A12}.vmark-t{font:700 11px "Barlow Condensed",sans-serif;fill:#fff}
-.nbox{fill:#fff;stroke:#A9B8B6;stroke-width:1.4}.st-suppose .nbox{stroke-dasharray:6 4}.st-verifier .nbox{stroke:#A86A12;stroke-dasharray:2 3;stroke-width:1.8}
+  const EXPORT_CSS = `.zbox{fill:#FBFCFC;stroke:#C4D0CE;stroke-width:1.3}.zhead{fill:#E2EAE8}.zlabel{font:600 16px "Barlow Condensed","Arial Narrow",sans-serif;letter-spacing:.05em;text-transform:uppercase;fill:#152120}.zcap{font:12.5px "Barlow",Arial,sans-serif;fill:#566664}
+.lhit{fill:none;stroke:none}.lcase{fill:none;stroke:#fff;stroke-width:7.5;stroke-linecap:round}.lcore{fill:none;stroke-width:3.4;stroke-linecap:round}
+.plabel{font:10.5px "IBM Plex Mono",Consolas,monospace;fill:#152120;paint-order:stroke;stroke:#fff;stroke-width:3.5px}.mpill{fill:#fff;stroke:#A9B8B6}.mtext{font:500 11.5px "Barlow",Arial,sans-serif;fill:#152120}
+.vmark{fill:#A86A12}.vmark-t{font:700 12px "Barlow Condensed",sans-serif;fill:#fff}
+.nbox{fill:#fff;stroke:#A9B8B6;stroke-width:1.5}.st-suppose .nbox{stroke-dasharray:7 4}.st-verifier .nbox{stroke:#A86A12;stroke-dasharray:2 3;stroke-width:1.9}
 .ntile{fill-opacity:.15;stroke:none}.nicon{fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.nlabel{font:600 15px "Barlow Condensed","Arial Narrow",sans-serif;fill:#152120}.nsub{font:11.5px "Barlow",Arial,sans-serif;fill:#566664}
-.nalert{fill:#BF2F2F}.nalert-t{font:700 12px "Barlow Condensed",sans-serif;fill:#fff}
+.nlabel{font:600 17px "Barlow Condensed","Arial Narrow",sans-serif;fill:#152120}.nsub{font:12.5px "Barlow",Arial,sans-serif;fill:#566664}.nexpl{font:600 12.5px "Barlow",Arial,sans-serif;fill:#0B6F6D}
+.nalert{fill:#BF2F2F}.nalert-t{font:700 13px "Barlow Condensed",sans-serif;fill:#fff}
 .ntile.cat-net{fill:#0A7573}.ntile.cat-wan{fill:#BF2F2F}.ntile.cat-srv{fill:#6A4EC6}.ntile.cat-end{fill:#2B69D6}.ntile.cat-pwr{fill:#B8620F}.ntile.cat-env{fill:#178AA0}.ntile.cat-tel{fill:#8A572A}
 .nicon.cat-net{stroke:#0A7573}.nicon.cat-wan{stroke:#BF2F2F}.nicon.cat-srv{stroke:#6A4EC6}.nicon.cat-end{stroke:#2B69D6}.nicon.cat-pwr{stroke:#B8620F}.nicon.cat-env{stroke:#178AA0}.nicon.cat-tel{stroke:#8A572A}
-.ttl{font:600 26px "Barlow Condensed","Arial Narrow",sans-serif;fill:#152120}.sub{font:12px "IBM Plex Mono",Consolas,monospace;fill:#566664}`;
+.ttl{font:600 28px "Barlow Condensed","Arial Narrow",sans-serif;fill:#152120}.sub{font:12.5px "IBM Plex Mono",Consolas,monospace;fill:#566664}`;
   function exportSvg() {
-    const b = bounds(), pad = 30, top = 64;
+    const b = bounds(), pad = 30, top = 84;
     const x = b.x - pad, y = b.y - pad - top, w = b.w + pad * 2, h = b.h + pad * 2 + top;
-    const legend = Object.entries(CABLES).filter(([k]) => state.links.some((l) => l.cable === k)).map(([k, c], i) =>
-      `<g transform="translate(${b.x + 330 + (i % 6) * 150} ${b.y - top + 4 + Math.floor(i / 6) * 18})"><line x1="0" y1="-4" x2="22" y2="-4" stroke="${c.color}" stroke-width="4" stroke-linecap="round"/><text class="sub" x="28" y="0">${esc(c.label)}</text></g>`).join('');
+    const used = Object.entries(CABLES).filter(([k]) => state.links.some((l) => l.cable === k));
+    const legend = used.map(([k, c], i) =>
+      `<g transform="translate(${b.x + (i % 6) * 230} ${b.y - top + 52 + Math.floor(i / 6) * 18})"><line x1="0" y1="-4" x2="24" y2="-4" stroke="${c.color}" stroke-width="4" stroke-linecap="round"/><text class="sub" x="30" y="0">${esc(c.label)}</text></g>`).join('');
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${x} ${y} ${w} ${h}">
 <style>${EXPORT_CSS}</style><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#F5F8F7"/>
 <text class="ttl" x="${b.x}" y="${b.y - top + 10}">Salle serveur D8 · schéma réseau</text>
-<text class="sub" x="${b.x}" y="${b.y - top + 30}">${esc(state.updatedAt ? 'Modifié le ' + fmtDate(state.updatedAt) : 'Reconstitution depuis la vidéo du 2 oct. 2026')} · trait plein = vu, tirets = supposé, pointillés = à vérifier</text>
+<text class="sub" x="${b.x}" y="${b.y - top + 30}">${esc(state.updatedAt ? 'Modifié le ' + fmtDate(state.updatedAt) : 'Reconstitution d’après la vidéo du 2 oct. 2026')} · trait plein = vu, tirets = supposé, pointillés = à vérifier</text>
 ${legend}
 <g>${zonesMarkup(true)}</g><g>${linksMarkup(true)}</g><g>${nodesMarkup(true)}</g></svg>`;
   }
@@ -1333,7 +1681,7 @@ ${legend}
       try {
         const s = JSON.parse(r.result);
         if (!validState(s)) throw new Error('format');
-        const s0 = snapshot(); state = normalize(s); ui.sel = null; commit(s0); renderAll(); fit();
+        const s0 = snapshot(); state = normalize(s); ui.sel = null; ui.path = null; commit(s0); renderAll(); fit();
         toast('Schéma importé. Enregistre pour le garder.');
       } catch (e) { toast('Ce fichier n’est pas un export JSON de ce schéma.'); }
     };
@@ -1341,31 +1689,56 @@ ${legend}
   }
 
   /* ---------- brouillon local ---------- */
+  function sameContent(a, b) {
+    return ['nodes', 'links', 'zones', 'checks', 'notes'].every((k) => JSON.stringify(a[k]) === JSON.stringify(b[k]));
+  }
   function checkDraft() {
-    const d = store.get('d8-schema-draft');
-    const box = $('#draftBanner');
-    if (!d || !d.state || !validState(d.state) || JSON.stringify(d.state) === savedJSON || JSON.stringify(d.state.nodes) === JSON.stringify(state.nodes) && JSON.stringify(d.state.links) === JSON.stringify(state.links) && JSON.stringify(d.state.zones) === JSON.stringify(state.zones) && JSON.stringify(d.state.checks) === JSON.stringify(state.checks) && d.state.notes === state.notes) { store.del('d8-schema-draft'); box.hidden = true; return; }
+    const d = store.get(DRAFT_KEY), box = $('#draftBanner');
+    if (!d || !d.state || !validState(d.state) || sameContent(d.state, state)) { store.del(DRAFT_KEY); box.hidden = true; return; }
     box.hidden = false;
     box.innerHTML = `<b>Brouillon non enregistré</b><span>Des modifications du ${esc(fmtDate(new Date(d.at).toISOString()))} n’ont pas été enregistrées sur ce poste.</span>
 <button type="button" class="btn primary" id="draftUse">Reprendre le brouillon</button><button type="button" class="btn" id="draftDrop">Ignorer</button>`;
-    $('#draftUse').onclick = () => { const s0 = snapshot(); state = normalize(d.state); commit(s0); box.hidden = true; renderAll(); };
-    $('#draftDrop').onclick = () => { store.del('d8-schema-draft'); box.hidden = true; };
+    $('#draftUse').onclick = () => { const s0 = snapshot(); state = normalize(d.state); commit(s0); box.hidden = true; renderAll(); fit(); };
+    $('#draftDrop').onclick = () => { store.del(DRAFT_KEY); box.hidden = true; };
   }
 
   /* ---------- assemblage ---------- */
-  function renderAll() { renderCanvas(); renderInspector(); renderLegend(); renderChecks(); renderStatus(); renderUndo(); }
+  function renderAll() { renderCanvas(); renderInspector(); renderLegend(); renderChecks(); renderStatus(); renderUndo(); renderGuide(); }
   function bindGlobal() {
     $$('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
     $('#tSelect').onclick = () => setMode('select');
     $('#tLink').onclick = () => setMode(ui.mode === 'link' ? 'select' : 'link');
     $('#tCable').value = prefs.cable; syncCableSwatch();
-    $('#tCable').onchange = (e) => { prefs.cable = e.target.value; savePrefs(); syncCableSwatch(); renderHint(); };
+    $('#tCable').onchange = (e) => { prefs.cable = e.target.value; savePrefs(); syncCableSwatch(); renderModeHint(); };
     $('#tAdd').onchange = (e) => { if (e.target.value) { addNode(e.target.value); e.target.value = ''; } };
     $('#tZone').onclick = addZone;
     $('#tUndo').onclick = undo; $('#tRedo').onclick = redo;
     $('#tZoomIn').onclick = () => zoomAt(1.2); $('#tZoomOut').onclick = () => zoomAt(1 / 1.2); $('#tFit').onclick = fit;
     $('#tPorts').checked = prefs.ports;
     $('#tPorts').onchange = (e) => { prefs.ports = e.target.checked; savePrefs(); renderCanvas(); };
+    $('#tExplain').checked = prefs.explain;
+    $('#tExplain').onchange = (e) => { prefs.explain = e.target.checked; savePrefs(); renderCanvas(); if (!ui.userView) fit(); };
+    $('#tDemo').onclick = demoPath;
+    $('#tOverview').onclick = () => { if (ui.panel === 'overview') closeDrawer(); else { ui.sel = null; ui.path = null; ui.panel = 'overview'; renderCanvas(); renderInspector(); } };
+    $('#tHelp').onclick = () => { ui.guide = !ui.guide; renderGuide(); };
+    $('#guide').addEventListener('pointerdown', (e) => e.stopPropagation());
+    $('#guide').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      hideGuide();
+      if (b.dataset.act === 'demo') demoPath();
+    });
+    const full = $('#tFull'), ps = $('#p-schema');
+    if (document.fullscreenEnabled && ps.requestFullscreen) {
+      full.hidden = false;
+      full.onclick = () => {
+        if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+        ps.requestFullscreen().catch(() => toast('Le plein écran n’est pas disponible ici.'));
+      };
+      document.addEventListener('fullscreenchange', () => {
+        full.textContent = document.fullscreenElement ? 'Quitter le plein écran' : 'Plein écran';
+        full.classList.toggle('on', !!document.fullscreenElement);
+      });
+    }
     $('#legend').addEventListener('click', (e) => {
       const b = e.target.closest('[data-cable]'); if (!b) return;
       const k = b.dataset.cable; prefs.hidden = prefs.hidden.includes(k) ? prefs.hidden.filter((c) => c !== k) : prefs.hidden.concat(k);
@@ -1394,13 +1767,16 @@ ${legend}
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
       if (prefs.tab !== 'schema') return;
-      if (e.key === 'Escape') { if (ui.mode === 'link') setMode('select'); else select(null); }
+      if (e.key === 'Escape') { if (ui.mode === 'link') setMode('select'); else if (ui.sel || ui.path || ui.panel) closeDrawer(); else if (ui.guide) hideGuide(); }
       if ((e.key === 'Delete' || e.key === 'Backspace') && ui.sel) { e.preventDefault(); removeSelected(); }
-      if (e.key.toLowerCase() === 'l' && !e.ctrlKey && !e.metaKey) setMode(ui.mode === 'link' ? 'select' : 'link');
+      if (e.key.toLowerCase() === 'l' && !e.ctrlKey && !e.metaKey && !e.altKey) setMode(ui.mode === 'link' ? 'select' : 'link');
     });
     document.addEventListener('click', (e) => { const m = $('#exportMenu'); if (m.open && !m.contains(e.target)) m.open = false; });
     window.addEventListener('beforeunload', (e) => { if (isDirty() && !cap.saving && !cap.artifact) { e.preventDefault(); e.returnValue = ''; } });
-    let rt = null; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (prefs.tab === 'schema') applyView(); }, 120); });
+    const onResize = () => { if (prefs.tab !== 'schema') return; if (!ui.userView) fit(); else applyView(); };
+    if (window.ResizeObserver) new ResizeObserver(onResize).observe($('#canvasWrap'));
+    else window.addEventListener('resize', onResize);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { fitCache.clear(); if (prefs.tab === 'schema') renderCanvas(); });
   }
   function initCapabilities() {
     if (!cap.inViewer) { cap.resolved = true; renderStatus(); return; }
@@ -1411,11 +1787,10 @@ ${legend}
 
   function start() {
     document.getElementById('root').innerHTML = shell();
-    renderVideo(); renderColors();
+    renderVideo(); renderColors(); renderGloss();
     bindBoard(); bindInspector(); bindGlobal();
-    renderAll(); renderHint();
     setTab(prefs.tab || 'schema');
-    if (prefs.tab !== 'schema') { $('#p-schema').hidden = false; fit(); ui.fitted = true; $('#p-schema').hidden = true; }
+    renderAll();
     checkDraft();
     initCapabilities();
   }
