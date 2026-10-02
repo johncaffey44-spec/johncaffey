@@ -2234,7 +2234,9 @@ function stepRow(o) {
 }
 function projectForm(id) {
   const p = id ? P(id) : null;
-  const d = p || { typeId: (DB.projectTypes[0] || {}).id, agencyId: (DB.agencies[0] || {}).id, tags: [], requested: '' };
+  // nouveau projet : brouillon conservé (sur ce poste) tant qu'on n'a ni créé le projet ni cliqué sur « Annuler »
+  const draft = !p && UI.projDraft && typeof UI.projDraft === 'object' ? UI.projDraft : null;
+  const d = p || Object.assign({ typeId: (DB.projectTypes[0] || {}).id, agencyId: (DB.agencies[0] || {}).id, tags: [], requested: '' }, draft || {});
   const f = (l, h, help) => `<div class="fld"><label>${l}</label>${h}${help ? `<span class="help">${help}</span>` : ''}</div>`;
   const body = `<div class="fgrid">
     ${f('Client *', `<input class="in" name="client" required value="${esc(d.client || '')}" autofocus>`)}
@@ -2255,9 +2257,11 @@ function projectForm(id) {
     `<label class="chip" style="${cvar(t.color, .13, .35)}"><input type="checkbox" name="tags" data-multi="1" value="${t.id}"${(d.tags || []).includes(t.id) ? ' checked' : ''}><i class="dot"></i>${esc(t.name)}</label>`).join('')}</div></div>
   <div class="fld" style="margin-top:12px"><label>Notes</label><textarea class="in" name="notes" rows="2">${esc(d.notes || '')}</textarea></div>
   ${p ? '' : `<div class="bnr info" style="margin-top:14px">${ic('info')}<span id="steps-prev"></span></div>`}`;
+  const draftBar = draft ? `<div class="bnr warn" id="draft-bar" style="margin:0 0 12px">${ic('info')}<span style="flex:1">Brouillon repris : votre saisie précédente a été conservée.</span>
+    <button class="btn sm" type="button" data-draft-clear>Repartir de zéro</button></div>` : '';
   const m = modal({
-    title: p ? `Modifier le projet #${p.id}` : 'Nouveau projet', size: 'lg', body,
-    foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button>
+    title: p ? `Modifier le projet #${p.id}` : 'Nouveau projet', size: 'lg', body: draftBar + body,
+    foot: `<span class="spacer"></span><button class="btn" ${p ? 'data-close' : 'data-cancel'}>Annuler</button>
            <button class="btn pri" data-save>${p ? 'Enregistrer' : 'Créer le projet'}</button>`,
     onMount(el, close) {
       const prev = () => {
@@ -2267,6 +2271,17 @@ function projectForm(id) {
           : 'Aucune étape ne sera créée : ce type de projet n’utilise aucun service du circuit de cette agence.';
       };
       $$('[data-steps]', el).forEach(x => x.addEventListener('change', prev)); prev();
+      if (!p) {
+        const keep = () => {                    // chaque frappe est mémorisée ; un formulaire vide n'est pas gardé
+          const v = formVals(el), filled = Object.entries(v).some(([k, x]) => !['typeId', 'agencyId'].includes(k) && (Array.isArray(x) ? x.length : String(x ?? '').trim()));
+          if (filled) UI.projDraft = v; else delete UI.projDraft;
+          saveUI();
+        };
+        el.addEventListener('input', keep); el.addEventListener('change', keep);
+        $('[data-cancel]', el).onclick = () => { delete UI.projDraft; saveUI(); close(); };
+        const clr = $('[data-draft-clear]', el);
+        if (clr) clr.onclick = () => { delete UI.projDraft; saveUI(); close(); projectForm(); };
+      }
       $('[data-save]', el).onclick = () => {
         const v = formVals(el);
         if (!v.client.trim()) { toast('Le nom du client est obligatoire.', 'danger'); return; }
@@ -2281,6 +2296,7 @@ function projectForm(id) {
             }, v));
             for (const s of stepsFor(v.typeId, v.agencyId)) db.ops.push(newOp(db, id, s, v.opGroupId));
           }, { ref: 'p' + (DB.counters.project) });
+          delete UI.projDraft; saveUI();
           toast('Projet créé', 'ok');
         }
         close();
