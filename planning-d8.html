@@ -1119,8 +1119,6 @@ function confirmTyped(msg, o = {}) {           // super administrateur : on conf
   });
 }
 function superAdmin(msg, o = {}) {
-  const sup = DB && can('super') && !o.forcePwd;
-  if (sup && !o.change) return confirmTyped(msg, o);
   return new Promise(res => {
     let done = false;
     const m = modal({
@@ -1128,7 +1126,7 @@ function superAdmin(msg, o = {}) {
       body: `<form id="sa-f" class="fgrid one" novalidate>
         <p style="margin:0;line-height:1.5">${msg}</p>
         <input type="text" name="username" value="superadmin" autocomplete="username" hidden>
-        ${sup ? '' : `<div class="fld"><label>Mot de passe super administrateur</label><input class="in" type="password" name="password" autocomplete="current-password" autofocus></div>`}
+        <div class="fld"><label>Mot de passe super administrateur${o.change ? ' actuel' : ''}</label><input class="in" type="password" name="password" autocomplete="current-password" autofocus></div>
         ${o.change ? `<div class="fld"><label>Nouveau mot de passe (12 caractères minimum)</label><input class="in" type="password" name="next" autocomplete="new-password"></div>
         <div class="fld"><label>Confirmation</label><input class="in" type="password" name="confirm" autocomplete="new-password"></div>` : ''}
         <div class="bnr danger hide" data-err></div></form>`,
@@ -1138,7 +1136,7 @@ function superAdmin(msg, o = {}) {
     const err = t => { const b = $('[data-err]', m.el); b.innerHTML = ic('warn') + '<span>' + esc(t) + '</span>'; b.classList.remove('hide'); };
     const go = async () => {
       const v = Object.fromEntries(new FormData($('#sa-f', m.el)));
-      if (!v.password && !sup) return err('Saisissez le mot de passe.');
+      if (!v.password) return err('Saisissez le mot de passe.');
       if (o.change && String(v.next || '').length < 12) return err('Le nouveau mot de passe doit faire au moins 12 caractères.');
       if (o.change && v.next !== v.confirm) return err('Les deux nouveaux mots de passe ne correspondent pas.');
       const btn = $('[data-ok]', m.el); btn.disabled = true;
@@ -4858,7 +4856,7 @@ function pageSecurity() {
   const sec = (t, icn, inner, acts = '') => `<div class="card" style="margin-bottom:14px"><div class="card-h">${ic(icn)}<span>${t}</span><span style="margin-left:auto;display:flex;gap:6px">${acts}</span></div>${inner}</div>`;
   const superCard = sec('Super administrateurs', 'shield', `<div class="card-b">
       <p class="mut" style="margin:0 0 10px">Le super administrateur a tous les droits, sans restriction : lui seul peut nommer ou retirer un super administrateur, modifier ce rôle,
-        changer les réglages de sécurité et vider ou réinitialiser la base sans le mot de passe partagé (il confirme en tapant « CONFIRMER »).</p>
+        changer les réglages de sécurité et déconnecter tout le monde. Vider, réinitialiser ou restaurer la base exige toujours de retaper le mot de passe super administrateur, même pour lui.</p>
       <div class="chips" style="margin-bottom:12px">${supers.map(u => `<span class="pill" style="${cvar('#7c5cc4', .16, .4)}">${ic('shield', 'sm')} ${esc(label(u))}</span>`).join('') || '<span class="mut">Aucun super administrateur pour l’instant.</span>'}</div>
       <div class="row wrap">${iAmSuper ? `<span class="pill" style="${cvar('#3c9f5f', .16, .4)}">${ic('check', 'sm')} Vous êtes super administrateur</span>
           ${Sync.mode === 'server' ? `<button class="btn" data-act="sa-change">${ic('lock')} Mot de passe partagé</button><button class="btn dgr" data-act="kick-all">${ic('logout')} Déconnecter tout le monde</button>` : ''}`

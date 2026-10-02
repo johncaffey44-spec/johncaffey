@@ -36,8 +36,9 @@
  *      dépassent les droits de la personne : rôles et utilisateurs (droit
  *      « users »), rôle super administrateur (réservé aux super
  *      administrateurs), mode maintenance, comptes en lecture seule, et
- *      opérations destructrices (super administrateur ou mot de passe
- *      super administrateur). Le reste des droits est appliqué par l'interface.
+ *      opérations destructrices (mot de passe super administrateur retapé,
+ *      même par un super administrateur). Le reste des droits est appliqué
+ *      par l'interface.
  * -----------------------------------------------------------------------------
  */
 declare(strict_types=1);
@@ -345,10 +346,9 @@ if ($action === 'sa-check' || $action === 'sa-change') {
     flock($lock, LOCK_EX);
     $doc = read_doc($FILE);
     if ($doc !== null && !has_any($doc, $me['userId'], ['admin', 'users', 'settings', 'security', 'data'])) out(403, ['error' => 'Réservé aux administrateurs']);
-    $isSuper = has_perm($doc, $me['userId'], 'super');
     throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
-    // un super administrateur change le mot de passe partagé sans avoir à connaître l'ancien
-    if (!($action === 'sa-change' && $isSuper) && !password_verify((string)($in['password'] ?? ''), superadmin_hash($DATA_DIR, $SUPERADMIN_HASH))) {
+    // le mot de passe actuel est toujours exigé, super administrateur compris : une session laissée ouverte ne suffit pas
+    if (!password_verify((string)($in['password'] ?? ''), superadmin_hash($DATA_DIR, $SUPERADMIN_HASH))) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
         auth_log('sa-fail', $me['login']);
         out(403, ['error' => 'Mot de passe super administrateur incorrect.']);
@@ -661,7 +661,8 @@ if ($action === 'save') {
     if ($why !== null) { flock($lock, LOCK_UN); out(403, ['denied' => true, 'error' => $why]); }
     // remplacement de la base ou suppression massive : super administrateur ou mot de passe super administrateur
     $was = $m['shape'] ?? null;
-    if (is_array($was) && !$sa && !has_perm($oldDoc, (string)$me['userId'], 'super') && (($was['gen'] !== '' && $shape['gen'] !== '' && $was['gen'] !== $shape['gen'])
+    // exigé de tous, super administrateur compris : le mot de passe doit avoir été retapé il y a moins de 5 min
+    if (is_array($was) && !$sa && (($was['gen'] !== '' && $shape['gen'] !== '' && $was['gen'] !== $shape['gen'])
         || ((int)$was['total'] >= 10 && $shape['total'] < (int)$was['total'] / 2))) {
         flock($lock, LOCK_UN);
         out(403, ['superadmin' => true, 'error' => 'Opération réservée au super administrateur.']);

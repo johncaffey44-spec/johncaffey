@@ -181,10 +181,10 @@ Chaque rôle (*Paramétrage › Rôles & droits*) coche des droits parmi les sui
 
 **Ce que seul le super administrateur peut faire** :
 - nommer ou retirer un super administrateur, modifier ce rôle ou la fiche d'un super administrateur ;
-- vider, réinitialiser ou restaurer la base sans le mot de passe partagé (il tape « CONFIRMER ») ;
-- changer le mot de passe partagé sans connaître l'ancien ;
 - régler la sécurité : code de création d'accès, durée de session, longueur des mots de passe ;
 - déconnecter tout le monde d'un coup.
+
+**Même pour le super administrateur**, *Vider les projets*, *Tout réinitialiser* et *Restaurer* exigent de retaper le mot de passe super administrateur, et le serveur le vérifie. Changer ce mot de passe exige l'ancien. En cas d'oubli, supprimez `data/superadmin.json` sur le serveur (voir section 5).
 
 **Devenir super administrateur** : *Paramétrage › Sécurité & accès › Devenir super administrateur*. Il faut avoir le droit « Utilisateurs » et saisir le mot de passe super administrateur. C'est la seule porte d'entrée vers ce rôle, en dehors d'un super administrateur existant.
 
