@@ -195,7 +195,8 @@ label.chip input{display:none}
 .pl-inner{min-width:880px}
 .pl-head{display:flex;position:sticky;top:0;z-index:6;background:var(--surface-2);border-bottom:1px solid var(--border-2)}
 .pl-res{width:168px;flex:none;padding:8px 10px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:0}
-.pl-track{flex:1;position:relative;min-width:0;min-height:60px}
+.pl-track{flex:1;position:relative;min-width:0;min-height:var(--rowh,60px)}
+.pl-head .pl-track{min-height:0}
 .pl-days{display:grid;grid-template-columns:repeat(var(--d),minmax(0,1fr))}
 .pl-day{padding:7px 8px;text-align:center;border-left:1px solid var(--border);font-size:12.5px}
 .pl-day b{display:block;font-weight:620;font-size:13px;text-transform:capitalize}
@@ -323,6 +324,29 @@ body.kiosk .tbl{font-size:15px}
 #print table{width:100%;border-collapse:collapse;font-size:10.5px}
 #print th,#print td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
 #print th{background:#f0f0f0}
+/* taille d'affichage (automatique selon la largeur de l'écran, ou choisie dans le menu en haut à droite) */
+body.fs-l{font-size:15.5px}
+body.fs-l .tbl{font-size:14.5px}body.fs-l .tbl th{font-size:13px}body.fs-l .tbl td{padding:10px 12px}
+body.fs-l .nav-a{font-size:14.5px}body.fs-l .btn{font-size:14.5px}body.fs-l .btn.sm{font-size:13.5px}
+body.fs-l .card-h{font-size:15.5px}body.fs-l .phead h1{font-size:25px}body.fs-l .phead p{font-size:14px}
+body.fs-l .kpi .v{font-size:29px}body.fs-l .kpi .l{font-size:13.5px}body.fs-l .chip{font-size:13px}body.fs-l .pill{font-size:12.5px}
+body.fs-l .lgd{font-size:13px}body.fs-l .hb{font-size:14px;grid-template-columns:190px 1fr 56px}body.fs-l .hb .bar{height:17px}
+body.fs-l .pl-res{width:200px}body.fs-l .resn{font-size:14.5px}body.fs-l .pl-day{font-size:13.5px}body.fs-l .pl-day b{font-size:14.5px}
+body.fs-l .op{font-size:13px;padding:6px 8px}body.fs-l .op .t1{font-size:14px}body.fs-l .op .t2{font-size:12.5px}body.fs-l .op .t3{font-size:12px}
+body.fs-l .bl{width:330px}body.fs-l .bl-i{font-size:13.5px}body.fs-l .pal-i{font-size:14.5px}
+body.fs-xl{font-size:17px}
+body.fs-xl .tbl{font-size:16px}body.fs-xl .tbl th{font-size:14px}body.fs-xl .tbl td{padding:11px 13px}
+body.fs-xl .nav-a{font-size:15.5px;padding:8px 10px}body.fs-xl .btn{font-size:15.5px;padding:8px 15px}body.fs-xl .btn.sm{font-size:14px}
+body.fs-xl .card-h{font-size:17px}body.fs-xl .phead h1{font-size:28px}body.fs-xl .phead p{font-size:15px}
+body.fs-xl .kpi .v{font-size:32px}body.fs-xl .kpi .l{font-size:15px}body.fs-xl .chip{font-size:14px}body.fs-xl .pill{font-size:13.5px}
+body.fs-xl .lgd{font-size:14px}body.fs-xl .hb{font-size:15px;grid-template-columns:220px 1fr 62px}body.fs-xl .hb .bar{height:19px}
+body.fs-xl .pl-res{width:230px}body.fs-xl .resn{font-size:16px}body.fs-xl .pl-day{font-size:15px}body.fs-xl .pl-day b{font-size:16px}
+body.fs-xl .op{font-size:14.5px;padding:7px 9px}body.fs-xl .op .t1{font-size:15.5px}body.fs-xl .op .t2{font-size:14px}body.fs-xl .op .t3{font-size:13px}
+body.fs-xl .bl{width:370px}body.fs-xl .bl-i{font-size:15px}body.fs-xl .pal-i{font-size:15.5px}
+body.fs-xl #sb{width:280px}body.fs-xl .ic{width:20px;height:20px}
+body.fs-l .gantt-wrap,body.fs-xl .gantt-wrap{max-height:calc(100vh - 250px)}
+body.fs-l .chart text[font-size="10"]{font-size:12px}body.fs-l .chart text[font-size="11"]{font-size:12.5px}body.fs-l .chart text[font-size="12"]{font-size:13.5px}
+body.fs-xl .chart text[font-size="10"]{font-size:13px}body.fs-xl .chart text[font-size="11"]{font-size:14px}body.fs-xl .chart text[font-size="12"]{font-size:15px}
 /* liste de droits à cocher */
 .perm-list{display:flex;flex-direction:column;border:1px solid var(--border-2);border-radius:9px;padding:6px;max-height:52vh;overflow:auto;background:var(--surface)}
 .perm-g{font-size:11.5px;font-weight:650;letter-spacing:.03em;text-transform:uppercase;color:var(--text-3);padding:10px 8px 4px}
@@ -1729,7 +1753,7 @@ function popover(anchor, html) {
 }
 
 /* ---------- graphiques (SVG, sans librairie) ---------- */
-function chart(spec) { const id = 'c' + (++chN); CH[id] = spec; return `<div class="chart" data-chart="${id}"${spec.key ? ` data-key="${esc(spec.key)}"` : ''} style="height:${spec.h || 240}px"></div>`; }
+function chart(spec) { const id = 'c' + (++chN); spec.h = Math.round((spec.h || 240) * viewScale()); CH[id] = spec; return `<div class="chart" data-chart="${id}"${spec.key ? ` data-key="${esc(spec.key)}"` : ''} style="height:${spec.h || 240}px"></div>`; }
 function drawCharts() {
   for (const el of $$('.chart[data-chart]')) {
     const s = CH[el.dataset.chart]; if (!s) continue;
@@ -1885,12 +1909,15 @@ Object.assign(ACT, {
       `<div class="pal-i" data-act="switch-user" data-id="${x.id}"><span class="av" style="background:${x.id === (u && u.id) ? 'var(--primary)' : 'var(--text-3)'}">${initials(label(x))}</span><span>${esc(label(x))}</span><small>${esc(label(roleOf(x)) || '')}</small></div>`).join('')}</div>`}
       <div style="${srv ? '' : 'border-top:1px solid var(--border);'}margin-top:4px">
         ${srv ? `<div class="pal-i" data-act="change-pwd">${ic('lock')}<span>Changer mon mot de passe</span></div>` : ''}
+        <div style="padding:6px 10px 8px"><div class="mut" style="font-size:12px;margin-bottom:5px">Taille d’affichage</div><div class="row" style="gap:4px">
+          ${[['auto', 'Auto'], ['n', 'Normal'], ['l', 'Grand'], ['xl', 'Très grand']].map(([k, l]) => `<button class="btn sm${(UI.fs || 'auto') === k ? ' pri' : ''}" data-act="fs" data-v="${k}">${l}</button>`).join('')}</div></div>
         <div class="pal-i" data-act="shortcuts">${ic('keyboard')}<span>Raccourcis clavier</span></div>
         <div class="pal-i" data-act="go" data-to="/admin/parametres">${ic('sliders')}<span>Paramètres</span></div>
         ${srv ? `<div class="pal-i" data-act="logout" style="color:var(--danger)">${ic('logout')}<span>Se déconnecter</span></div>` : ''}
       </div>`);
   },
   'change-pwd': () => Auth.changePassword(),
+  fs: el => { UI.fs = el.dataset.v; saveUI(); closePop(); applyFs(); render(); },
   logout: () => Auth.logout(),
   'app-reload': () => {
     if (Sync.pending.length || Sync.busy) return toast('Enregistrement en cours… réessayez dans un instant.', 'warn');
@@ -1912,6 +1939,20 @@ Object.assign(ACT, {
     });
   }
 });
+function fsClass() {                          // taille d'affichage effective
+  const f = UI.fs || 'auto', w = window.innerWidth;
+  return f === 'auto' ? (w >= 2200 ? 'xl' : w >= 1600 ? 'l' : 'n') : f;
+}
+function applyFs() { const c = fsClass(); document.body.classList.toggle('fs-l', c === 'l'); document.body.classList.toggle('fs-xl', c === 'xl'); }
+const viewScale = () => clamp(window.innerHeight / 900, 1, 1.5) * ({ l: 1.08, xl: 1.16 }[fsClass()] || 1);
+/* planning : les lignes se partagent la hauteur de l'écran */
+function fitPlanRows() {
+  const pl = $('.pl'); if (!pl) return;
+  const rows = $$('.pl-row', pl), grp = $$('.pl-grp', pl); if (!rows.length) return;
+  const top = rows[0].getBoundingClientRect().top, kiosk = document.body.classList.contains('kiosk');
+  const avail = window.innerHeight - top - (kiosk ? 60 : 56) - grp.slice(1).reduce((t, g) => t + g.offsetHeight, 0);
+  pl.style.setProperty('--rowh', clamp(Math.floor(avail / rows.length), kiosk ? 70 : 64, 260) + 'px');
+}
 function applyTheme() {
   const t = UI.theme || 'light';
   document.documentElement.dataset.theme = t === 'dark' ? 'dark' : 'light';
@@ -3665,6 +3706,7 @@ function importCSV() { return importFile('projects'); }
 /* ---------- vues écrans : minuteries ---------- */
 function afterRender() {
   const r = route();
+  if (r.seg[0] === 'planning' || r.seg[0] === 'ecran') fitPlanRows();
   if (r.seg[0] !== 'ecran') return;
   const views = screenList();
   const cur = r.seg[1] === 'rotation' ? views[(UI.rotIdx || 0) % views.length] : views.find(v => v.id === r.seg[1]);
@@ -4609,7 +4651,7 @@ function svgStack(s, W, H) {
 }
 
 /* ---------- diagramme de Gantt ---------- */
-const GANTT_DEF = { mode: 'projets', from: '', weeks: 8, zoom: 18, ag: '', sv: '', ty: '', q: '', arch: false, todo: true };
+const GANTT_DEF = { mode: 'projets', from: '', weeks: 8, zoom: 0, ag: '', sv: '', ty: '', q: '', arch: false, todo: true };
 function inkOn(hex) {                          // texte blanc ou encre selon la clarté de la barre
   const h = String(hex || '').replace('#', ''), n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h.padEnd(6, '0').slice(0, 6), 16) || 0;
   const lin = c => { c /= 255; return c <= .03928 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4); };
@@ -4649,8 +4691,12 @@ function ganttData(G) {
   return { from, to, rows };
 }
 function ganttSVG(gd, G, rowsSub) {
-  const rows = rowsSub || gd.rows, dw = +G.zoom || 18, LW = 260, RH = 26, HH = 44, T = D.today();
   const days = []; for (let d = gd.from; d <= gd.to; d = D.add(d, 1)) days.push(d);
+  const rows = rowsSub || gd.rows, big = { l: 1, xl: 2 }[fsClass()] || 0, LW = [260, 300, 340][big], HH = 44, T = D.today();
+  const viewW = (($('#view') || {}).clientWidth || 1200) - 46;
+  const dw = +G.zoom || clamp(Math.floor((viewW - LW - 14) / days.length), 8, 80);   // « Ajusté » : toute la largeur de l'écran
+  const RH = rowsSub ? 26 : clamp(Math.floor((window.innerHeight - 300 - HH) / Math.max(1, rows.length)), [26, 30, 34][big], 56);
+  const FS = RH >= 44 ? 14 : RH >= 34 ? 13 : 12, BFS = FS - 1.5, BH = Math.min(RH - 10, 32);   // barres plafonnées : lisibles sans être massives
   const W = LW + days.length * dw + 14, H = HH + Math.max(1, rows.length) * RH + 4;
   const xOf = d => LW + D.diff(gd.from, d) * dw;
   let bg = '', head = '', body = '';
@@ -4669,19 +4715,19 @@ function ganttSVG(gd, G, rowsSub) {
     const y = HH + i * RH, mid = y + RH / 2;
     if (r.head) {
       body += `<rect x="0" y="${y}" width="${W}" height="${RH}" fill="var(--surface-2)"/><rect x="12" y="${mid - 4}" width="8" height="8" rx="4" fill="${r.color}"/>
-        <text x="27" y="${mid + 4}" font-size="12" font-weight="650" fill="var(--text)">${esc(r.head)}</text>`;
+        <text x="27" y="${mid + 4}" font-size="${FS}" font-weight="650" fill="var(--text)">${esc(r.head)}</text>`;
       return;
     }
     body += `<line x1="0" x2="${W}" y1="${y + RH}" y2="${y + RH}" stroke="var(--border)"/>`;
     const todoTxt = r.todo ? r.todo + ' à planifier' : '', full = r.label + (r.sub ? ' · ' + r.sub : '');
-    const room = LW - 22 - (todoTxt ? textW(todoTxt, 10.5) + 10 : 0);
-    body += `<text x="12" y="${mid + 4}" font-size="12" fill="var(--text)"${r.proj ? ` data-act="open-project" data-id="${r.proj}" style="cursor:pointer"` : ''}><title>${esc(full)}</title>${esc(fitText(full, room, 12))}</text>`;
-    if (r.todo) body += `<text x="${LW - 10}" y="${mid + 4}" text-anchor="end" font-size="10.5" fill="var(--warn)"><title>${r.todo} étape(s) sans date</title>${todoTxt}</text>`;
+    const room = LW - 22 - (todoTxt ? textW(todoTxt, BFS) + 10 : 0);
+    body += `<text x="12" y="${mid + 4}" font-size="${FS}" fill="var(--text)"${r.proj ? ` data-act="open-project" data-id="${r.proj}" style="cursor:pointer"` : ''}><title>${esc(full)}</title>${esc(fitText(full, room, FS))}</text>`;
+    if (r.todo) body += `<text x="${LW - 10}" y="${mid + 4}" text-anchor="end" font-size="${BFS}" fill="var(--warn)"><title>${r.todo} étape(s) sans date</title>${todoTxt}</text>`;
     for (const a of r.abs || []) {
       const t = get('absenceTypes', a.typeId) || { name: 'Absence', color: '#c9a227' };
       const s0 = a.start < gd.from ? gd.from : a.start, s1 = a.end > gd.to ? gd.to : a.end;
       const x0 = xOf(s0) + (s0 === a.start && a.startSlot === 'PM' ? dw / 2 : 0), x1 = xOf(s1) + (s1 === a.end && a.endSlot === 'AM' ? dw / 2 : dw);
-      body += `<rect x="${x0 + .5}" y="${y + 5}" width="${Math.max(2, x1 - x0 - 1)}" height="${RH - 10}" rx="3" fill="${t.color}" fill-opacity=".22" stroke="${t.color}" stroke-dasharray="3 2">
+      body += `<rect x="${x0 + .5}" y="${mid - BH / 2}" width="${Math.max(2, x1 - x0 - 1)}" height="${BH}" rx="3" fill="${t.color}" fill-opacity=".22" stroke="${t.color}" stroke-dasharray="3 2">
         <title>${esc(t.name + ' · ' + r.label + ' · du ' + D.fmt(a.start) + ' au ' + D.fmt(a.end) + (a.note ? ' — ' + a.note : ''))}</title></rect>`;
     }
     const segs = [];
@@ -4692,11 +4738,11 @@ function ganttSVG(gd, G, rowsSub) {
       let x0 = o.date < gd.from ? LW : xOf(o.date) + (half && hs[0][1] === 1 ? dw / 2 : 0);
       let x1 = end > gd.to ? W - 14 : xOf(end) + (half && hs[hs.length - 1][1] === 0 ? dw / 2 : dw);
       const st = stat(o.statusId) || {}, p = P(o.projectId) || {}, bw = Math.max(3, x1 - x0 - 2);
-      const txt = fitText(G.mode === 'ressources' ? p.client : sv.name, bw - 9, 10.5);
+      const txt = fitText(G.mode === 'ressources' ? p.client : sv.name, bw - 9, BFS);
       const tip = [sv.name, p.client, st.name, staffName(o.staffId) || 'sans ressource', D.fmt(o.date) + (end !== o.date ? ' → ' + D.fmt(end) : ''), o.notes].filter(Boolean).join(' · ');
-      body += `<g data-act="open-op" data-id="${o.id}" style="cursor:pointer"><rect x="${(x0 + 1).toFixed(1)}" y="${y + 5}" width="${bw.toFixed(1)}" height="${RH - 10}" rx="4" fill="${sv.color || '#888'}"
+      body += `<g data-act="open-op" data-id="${o.id}" style="cursor:pointer"><rect x="${(x0 + 1).toFixed(1)}" y="${mid - BH / 2}" width="${bw.toFixed(1)}" height="${BH}" rx="4" fill="${sv.color || '#888'}"
         ${st.stage === 'done' ? 'fill-opacity=".45"' : ''}${st.stage === 'issue' ? ' stroke="#d1444a" stroke-width="2"' : ''}/>
-        ${txt.length >= 3 ? `<text x="${(x0 + 5).toFixed(1)}" y="${mid + 3.5}" font-size="10.5" fill="${st.stage === 'done' ? 'var(--text)' : inkOn(sv.color)}">${esc(txt)}</text>` : ''}
+        ${txt.length >= 3 ? `<text x="${(x0 + 5).toFixed(1)}" y="${mid + BFS / 3}" font-size="${BFS}" fill="${st.stage === 'done' ? 'var(--text)' : inkOn(sv.color)}">${esc(txt)}</text>` : ''}
         <title>${esc(tip)}</title></g>`;
       segs.push({ x0: x0 + 1, x1: x0 + 1 + bw });
     }
@@ -4736,7 +4782,7 @@ function pageGantt() {
     <button class="btn sm" data-act="g-today">Aujourd’hui</button>
     <button class="btn sm" data-act="g-shift" data-d="28" title="4 semaines plus tard">${ic('right', 'sm')}</button>
     ${opt('weeks', [[4, '4 semaines'], [8, '8 semaines'], [13, '3 mois'], [26, '6 mois'], [52, '12 mois']])}
-    ${opt('zoom', [[8, 'Compact'], [18, 'Normal'], [32, 'Large']])}
+    ${opt('zoom', [[0, 'Ajusté à l’écran'], [8, 'Compact'], [18, 'Normal'], [32, 'Large'], [48, 'Très large']])}
     <input class="in srchin" id="g_q" data-on="gantt" data-k="q" placeholder="Client, n°, ville…" value="${esc(G.q)}" style="min-width:180px">
     ${sel('ag', DB.agencies, 'Toutes les agences')}${sel('sv', svcs, 'Tous les services')}
     ${G.mode !== 'ressources' ? sel('ty', DB.projectTypes, 'Tous les types') + `
@@ -4958,6 +5004,7 @@ Object.assign(ACT, {
 (async function start() {
   applyTheme();
   if (UI.mini) document.body.classList.add('mini');
+  applyFs();
   try { DB = await Sync.init(); }
   catch (e) { console.error(e); if (e.fatal) return Auth.fatal(e.message); DB = migrate(null); }
   if (Sync.mode === 'server') { UI.user = Auth.user.userId; saveUI(); }
@@ -4972,7 +5019,10 @@ Object.assign(ACT, {
   if (!location.hash) location.hash = '#/';
   render();
   window.addEventListener('hashchange', render);
-  window.addEventListener('resize', debounce(drawCharts, 200));
+  window.addEventListener('resize', debounce(() => {   // largeur ou hauteur changée : taille du texte, Gantt et planning recalculés
+    applyFs();
+    if (['gantt', 'planning', 'ecran'].includes(route().seg[0])) render(); else drawCharts();
+  }, 200));
   setInterval(() => Sync.poll(), Math.max(5, +DB.settings.pollSec || 15) * 1000);
   const u = me();
   if (u && u.lastLogin !== D.today()) mutate('Connexion', db => { const x = db.users.find(y => y.id === u.id); if (x) x.lastLogin = D.today(); }, { nolog: true });
