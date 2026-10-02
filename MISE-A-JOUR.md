@@ -156,3 +156,42 @@ Tout se fait dans le navigateur, sans logiciel ni connexion Internet supplément
 Méthode conseillée : **exportez la liste en Excel, complétez-la, réimportez-la**. Les en-têtes sont alors reconnus automatiquement. Chaque import peut être annulé juste après (bouton « Annuler » de la notification).
 
 Formats non pris en charge à l'import : `.xls` (ancien Excel) et `.ods` (enregistrez-les en `.xlsx`), et le PDF : un PDF ne contient pas de tableau exploitable de façon fiable.
+
+## 7. Rôles et droits
+
+Chaque rôle (*Paramétrage › Rôles & droits*) coche des droits parmi les suivants :
+
+| Droit | Permet |
+|---|---|
+| Projets | créer et modifier les projets |
+| Suppression | supprimer des projets et des étapes |
+| Planification | planifier, déplacer les opérations, préparation atelier |
+| Absences | saisir les absences et congés |
+| Rapports | consulter les rapports |
+| Export | exporter (Excel, CSV, PDF, agenda, images) |
+| Import | importer des fichiers (dans les listes autorisées par les autres droits) |
+| Paramétrage | agences, services, personnel, modèles, statuts, étiquettes… |
+| Paramètres | paramètres généraux et mode maintenance |
+| Utilisateurs | fiches utilisateurs, rôles, réinitialisation des accès, déconnexion forcée |
+| Sécurité | page *Sécurité & accès* : journal des connexions, adresses bloquées, sauvegardes du serveur, journal d'activité |
+| Données | restaurer, vider, tout réinitialiser (avec le mot de passe super administrateur) |
+| **Super administrateur** | **tous les droits, sans restriction** |
+
+**Rôles fournis** : Super administrateur (tout) · Administrateur (tout sauf super) · Éditeur planning · Commercial · Lecture seule. Les rôles créés avant cette version gardent exactement ce qu'ils permettaient : l'ancien « Administrateur » reçoit tous les droits sauf super.
+
+**Ce que seul le super administrateur peut faire** :
+- nommer ou retirer un super administrateur, modifier ce rôle ou la fiche d'un super administrateur ;
+- vider, réinitialiser ou restaurer la base sans le mot de passe partagé (il tape « CONFIRMER ») ;
+- changer le mot de passe partagé sans connaître l'ancien ;
+- régler la sécurité : code de création d'accès, durée de session, longueur des mots de passe ;
+- déconnecter tout le monde d'un coup.
+
+**Devenir super administrateur** : *Paramétrage › Sécurité & accès › Devenir super administrateur*. Il faut avoir le droit « Utilisateurs » et saisir le mot de passe super administrateur. C'est la seule porte d'entrée vers ce rôle, en dehors d'un super administrateur existant.
+
+**Contrôlé par le serveur** (une manipulation par la console F12 est refusée) :
+- les rôles, les utilisateurs et le rôle super administrateur ;
+- le mode maintenance ;
+- les comptes en lecture seule ;
+- les opérations destructrices.
+
+Les autres droits (par exemple « Suppression » pour quelqu'un qui a « Projets ») sont appliqués par l'interface. Le serveur enregistre l'auteur de chaque modification.

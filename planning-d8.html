@@ -581,6 +581,7 @@ const ICONS = {
   lock: 'M5 11h14v11H5zM8 11V7a4 4 0 0 1 8 0v4',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   gantt: 'M3 3v18h18M7 7h7M10 12h8M8 17h6',
+  shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4',
   image: 'M3 3h18v18H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 21',
   sheet: 'M3 3h18v18H3zM3 9h18M3 15h18M9 3v18',
   braces: 'M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1',
@@ -708,13 +709,14 @@ function seed() {
       { id: 'tg_gc', name: 'Grand compte', color: '#1487c9' }
     ],
     roles: [
-      { id: 'r_admin', name: 'Administrateur', perms: ['projects', 'planning', 'admin'] },
-      { id: 'r_plan', name: 'Éditeur planning', perms: ['projects', 'planning'] },
-      { id: 'r_com', name: 'Commercial', perms: ['projects'] },
-      { id: 'r_read', name: 'Lecture seule', perms: [] }
+      { id: 'r_super', name: 'Super administrateur', perms: ['super'], v2: true },
+      { id: 'r_admin', name: 'Administrateur', perms: ['projects', 'delete', 'planning', 'absences', 'reports', 'export', 'import', 'admin', 'settings', 'users', 'security', 'data'], v2: true },
+      { id: 'r_plan', name: 'Éditeur planning', perms: ['projects', 'delete', 'planning', 'absences', 'reports', 'export'], v2: true },
+      { id: 'r_com', name: 'Commercial', perms: ['projects', 'reports', 'export'], v2: true },
+      { id: 'r_read', name: 'Lecture seule', perms: ['reports'], v2: true }
     ],
     users: [
-      { id: 'u_tm', firstName: 'Tafré', lastName: 'Mefré', email: '', roleId: 'r_admin', active: true, lastLogin: '' },
+      { id: 'u_tm', firstName: 'Tafré', lastName: 'Mefré', email: '', roleId: 'r_super', active: true, lastLogin: '' },
       { id: 'u_mz', firstName: 'Mohamed', lastName: 'Zidani', email: 'mzidani@d8.fr', roleId: 'r_admin', active: true, lastLogin: D.add(W, -14) },
       { id: 'u_bp', firstName: 'Benjamin', lastName: 'Pradolin', email: 'bpradolin@d8.fr', roleId: 'r_admin', active: true, lastLogin: D.add(W, 1) },
       { id: 'u_rj', firstName: 'Romain', lastName: 'Jabiol', email: 'rjabiol@d8.fr', roleId: 'r_plan', active: true, lastLogin: D.add(W, -13) },
@@ -945,7 +947,7 @@ const Auth = {
     const loadList = async () => {
       if (boot) {                                   // 1re mise en service : le planning n'existe pas encore sur le serveur
         this.bootDB = this.bootDB || migrate(await Sync.readLocal() || seed());
-        const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).includes('admin')).map(r => r.id));
+        const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).some(x => x === 'admin' || x === 'super')).map(r => r.id));
         return this.bootDB.users.filter(u => u.active !== false && adm.has(u.roleId)).sort(byName).map(u => ({ id: u.id, name: label(u) }));
       }
       const r = await this.api('signup-list').catch(() => null);
@@ -1090,7 +1092,25 @@ async function sha256hex(t) {
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
   return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 }
+function confirmTyped(msg, o = {}) {           // super administrateur : on confirme en tapant un mot, sans mot de passe partagé
+  return new Promise(res => {
+    let done = false;
+    const m = modal({
+      size: 'sm', title: o.title || 'Confirmation · super administrateur',
+      body: `<form id="ct-f" class="fgrid one" novalidate><p style="margin:0;line-height:1.5">${msg}</p>
+        <div class="fld"><label>Tapez <b>CONFIRMER</b> pour valider</label><input class="in" name="w" autocomplete="off" autofocus></div></form>`,
+      foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn dgr" data-ok disabled>${esc(o.ok || 'Confirmer')}</button>`,
+      onClose: () => { if (!done) res(false); }
+    });
+    const inp = $('[name=w]', m.el), btn = $('[data-ok]', m.el);
+    inp.oninput = () => { btn.disabled = inp.value.trim().toUpperCase() !== 'CONFIRMER'; };
+    const go = () => { if (btn.disabled) return; done = true; m.close(); res(true); };
+    btn.onclick = go; $('#ct-f', m.el).onsubmit = e => { e.preventDefault(); go(); };
+  });
+}
 function superAdmin(msg, o = {}) {
+  const sup = DB && can('super') && !o.forcePwd;
+  if (sup && !o.change) return confirmTyped(msg, o);
   return new Promise(res => {
     let done = false;
     const m = modal({
@@ -1098,7 +1118,7 @@ function superAdmin(msg, o = {}) {
       body: `<form id="sa-f" class="fgrid one" novalidate>
         <p style="margin:0;line-height:1.5">${msg}</p>
         <input type="text" name="username" value="superadmin" autocomplete="username" hidden>
-        <div class="fld"><label>Mot de passe super administrateur</label><input class="in" type="password" name="password" autocomplete="current-password" autofocus></div>
+        ${sup ? '' : `<div class="fld"><label>Mot de passe super administrateur</label><input class="in" type="password" name="password" autocomplete="current-password" autofocus></div>`}
         ${o.change ? `<div class="fld"><label>Nouveau mot de passe (12 caractères minimum)</label><input class="in" type="password" name="next" autocomplete="new-password"></div>
         <div class="fld"><label>Confirmation</label><input class="in" type="password" name="confirm" autocomplete="new-password"></div>` : ''}
         <div class="bnr danger hide" data-err></div></form>`,
@@ -1108,7 +1128,7 @@ function superAdmin(msg, o = {}) {
     const err = t => { const b = $('[data-err]', m.el); b.innerHTML = ic('warn') + '<span>' + esc(t) + '</span>'; b.classList.remove('hide'); };
     const go = async () => {
       const v = Object.fromEntries(new FormData($('#sa-f', m.el)));
-      if (!v.password) return err('Saisissez le mot de passe.');
+      if (!v.password && !sup) return err('Saisissez le mot de passe.');
       if (o.change && String(v.next || '').length < 12) return err('Le nouveau mot de passe doit faire au moins 12 caractères.');
       if (o.change && v.next !== v.confirm) return err('Les deux nouveaux mots de passe ne correspondent pas.');
       const btn = $('[data-ok]', m.el); btn.disabled = true;
@@ -1186,7 +1206,14 @@ const Sync = {
   post(data, base) {                          // l'auteur est déduit de la session par le serveur
     return fetchJSON('api.php?a=save&base=' + base,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }, 25000)
-      .then(r => r.ok ? r.body : r.status === 409 ? Object.assign({ conflict: true }, r.body) : r.status === 401 ? { unauth: true } : r.status === 403 && r.body && r.body.superadmin ? { sa: true } : null);
+      .then(r => r.ok ? r.body : r.status === 409 ? Object.assign({ conflict: true }, r.body) : r.status === 401 ? { unauth: true } : r.status === 403 && r.body && r.body.superadmin ? { sa: true } : r.status === 403 && r.body && r.body.denied ? { denied: r.body.error } : null);
+  },
+  async discard(msg, type = 'warn') {        // abandon des modifications en attente : retour à la version du serveur
+    this.pending = [];
+    const l = await fetchJSON('api.php?a=load', {}, 30000).catch(() => null);
+    if (l && l.ok && l.body && l.body.data) { DB = migrate(l.body.data); this.version = l.body.version; REV++; render(); }
+    toast(msg, type, null, 9000);
+    this.busy = false; setSync('ok', 'Synchronisé · v' + this.version);
   },
   async flush() {
     if (this.busy || !this.pending.length || this.mode !== 'server') return;
@@ -1195,15 +1222,10 @@ const Sync = {
     try {
       let r = await this.post(DB, this.version);
       if (r && r.sa) {                        // le serveur exige la confirmation du super administrateur
-        if (!await superAdmin('Le serveur demande la confirmation du super administrateur pour enregistrer cette opération.')) {
-          this.pending = [];                  // abandon : on revient à la version du serveur
-          const l = await fetchJSON('api.php?a=load', {}, 30000).catch(() => null);
-          if (l && l.ok && l.body && l.body.data) { DB = migrate(l.body.data); this.version = l.body.version; REV++; render(); }
-          toast('Opération annulée : rien n’a été modifié sur le serveur.', 'warn');
-          this.busy = false; setSync('ok', 'Synchronisé · v' + this.version); return;
-        }
+        if (!await superAdmin('Le serveur demande la confirmation du super administrateur pour enregistrer cette opération.')) return this.discard('Opération annulée : rien n’a été modifié sur le serveur.');
         this.busy = false; this.flush(); return;
       }
+      if (r && r.denied) return this.discard('Modification refusée par le serveur : ' + r.denied, 'danger');
       if (r && r.unauth) {                    // session expirée : on garde les modifications et on redemande le mot de passe
         setSync('warn', 'Session expirée');
         await Auth.relogin();
@@ -1320,11 +1342,29 @@ function me() {
   return get('users', UI.user) || DB.users.find(x => x.active !== false) || null;
 }
 function roleOf(u) { return u ? get('roles', u.roleId) : null; }
+/* droits effectifs d'un rôle ; un rôle créé avant le détail des droits (sans v2) garde ce qu'il permettait
+   (même logique côté serveur : role_perms dans api.php) */
+const READ_PERMS = ['reports', 'export'];
+const WRITE_PERMS = ['projects', 'delete', 'planning', 'absences', 'import', 'admin', 'settings', 'users', 'data'];
+function effPerms(r) {
+  if (!r) return [];
+  const p = r.perms || [];
+  if (p.includes('super')) return PERMS.map(x => x[0]);
+  if (r.v2) return p.slice();
+  const s = new Set(p); s.add('reports'); s.add('export');
+  if (s.has('planning')) s.add('absences');
+  if (s.has('projects')) s.add('delete');
+  if (s.has('admin')) ['delete', 'absences', 'import', 'settings', 'users', 'security', 'data'].forEach(x => s.add(x));
+  return [...s];
+}
+const isSuperRole = r => !!r && (r.perms || []).includes('super');
+const isSuperUser = u => !!u && isSuperRole(get('roles', u.roleId));
 function can(p) {
   if (!DB || !DB.users.length) return true;
-  const r = roleOf(me()); if (!r) return false;
-  if (DB.settings.maintenance && !r.perms.includes('admin')) return false;
-  return r.perms.includes(p);
+  const perms = effPerms(roleOf(me()));
+  if (perms.includes('super')) return true;
+  if (DB.settings.maintenance && !READ_PERMS.includes(p) && !perms.includes('settings')) return false;
+  return perms.includes(p);
 }
 function serviceGroups(svId) { return DB.staffGroups.filter(g => g.serviceId === svId && g.active !== false).sort(byOrder); }
 function staffOfService(svId, agencyId) {
@@ -1561,34 +1601,26 @@ function navModel() {
         ({ r: '/planning/' + s.id, ic: s.icon || 'cal', t: s.name, c: s.color, b: bl[s.id] || '' })
       )).concat([{ r: '/gantt', ic: 'gantt', t: 'Diagramme de Gantt' }, { r: '/absences', ic: 'calx', t: 'Absences & congés' }])
     },
-    { h: 'Consulter', items: [{ r: '/ecrans', ic: 'monitor', t: 'Vues écrans' }] },
-    {
-      h: 'Rapports', items: [
-        { r: '/rapports/activite', ic: 'pie', t: 'Activité des équipes' },
-        { r: '/rapports/projets', ic: 'trend', t: 'Projets & délais' },
-        { r: '/rapports/charge', ic: 'bar', t: 'Charge prévisionnelle' }
-      ]
-    }
+    { h: 'Consulter', items: [{ r: '/ecrans', ic: 'monitor', t: 'Vues écrans' }] }
   ];
-  if (can('admin')) secs.push({
-    h: 'Paramétrage', items: [
-      { r: '/admin/agencies', ic: 'building', t: 'Agences' },
-      { r: '/admin/services', ic: 'layers', t: 'Services & plannings' },
-      { r: '/admin/staffGroups', ic: 'users', t: 'Groupes de personnel' },
-      { r: '/admin/staff', ic: 'user', t: 'Personnel & ressources' },
-      { r: '/admin/opGroups', ic: 'clock', t: 'Durées d’opération' },
-      { r: '/admin/projectTypes', ic: 'flag', t: 'Types de projet' },
-      { r: '/admin/daModels', ic: 'coffee', t: 'Modèles de distributeur' },
-      { r: '/admin/statuses', ic: 'checkcircle', t: 'Statuts' },
-      { r: '/admin/absenceTypes', ic: 'calx', t: 'Types d’absence' },
-      { r: '/admin/tags', ic: 'tag', t: 'Étiquettes' },
-      { r: '/admin/users', ic: 'usercircle', t: 'Utilisateurs' },
-      { r: '/admin/roles', ic: 'lock', t: 'Rôles & droits' },
-      { r: '/admin/parametres', ic: 'sliders', t: 'Paramètres' },
-      { r: '/admin/donnees', ic: 'database', t: 'Données & sauvegarde' },
-      { r: '/admin/journal', ic: 'activity', t: 'Journal d’activité' }
+  if (can('reports')) secs.push({
+    h: 'Rapports', items: [
+      { r: '/rapports/activite', ic: 'pie', t: 'Activité des équipes' },
+      { r: '/rapports/projets', ic: 'trend', t: 'Projets & délais' },
+      { r: '/rapports/charge', ic: 'bar', t: 'Charge prévisionnelle' }
     ]
   });
+  const adm = [
+    ['admin', '/admin/agencies', 'building', 'Agences'], ['admin', '/admin/services', 'layers', 'Services & plannings'],
+    ['admin', '/admin/staffGroups', 'users', 'Groupes de personnel'], ['admin', '/admin/staff', 'user', 'Personnel & ressources'],
+    ['admin', '/admin/opGroups', 'clock', 'Durées d’opération'], ['admin', '/admin/projectTypes', 'flag', 'Types de projet'],
+    ['admin', '/admin/daModels', 'coffee', 'Modèles de distributeur'], ['admin', '/admin/statuses', 'checkcircle', 'Statuts'],
+    ['admin', '/admin/absenceTypes', 'calx', 'Types d’absence'], ['admin', '/admin/tags', 'tag', 'Étiquettes'],
+    ['users', '/admin/users', 'usercircle', 'Utilisateurs'], ['users', '/admin/roles', 'lock', 'Rôles & droits'],
+    ['security', '/admin/securite', 'shield', 'Sécurité & accès'], ['settings', '/admin/parametres', 'sliders', 'Paramètres'],
+    ['data', '/admin/donnees', 'database', 'Données & sauvegarde'], ['security', '/admin/journal', 'activity', 'Journal d’activité']
+  ].filter(x => can(x[0]));
+  if (adm.length) secs.push({ h: 'Paramétrage', items: adm.map(x => ({ r: x[1], ic: x[2], t: x[3] })) });
   return secs;
 }
 function renderNav(r) {
@@ -1834,7 +1866,7 @@ Object.assign(ACT, {
   'bnr-x': el => { BANNERS = BANNERS.filter(b => b.id !== el.dataset.id); renderBanner(); },
   'keep-demo': () => mutate('Masquage du bandeau de démonstration', d => { d.meta.demo = false; }, { nolog: true }),
   'clear-demo': async () => {
-    if (!needs('admin')) return;
+    if (!needs('data')) return;
     if (!await superAdmin(`Tous les projets, opérations et absences (${num(DB.projects.length)} projets) seront supprimés. Le paramétrage (agences, services, personnel, modèles) est conservé.`, { ok: 'Vider les projets' })) return;
     mutate('Suppression de tous les projets', d => { d.projects = []; d.ops = []; d.absences = []; d.meta.demo = false; d.meta.gen = uid('g'); d.counters.project = 1; d.counters.op = 1; });
   },
@@ -1892,7 +1924,7 @@ function pageFor(r) {
     case 'ecrans': return pageScreens();
     case 'ecran': return pageKiosk(s[1] || 'rotation', r.q);
     case 'alertes': return pageAlerts(r.q);
-    case 'rapports': return pageReports(s[1] || 'activite', r.q);
+    case 'rapports': return can('reports') ? pageReports(s[1] || 'activite', r.q) : deniedBox();
     case 'admin': return pageAdmin(s[1] || 'parametres', r.q);
   }
   return emptyBox('Page introuvable', 'Cette adresse ne correspond à aucune vue.');
@@ -2779,7 +2811,22 @@ function repCharge() {
     La file d’attente regroupe les étapes sans date — la charge qui n’est pas encore posée dans le planning.</div></div>`;
 }
 /* ------------------------------ paramétrage ------------------------------ */
-const PERMS = [['projects', 'Créer et modifier les projets'], ['planning', 'Planifier et déplacer les opérations'], ['admin', 'Accéder au paramétrage']];
+const PERMS = [
+  ['projects', 'Créer et modifier les projets', 'Projets'],
+  ['delete', 'Supprimer des projets et des étapes', 'Suppression'],
+  ['planning', 'Planifier, déplacer les opérations, préparation atelier', 'Planification'],
+  ['absences', 'Saisir les absences et congés', 'Absences'],
+  ['reports', 'Consulter les rapports', 'Rapports'],
+  ['export', 'Exporter (Excel, CSV, PDF, agenda, images)', 'Export'],
+  ['import', 'Importer des fichiers', 'Import'],
+  ['admin', 'Paramétrage : agences, services, personnel, listes', 'Paramétrage'],
+  ['settings', 'Paramètres généraux et mode maintenance', 'Paramètres'],
+  ['users', 'Utilisateurs, rôles, accès et déconnexions', 'Utilisateurs'],
+  ['security', 'Sécurité : journal des connexions, adresses bloquées, sauvegardes du serveur', 'Sécurité'],
+  ['data', 'Données : restauration, vidage, remise à zéro', 'Données'],
+  ['super', 'Super administrateur : tous les droits, sans restriction', 'Super administrateur']
+];
+const permShort = k => (PERMS.find(p => p[0] === k) || [])[2] || k;
 const KINDS = [['person', 'Personne'], ['team', 'Équipe'], ['vehicle', 'Véhicule / navette'], ['contractor', 'Prestataire']];
 const SCHEMAS = {
   agencies: {
@@ -2911,10 +2958,10 @@ const SCHEMAS = {
   },
   roles: {
     label: 'Rôles & droits', one: 'un rôle', icon: 'lock',
-    desc: 'Les droits pilotent l’interface. La sécurité réelle se règle au niveau du serveur qui héberge l’application.',
+    desc: 'Chaque rôle regroupe des droits. « Super administrateur » a tous les droits : seul un super administrateur peut modifier ce rôle ou l’attribuer.',
     fields: [
       { k: 'name', l: 'Nom', t: 'text', req: 1, list: 1 },
-      { k: 'perms', l: 'Droits', t: 'multi', opts: PERMS, list: 1 }
+      { k: 'perms', l: 'Droits', t: 'multi', opts: PERMS, list: 1, help: 'Le serveur refuse toute modification qui dépasse les droits de la personne connectée.' }
     ]
   }
 };
@@ -2963,7 +3010,7 @@ function fieldHTML(f, v) {
     case 'date': return `<input class="in" type="date" name="${f.k}" id="${id}" value="${esc(v || '')}">`;
     case 'select': return `<select class="in" name="${f.k}" id="${id}">${f.opts.map(o => `<option value="${esc(o[0])}"${o[0] === v ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`;
     case 'icon': return `<select class="in" name="${f.k}" id="${id}">${Object.keys(ICONS).map(k => `<option value="${k}"${k === v ? ' selected' : ''}>${k}</option>`).join('')}</select>`;
-    case 'ref': return `<select class="in" name="${f.k}" id="${id}">${selOpts(DB[f.ref].filter(x => x.active !== false || x.id === v).sort(f.ref === 'staff' || f.ref === 'users' ? byName : byOrder), v, f.req ? '' : '—')}</select>`;
+    case 'ref': return `<select class="in" name="${f.k}" id="${id}">${selOpts(DB[f.ref].filter(x => (x.active !== false || x.id === v) && (!f.filter || f.filter(x) || x.id === v)).sort(f.ref === 'staff' || f.ref === 'users' ? byName : byOrder), v, f.req ? '' : '—')}</select>`;
     case 'refs': return `<div class="chips">${DB[f.ref].filter(x => x.active !== false || (v || []).includes(x.id)).sort(byOrder).map(x =>
       `<label class="chip${(v || []).includes(x.id) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="${f.k}" value="${esc(x.id)}"${(v || []).includes(x.id) ? ' checked' : ''}>${esc(label(x))}</label>`).join('')}</div>`;
     case 'multi': return `<div class="chips">${f.opts.map(o =>
@@ -2971,10 +3018,22 @@ function fieldHTML(f, v) {
     default: return `<input class="in" name="${f.k}" id="${id}" value="${esc(v ?? '')}"${f.req ? ' required' : ''}>`;
   }
 }
+function permsCell(r) {
+  if (isSuperRole(r)) return `<span class="pill" style="${cvar('#7c5cc4', .16, .4)}">${ic('shield', 'sm')} Tous les droits</span>`;
+  const p = effPerms(r);
+  return p.length ? p.map(k => `<span class="chip">${esc(permShort(k))}</span>`).join(' ') : '<span class="mut">aucun</span>';
+}
 function crudForm(coll, id) {
   const S = SCHEMAS[coll], it = id ? get(coll, id) : null;
-  const d = it || Object.fromEntries(S.fields.map(f => [f.k, f.def !== undefined ? f.def : (f.t === 'refs' || f.t === 'multi' ? [] : '')]));
-  const body = `<div class="fgrid">${S.fields.map(f => f.t === 'bool'
+  if (!guardSuper(coll, it)) return;
+  const d = it ? Object.assign({}, it, coll === 'roles' ? { perms: isSuperRole(it) ? ['super'] : effPerms(it) } : {})
+    : Object.fromEntries(S.fields.map(f => [f.k, f.def !== undefined ? f.def : (f.t === 'refs' || f.t === 'multi' ? [] : '')]));
+  const fields = S.fields.map(f => {          // sans le droit super : impossible de créer ou d'attribuer un super administrateur
+    if (coll === 'roles' && f.k === 'perms' && !can('super')) return Object.assign({}, f, { opts: f.opts.filter(o => o[0] !== 'super') });
+    if (coll === 'users' && f.k === 'roleId' && !can('super')) return Object.assign({}, f, { filter: r => !isSuperRole(r) });
+    return f;
+  });
+  const body = `<div class="fgrid">${fields.map(f => f.t === 'bool'
     ? `<div class="fld"><label>&nbsp;</label>${fieldHTML(f, d[f.k])}${f.help ? `<span class="help">${esc(f.help)}</span>` : ''}</div>`
     : `<div class="fld"><label>${esc(f.l)}${f.req ? ' *' : ''}</label>${fieldHTML(f, d[f.k])}${f.help ? `<span class="help">${esc(f.help)}</span>` : ''}</div>`).join('')}</div>`;
   modal({
@@ -2987,6 +3046,7 @@ function crudForm(coll, id) {
         for (const f of S.fields) { if (f.t === 'refs' || f.t === 'multi') v[f.k] = v[f.k] || []; if (f.ro) delete v[f.k]; }
         const req = S.fields.find(f => f.req && !String(v[f.k] ?? '').trim());
         if (req) return toast('Le champ « ' + req.l + ' » est obligatoire.', 'danger');
+        if (coll === 'roles') { v.v2 = true; if (v.perms.includes('super')) v.perms = ['super']; }
         mutate((it ? 'Modification · ' : 'Ajout · ') + S.label, db => {
           if (it) Object.assign(db[coll].find(x => x.id === it.id), v);
           else db[coll].push(Object.assign({ id: uid(coll.slice(0, 3)) }, v));
@@ -2996,7 +3056,16 @@ function crudForm(coll, id) {
     }
   });
 }
+const ADMIN_PERM = { users: 'users', roles: 'users', parametres: 'settings', donnees: 'data', journal: 'security', securite: 'security' };
+const deniedBox = () => emptyBox('Accès réservé', 'Votre rôle ne donne pas accès à cette page. Demandez à un administrateur.');
+const collPerm = c => c === 'users' || c === 'roles' ? 'users' : 'admin';
+function guardSuper(c, x) {                    // fiches protégées : rôle super administrateur et ses titulaires
+  if (!x || can('super') || !((c === 'roles' && isSuperRole(x)) || (c === 'users' && isSuperUser(x)))) return true;
+  toast('Réservé au super administrateur.', 'warn'); return false;
+}
 function pageAdmin(kind, q) {
+  if (!can(ADMIN_PERM[kind] || 'admin')) return deniedBox();
+  if (kind === 'securite') return pageSecurity();
   if (kind === 'parametres') return pageSettings();
   if (kind === 'donnees') return pageData();
   if (kind === 'journal') return pageJournal(q);
@@ -3011,8 +3080,8 @@ function pageAdmin(kind, q) {
   const accCell = x => !accs ? '' : `<td>${!Auth.acc ? '<span class="mut">…</span>' : Auth.acc[x.id]
     ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>`
     : '<span class="mut">à créer</span>'}</td>`;
-  const accBtn = x => accs && Auth.acc && Auth.acc[x.id] && !(Auth.user && Auth.user.userId === x.id)
-    ? `<button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>` : '';
+  const accBtn = x => accs && Auth.acc && Auth.acc[x.id] && !(Auth.user && Auth.user.userId === x.id) && (can('super') || !isSuperUser(x))
+    ? `<button class="ibtn" data-act="kick" data-id="${esc(x.id)}" title="Forcer la déconnexion">${ic('logout')}</button><button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>` : '';
   let extra = '';
   if (kind === 'users') {
     const dorm = DB.users.filter(u => u.active !== false && u.lastLogin && D.diff(u.lastLogin, D.today()) > (DB.settings.dormantDays || 180));
@@ -3025,9 +3094,9 @@ function pageAdmin(kind, q) {
   ${extra}
   <div class="toolbar"><input class="in srchin" id="adq_${kind}" data-on="adq" data-k="${kind}" placeholder="Filtrer" value="${esc(qq)}">
     <span class="mut">${rows.length} élément${rows.length > 1 ? 's' : ''}</span></div>
-  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}${accs ? '<th>Identifiant</th>' : ''}<th style="width:${accs ? 145 : 110}px"></th></tr></thead><tbody>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}${accs ? '<th>Identifiant</th>' : ''}<th style="width:${accs ? 180 : 110}px"></th></tr></thead><tbody>
     ${rows.map(x => `<tr class="clic" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}">
-      ${cols.map(f => `<td>${cellVal(f, x)}</td>`).join('')}${accCell(x)}
+      ${cols.map(f => `<td>${kind === 'roles' && f.k === 'perms' ? permsCell(x) : cellVal(f, x)}</td>`).join('')}${accCell(x)}
       <td class="nowrap">${accBtn(x)}<button class="ibtn" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}" title="Modifier">${ic('edit')}</button>
         <button class="ibtn" data-act="crud-dup" data-c="${kind}" data-id="${esc(x.id)}" title="Dupliquer">${ic('copy')}</button>
         <button class="ibtn" data-act="crud-del" data-c="${kind}" data-id="${esc(x.id)}" title="Supprimer">${ic('trash')}</button></td></tr>`).join('')
@@ -3142,7 +3211,7 @@ Object.assign(ACT, {
     }, { ref: 'p' + p.id });
   },
   'del-project': async el => {
-    if (!needs('projects')) return;
+    if (!needs('delete')) return;
     const p = P(el.dataset.id);
     if (!await ask(`Supprimer définitivement le projet <b>${esc(p.client)}</b> (#${p.id}) et ses ${projOps(p.id).length} étape(s) ?`, { ok: 'Supprimer', danger: true })) return;
     closeModals();
@@ -3164,7 +3233,7 @@ Object.assign(ACT, {
     closeModals(); openProject(pid);
   },
   'del-step': async el => {
-    const o = O(el.dataset.id); if (!o || !needs('projects')) return;
+    const o = O(el.dataset.id); if (!o || !needs('delete')) return;
     if (!await ask('Supprimer cette étape du projet ?', { ok: 'Supprimer', danger: true })) return;
     const pid = o.projectId;
     mutate('Suppression d’une étape', db => { db.ops = db.ops.filter(x => x.id !== o.id); }, { ref: 'p' + pid, undo: true });
@@ -3192,10 +3261,10 @@ Object.assign(ACT, {
       <div class="pal-i" data-act="ics" data-id="${s.id}">${ic('download')}<span>Exporter l’agenda (.ics)</span></div>
       <div class="pal-i" data-act="crud-edit" data-c="staff" data-id="${s.id}">${ic('edit')}<span>Modifier la fiche</span></div>`);
   },
-  'new-absence': el => { if (needs('planning')) { closeModals(); closePop(); absenceForm(null, el && el.dataset.staff ? { staffId: el.dataset.staff, start: el.dataset.date || D.today(), end: el.dataset.date || D.today() } : null); } },
-  'edit-abs': el => { if (needs('planning')) absenceForm(el.dataset.id); },
+  'new-absence': el => { if (needs('absences')) { closeModals(); closePop(); absenceForm(null, el && el.dataset.staff ? { staffId: el.dataset.staff, start: el.dataset.date || D.today(), end: el.dataset.date || D.today() } : null); } },
+  'edit-abs': el => { if (needs('absences')) absenceForm(el.dataset.id); },
   'cal-cell': el => {
-    if (!needs('planning')) return;
+    if (!needs('absences')) return;
     if (el.dataset.abs) absenceForm(el.dataset.abs);
     else absenceForm(null, { staffId: el.dataset.staff, start: el.dataset.date, end: el.dataset.date });
   },
@@ -3242,16 +3311,19 @@ Object.assign(ACT, {
     const s = get('staff', el.dataset.id); closePop();
     download('agenda-' + norm(label(s)).replace(/\s+/g, '-') + '.ics', icsFor(s.id), 'text/calendar;charset=utf-8');
   },
-  'crud-add': el => { if (needs('admin')) crudForm(el.dataset.c); },
-  'crud-edit': (el, e) => { if (e) e.stopPropagation(); if (needs('admin')) { closePop(); crudForm(el.dataset.c, el.dataset.id); } },
+  'crud-add': el => { if (needs(collPerm(el.dataset.c))) crudForm(el.dataset.c); },
+  'crud-edit': (el, e) => { if (e) e.stopPropagation(); if (needs(collPerm(el.dataset.c))) { closePop(); crudForm(el.dataset.c, el.dataset.id); } },
   'crud-dup': (el, e) => {
-    if (e) e.stopPropagation(); if (!needs('admin')) return;
+    if (e) e.stopPropagation(); if (!needs(collPerm(el.dataset.c))) return;
     const c = el.dataset.c, x = get(c, el.dataset.id);
+    if (!guardSuper(c, x)) return;
     mutate('Duplication · ' + SCHEMAS[c].label, db => db[c].push(Object.assign(JSON.parse(JSON.stringify(x)), { id: uid(c.slice(0, 3)), name: (x.name || '') + ' (copie)' })));
   },
   'crud-del': async (el, e) => {
-    if (e) e.stopPropagation(); if (!needs('admin')) return;
+    if (e) e.stopPropagation(); if (!needs(collPerm(el.dataset.c))) return;
     const c = el.dataset.c, x = get(c, el.dataset.id), n = usage(c, x.id);
+    if (!guardSuper(c, x)) return;
+    if (c === 'users' && me() && x.id === me().id) return toast('Vous ne pouvez pas supprimer votre propre fiche.', 'warn');
     if (c === 'statuses' && n) return toast('Statut utilisé par ' + n + ' opération(s) : réaffectez-les d’abord.', 'warn');
     const msg = n ? `<b>${esc(label(x))}</b> est utilisé par ${n} élément(s). La suppression videra ces références.<br><br>Mieux vaut le désactiver pour conserver l’historique.`
       : `Supprimer <b>${esc(label(x))}</b> ?`;
@@ -3271,8 +3343,17 @@ Object.assign(ACT, {
     })));
     download(c + '.csv', CSV.make(rows), 'text/csv;charset=utf-8');
   },
+  kick: async (el, e) => {
+    if (e) e.stopPropagation(); if (!needs('users')) return;
+    const u = get('users', el.dataset.id); if (!u || !guardSuper('users', u)) return;
+    if (!await ask(`Déconnecter <b>${esc(label(u))}</b> de tous ses postes ? La personne devra ressaisir son mot de passe.`, { ok: 'Déconnecter' })) return;
+    const r = await Auth.api('kick', { userId: u.id }).catch(() => null);
+    toast(r && r.ok ? label(u) + ' a été déconnecté(e)' : (r && r.body && r.body.error) || 'Serveur injoignable.', r && r.ok ? 'ok' : 'danger');
+    if (r && r.ok) { SEC.data = null; if (route().path === '/admin/securite') loadSecurity(); }
+  },
   'reset-access': async (el, e) => {
-    if (e) e.stopPropagation(); if (!needs('admin')) return;
+    if (e) e.stopPropagation(); if (!needs('users')) return;
+    if (!guardSuper('users', get('users', el.dataset.id))) return;
     const u = get('users', el.dataset.id); if (!u) return;
     if (!await ask(`Réinitialiser l’accès de <b>${esc(label(u))}</b> ?<br><br>Son identifiant et son mot de passe seront supprimés et ses sessions ouvertes fermées. La personne recréera son accès à sa prochaine connexion (« Créer mon accès »).`, { ok: 'Réinitialiser', danger: true })) return;
     const r = await Auth.api('reset', { userId: u.id }).catch(() => null);
@@ -3280,13 +3361,14 @@ Object.assign(ACT, {
     else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
   },
   'disable-dormant': async () => {
+    if (!needs('users')) return;
     const lim = DB.settings.dormantDays || 180;
     const l = DB.users.filter(u => u.active !== false && u.lastLogin && D.diff(u.lastLogin, D.today()) > lim);
     if (!await ask(`Désactiver ${l.length} compte(s) sans connexion depuis plus de ${lim} jours ? Les projets qui leur sont rattachés ne changent pas.`, { ok: 'Désactiver' })) return;
-    mutate('Désactivation des comptes dormants', db => l.forEach(u => { const x = db.users.find(y => y.id === u.id); if (x) x.active = false; }), { undo: true });
+    mutate('Désactivation des comptes dormants', db => l.filter(u => can('super') || !isSuperUser(u)).forEach(u => { const x = db.users.find(y => y.id === u.id); if (x) x.active = false; }), { undo: true });
   },
   'save-settings': () => {
-    if (!needs('admin')) return;
+    if (!needs('settings')) return;
     const v = formVals($('#settings'));
     mutate('Modification des paramètres', db => {
       Object.assign(db.settings, v, {
@@ -3301,7 +3383,7 @@ Object.assign(ACT, {
   },
   'export-json': () => download(`sauvegarde-planning-${D.today()}.json`, JSON.stringify(DB, null, 1), 'application/json'),
   'import-json': async () => {
-    if (!needs('admin')) return;
+    if (!needs('data')) return;
     const f = await pickFile('.json,application/json'); if (!f) return;
     let data; try { data = JSON.parse(await readText(f)); } catch (e) { return toast('Fichier illisible.', 'danger'); }
     return restoreBackup(data, f.name);
@@ -3319,14 +3401,14 @@ Object.assign(ACT, {
     }
     download(`projets-${arch ? 'archives' : 'en-cours'}-${D.today()}.csv`, CSV.make(rows), 'text/csv;charset=utf-8');
   },
-  'import-csv': () => { if (needs('admin')) importCSV(); },
+  'import-csv': () => { if (needs('import')) importCSV(); },
   'reset-all': async () => {
-    if (!needs('admin')) return;
+    if (!needs('data')) return;
     if (!await superAdmin('Toutes les données (paramétrage compris) seront remplacées par le jeu de démonstration. Exportez une sauvegarde avant si besoin.', { ok: 'Tout réinitialiser' })) return;
     mutate('Réinitialisation complète', db => { const d = migrate(seed()); d.meta.gen = uid('g'); for (const k of Object.keys(db)) delete db[k]; Object.assign(db, d); });
   },
   'sa-change': async () => {
-    if (!needs('admin')) return;
+    if (!needs('data') && !can('super')) return;
     if (Sync.mode !== 'server') return toast('Le mot de passe super administrateur ne se change qu’en base partagée (serveur).', 'warn');
     if (await superAdmin('Saisissez le mot de passe actuel puis le nouveau.', { title: 'Changer le mot de passe super administrateur', change: true, ok: 'Enregistrer' })) toast('Mot de passe super administrateur modifié', 'ok');
   },
@@ -3351,8 +3433,8 @@ const ON = {
   rep: el => { UI.rep[el.dataset.k] = el.value; saveUI(); scheduleRender(); },
   adq: el => { UI.adq = UI.adq || {}; UI.adq[el.dataset.k] = el.value; scheduleRender(); },
   logq: el => { UI.logq = el.value; scheduleRender(); },
-  mat: el => matSave(el.dataset.id, el.value),
-  scroll: el => scrollSave(el.dataset.id, el.value)
+  mat: el => { if (can('planning')) matSave(el.dataset.id, el.value); },
+  scroll: el => { if (can('settings') || can('admin')) scrollSave(el.dataset.id, el.value); }
 };
 
 /* ---------- délégation d'événements ---------- */
@@ -4068,12 +4150,13 @@ const FMT = {
   svg: ['image', 'Image SVG', 'vectorielle, nette à toutes les tailles']
 };
 function xpBtn(key, o = {}) {
+  if (!can('export')) return '';
   if (o.icon) return `<button class="ibtn no-print" data-act="xp" data-x="${esc(key)}" title="${esc(o.title || 'Exporter ce graphique')}" style="margin-left:${o.ml === false ? '0' : 'auto'}">${ic('download', 'sm')}</button>`;
   return `<button class="btn${o.sm ? ' sm' : ''}${o.pri ? ' pri' : ''}" data-act="xp" data-x="${esc(key)}">${ic('download', o.sm ? 'sm' : '')} ${esc(o.label || 'Exporter')}</button>`;
 }
 function impBtn(target, o = {}) {
   const perm = (IMPORTS[target] || {}).perm || 'admin';
-  return can(perm) ? `<button class="btn${o.sm ? ' sm' : ''}" data-act="imp" data-t="${esc(target)}">${ic('upload', o.sm ? 'sm' : '')} ${esc(o.label || 'Importer')}</button>` : '';
+  return can('import') && can(perm) ? `<button class="btn${o.sm ? ' sm' : ''}" data-act="imp" data-t="${esc(target)}">${ic('upload', o.sm ? 'sm' : '')} ${esc(o.label || 'Importer')}</button>` : '';
 }
 function xpGet(key) {
   const i = key.indexOf(':'), f = XP[i < 0 ? key : key.slice(0, i)];
@@ -4111,9 +4194,9 @@ const parseBool = v => { const s = norm(v); return /^(oui|o|yes|y|vrai|true|1|x|
 const parseNum = v => { const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : ''; };
 const headIdx = (head, ...names) => { for (const n of names) { const i = head.findIndex(h => h === n); if (i >= 0) return i; } for (const n of names) { const i = head.findIndex(h => h.includes(n)); if (i >= 0) return i; } return -1; };
 const IMPORTS = {
-  projects: { label: 'Projets', perm: 'admin' },
-  absences: { label: 'Absences & congés', perm: 'planning' },
-  ...Object.fromEntries(Object.keys(SCHEMAS).filter(k => k !== 'roles').map(k => [k, { label: SCHEMAS[k].label, perm: 'admin' }]))
+  projects: { label: 'Projets', perm: 'projects' },
+  absences: { label: 'Absences & congés', perm: 'absences' },
+  ...Object.fromEntries(Object.keys(SCHEMAS).filter(k => k !== 'roles').map(k => [k, { label: SCHEMAS[k].label, perm: collPerm(k) }]))
 };
 const PROJ_COLS = {
   id: ['n°', 'numero', 'num', '#', 'id'], client: ['client', 'nom'], type: ['type', 'mouvement'], da: ['modele', 'distributeur', 'machine'],
@@ -4155,10 +4238,10 @@ async function importFile(pref) {
   const f = await pickFile('.xlsx,.xlsm,.csv,.tsv,.txt,.json,application/json,text/csv'); if (!f) return;
   let parsed;
   try { parsed = await readTabular(f); } catch (e) { return toast(e.message || 'Fichier illisible.', 'danger'); }
-  if (parsed.backup) { if (!needs('admin')) return; return restoreBackup(parsed.backup, f.name); }
+  if (parsed.backup) { if (!needs('data')) return; return restoreBackup(parsed.backup, f.name); }
   const sheets = parsed.sheets.filter(s => s.rows.length >= 2);
   if (!sheets.length) return toast('Aucune ligne exploitable : il faut une ligne d’en-têtes puis au moins une ligne de données.', 'danger');
-  const targets = Object.entries(IMPORTS).filter(([, t]) => can(t.perm));
+  const targets = Object.entries(IMPORTS).filter(([, t]) => can('import') && can(t.perm));
   if (!targets.length) return toast('Votre rôle ne permet pas d’importer.', 'warn');
   let si = Math.max(0, sheets.findIndex(s => guessTarget(s.name, s.rows[0].map(norm), null) === pref));
   const body = () => {
@@ -4203,7 +4286,7 @@ function importSummary(title, lines, run) {
   $('[data-ok]', m.el).onclick = () => { run(); m.close(); };
 }
 function importColl(kind, rows, fileName) {
-  if (!needs('admin')) return;
+  if (!needs('import') || !needs(collPerm(kind))) return;
   const S = SCHEMAS[kind], head = rows[0].map(h => norm(h)), C = collCols(kind, head);
   const findRef = (coll, s) => { const n = norm(s); return (DB[coll].find(x => norm(label(x)) === n || norm(x.id) === n) || {}).id; };
   let warn = 0;
@@ -4256,7 +4339,7 @@ function importColl(kind, rows, fileName) {
   });
 }
 function importAbsences(rows, fileName) {
-  if (!needs('planning')) return;
+  if (!needs('import') || !needs('absences')) return;
   const head = rows[0].map(h => norm(h)), C = mapCols(head, ABS_COLS);
   const cell = (r, k) => C[k] >= 0 ? String(r[C[k]] ?? '').trim() : '';
   const staffBy = s => DB.staff.find(x => norm(label(x)) === norm(s) || norm(x.lastName + ' ' + x.firstName) === norm(s));
@@ -4283,7 +4366,7 @@ function importAbsences(rows, fileName) {
   });
 }
 function importProjects(rows, fileName) {
-  if (!needs('admin')) return;
+  if (!needs('import') || !needs('projects')) return;
   const head = rows[0].map(h => norm(h)), C = mapCols(head, PROJ_COLS);
   const cell = (r, k) => C[k] >= 0 ? String(r[C[k]] ?? '').trim() : '';
   const data = rows.slice(1).map(r => ({
@@ -4330,7 +4413,7 @@ function importProjects(rows, fileName) {
           typeId: ref('projectTypes', d.type, n => ({ id: uid('typ'), name: n, color: '#6d7783', services: [], active: true })),
           agencyId: (db.agencies.find(a => norm(a.name) === norm(d.ag)) || {}).id || '',
           daModelId: ref('daModels', d.da, n => ({ id: daId(n), name: n, category: '', order: 99, active: true })),
-          commercialId: ref('users', d.com, n => ({ id: uid('usr'), firstName: n.split(' ')[0] || n, lastName: n.split(' ').slice(1).join(' '), email: '', roleId: 'r_com', active: true, lastLogin: '' })),
+          commercialId: !can('users') ? ((db.users.find(x => norm(label(x)) === norm(d.com)) || {}).id || '') : ref('users', d.com, n => ({ id: uid('usr'), firstName: n.split(' ')[0] || n, lastName: n.split(' ').slice(1).join(' '), email: '', roleId: 'r_com', active: true, lastLogin: '' })),
           city: d.city, address: d.address, requested: d.req, contactName: d.contact, phone: d.phone, notes: d.notes,
           tags: [...new Set([...tags, ...(C.tags >= 0 ? tagIds(d.tags) : [])])]
         };
@@ -4671,6 +4754,7 @@ function chargeData() {
 Object.assign(ACT, {
   xp: (el, e) => {
     if (e) e.stopPropagation();
+    if (!needs('export')) return;
     let x; try { x = xpGet(el.dataset.x); } catch (err) { console.error(err); }
     if (!x) return toast('Rien à exporter ici.', 'warn');
     const t = x.title || (x.ds && x.ds.title) || '', n = x.ds ? num(x.ds.rows.length) + ' ligne(s)' : x.sheets ? x.sheets.length + ' feuilles' : '';
@@ -4684,7 +4768,7 @@ Object.assign(ACT, {
     try { const x = xpGet(el.dataset.x); if (x) await exportAs(el.dataset.f, x); }
     catch (err) { console.error(err); toast('Export impossible : ' + err.message, 'danger'); }
   },
-  imp: el => { closePop(); importFile(el.dataset.t || ''); },
+  imp: el => { closePop(); if (needs('import')) importFile(el.dataset.t || ''); },
   'g-mode': el => { UI.gantt.mode = el.dataset.v; saveUI(); render(); },
   'g-shift': el => { UI.gantt.from = D.add(D.monday(UI.gantt.from || D.today()), +el.dataset.d); saveUI(); render(); },
   'g-today': () => { UI.gantt.from = D.add(D.monday(D.today()), -7); saveUI(); render(); }
@@ -4707,6 +4791,131 @@ XP.hb = key => {
 };
 
 /* =====================================================================
+   9. SÉCURITÉ & ACCÈS (droit « security » ; certaines actions exigent « users » ou « super »)
+   ===================================================================== */
+const SEC = { data: null, busy: false };
+const AUTH_EV = {
+  login: ['Connexion', 'ok'], fail: ['Échec de connexion', 'danger'], blocked: ['Adresse bloquée', 'danger'], disabled: ['Compte désactivé refusé', 'warn'],
+  logout: ['Déconnexion', ''], signup: ['Création d’accès', 'ok'], password: ['Mot de passe changé', ''], reset: ['Accès réinitialisé', 'warn'],
+  kick: ['Déconnexion forcée', 'warn'], 'kick-all': ['Tout le monde déconnecté', 'warn'], 'sa-ok': ['Mot de passe super admin saisi', ''],
+  'sa-fail': ['Mot de passe super admin erroné', 'danger'], 'sa-change': ['Mot de passe super admin changé', 'warn'], 'sec-set': ['Réglages de sécurité modifiés', 'warn'],
+  unblock: ['Adresse débloquée', ''], 'backup-now': ['Sauvegarde manuelle', 'ok'], 'backup-get': ['Sauvegarde téléchargée', '']
+};
+async function loadSecurity() {
+  if (SEC.busy || Sync.mode !== 'server') return; SEC.busy = true;
+  const b = r => r && r.ok ? r.body : null;
+  const [acc, log, fails, bk, cfg] = await Promise.all(['accounts', 'auth-log', 'fails', 'backups', 'sec-get'].map(a => Auth.api(a).catch(() => null)));
+  SEC.data = { acc: (b(acc) || {}).accounts || [], log: (b(log) || {}).events || [], fails: b(fails) || { ips: [] }, backups: b(bk) || { files: [] }, cfg: b(cfg) || {} };
+  SEC.busy = false;
+  if (route().path === '/admin/securite') render();
+}
+async function fetchBackup(name) {
+  const r = await fetch('api.php?a=backup-get&f=' + encodeURIComponent(name), { cache: 'no-store' });
+  if (!r.ok) throw new Error('sauvegarde introuvable');
+  return r.text();
+}
+function pageSecurity() {
+  const supers = DB.users.filter(u => isSuperUser(u)).sort(byName), iAmSuper = can('super');
+  const sec = (t, icn, inner, acts = '') => `<div class="card" style="margin-bottom:14px"><div class="card-h">${ic(icn)}<span>${t}</span><span style="margin-left:auto;display:flex;gap:6px">${acts}</span></div>${inner}</div>`;
+  const superCard = sec('Super administrateurs', 'shield', `<div class="card-b">
+      <p class="mut" style="margin:0 0 10px">Le super administrateur a tous les droits, sans restriction : lui seul peut nommer ou retirer un super administrateur, modifier ce rôle,
+        changer les réglages de sécurité et vider ou réinitialiser la base sans le mot de passe partagé (il confirme en tapant « CONFIRMER »).</p>
+      <div class="chips" style="margin-bottom:12px">${supers.map(u => `<span class="pill" style="${cvar('#7c5cc4', .16, .4)}">${ic('shield', 'sm')} ${esc(label(u))}</span>`).join('') || '<span class="mut">Aucun super administrateur pour l’instant.</span>'}</div>
+      <div class="row wrap">${iAmSuper ? `<span class="pill" style="${cvar('#3c9f5f', .16, .4)}">${ic('check', 'sm')} Vous êtes super administrateur</span>
+          ${Sync.mode === 'server' ? `<button class="btn" data-act="sa-change">${ic('lock')} Mot de passe partagé</button><button class="btn dgr" data-act="kick-all">${ic('logout')} Déconnecter tout le monde</button>` : ''}`
+        : can('users') ? `<button class="btn pri" data-act="become-super">${ic('shield')} Devenir super administrateur</button>
+          <span class="mut" style="font-size:12.5px">Le mot de passe super administrateur est demandé.</span>` : ''}</div></div>`);
+  const head = phead('Sécurité & accès', 'Qui peut entrer, qui est entré, et de quoi repartir en cas de problème');
+  if (Sync.mode !== 'server') return head + superCard + `<div class="bnr info">${ic('info')}<span>Le journal des connexions, les sessions, les adresses bloquées et les sauvegardes du serveur
+    n’existent qu’en base partagée (api.php sur un serveur). En base locale, les données ne quittent pas ce navigateur.</span></div>`;
+  if (!SEC.data || lastPath !== route().path) loadSecurity();
+  const D0 = SEC.data;
+  if (!D0) return head + superCard + `<div class="card"><div class="card-b mut">Chargement…</div></div>`;
+  const users = can('users');
+  const accRows = D0.acc.map(a => ({ a, u: get('users', a.userId) })).sort((x, y) => String(y.a.lastLogin || '').localeCompare(String(x.a.lastLogin || '')));
+  const accHTML = `<div class="tbl-wrap" style="box-shadow:none;border:0;border-radius:0"><table class="tbl"><thead><tr><th>Personne</th><th>Identifiant</th><th>Rôle</th><th>Accès créé</th><th>Dernière connexion</th><th style="width:90px"></th></tr></thead><tbody>
+    ${accRows.map(({ a, u }) => `<tr><td><b>${esc(u ? label(u) : '(fiche supprimée)')}</b>${u && u.active === false ? ' <span class="mut">· désactivé</span>' : ''}</td><td><span class="chip">${esc(a.login)}</span></td>
+      <td>${u ? (isSuperUser(u) ? `<span class="pill" style="${cvar('#7c5cc4', .16, .4)}">${esc(label(roleOf(u)))}</span>` : esc(label(roleOf(u)))) : ''}</td>
+      <td class="nowrap mut">${esc(D.dt(a.created))}</td><td class="nowrap">${esc(D.dt(a.lastLogin) || '—')}</td>
+      <td class="nowrap">${users && u && !(Auth.user && Auth.user.userId === u.id) && (iAmSuper || !isSuperUser(u)) ? `<button class="ibtn" data-act="kick" data-id="${esc(u.id)}" title="Forcer la déconnexion">${ic('logout')}</button>
+        <button class="ibtn" data-act="reset-access" data-id="${esc(u.id)}" title="Réinitialiser l’accès">${ic('lock')}</button>` : ''}</td></tr>`).join('')
+    || `<tr><td colspan="6">${emptyBox('Aucun accès créé', '')}</td></tr>`}</tbody></table></div>`;
+  const logHTML = `<div class="tbl-wrap" style="max-height:420px;box-shadow:none;border:0;border-radius:0"><table class="tbl"><thead><tr><th style="width:140px">Date</th><th>Événement</th><th>Identifiant</th><th>Adresse IP</th><th>Détail</th></tr></thead><tbody>
+    ${D0.log.slice(0, 200).map(e => { const k = AUTH_EV[e.ev] || [e.ev, '']; const col = { ok: '#3c9f5f', danger: '#d1444a', warn: '#b4700c' }[k[1]];
+      return `<tr><td class="nowrap mut">${esc(D.dt(e.t))}</td><td>${col ? `<span class="pill" style="${cvar(col, .14, .35)}">${esc(k[0])}</span>` : esc(k[0])}</td>
+        <td>${esc(e.login || '—')}</td><td class="n">${esc(e.ip)}</td><td class="mut">${esc(e.info || '')}</td></tr>`; }).join('')
+    || `<tr><td colspan="5">${emptyBox('Journal vide', 'Les connexions apparaîtront ici.')}</td></tr>`}</tbody></table></div>`;
+  const ips = D0.fails.ips || [];
+  const ipHTML = `<div class="card-b">${ips.length ? `<table class="tbl"><thead><tr><th>Adresse IP</th><th>Échecs</th><th>Dernier essai</th><th>État</th><th></th></tr></thead><tbody>
+    ${ips.map(x => `<tr><td class="n">${esc(x.ip)}</td><td>${x.n} / ${D0.fails.max}</td><td>${esc(D.dt(x.last))}</td>
+      <td>${x.blocked ? `<span class="pill" style="${cvar('#d1444a', .14, .35)}">bloquée jusqu’à ${esc(D.dt(x.until).slice(-5))}</span>` : '<span class="mut">surveillée</span>'}</td>
+      <td><button class="btn sm" data-act="unblock" data-ip="${esc(x.ip)}">Débloquer</button></td></tr>`).join('')}</tbody></table>`
+    : `<p class="mut" style="margin:0">Aucune tentative ratée récente. Après ${D0.fails.max || 8} échecs, une adresse est bloquée ${Math.round((D0.fails.window || 900) / 60)} min.</p>`}</div>`;
+  const files = D0.backups.files || [];
+  const bkHTML = `<div class="card-b"><p class="mut" style="margin:0 0 10px">Le serveur garde une copie au plus toutes les ${Math.round((D0.backups.every || 900) / 60)} min, et les ${D0.backups.keep || 150} dernières.</p>
+    ${files.length ? `<div class="tbl-wrap" style="max-height:330px"><table class="tbl"><thead><tr><th>Date</th><th>Version</th><th>Taille</th><th></th></tr></thead><tbody>
+      ${files.map(f => `<tr><td>${esc(D.dt(f.date))}${/manuelle/.test(f.name) ? ' <span class="chip">manuelle</span>' : ''}</td><td class="n">v${f.version ?? '?'}</td><td>${num(f.size / 1024, 0)} Ko</td>
+        <td class="nowrap"><button class="btn sm" data-act="bk-get" data-f="${esc(f.name)}">${ic('download', 'sm')} Télécharger</button>
+          ${can('data') ? `<button class="btn sm dgr" data-act="bk-restore" data-f="${esc(f.name)}">${ic('repeat', 'sm')} Restaurer</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+      : '<p class="mut" style="margin:0">Aucune copie pour l’instant.</p>'}</div>`;
+  const c = D0.cfg;
+  const cfgHTML = `<div class="card-b"><form id="sec-f" class="fgrid">
+      <div class="fld"><label>Code pour créer son accès</label><input class="in" name="signupCode" value="${esc(c.signupCode || '')}" ${iAmSuper ? '' : 'disabled'} placeholder="aucun code demandé" autocomplete="off">
+        <span class="help">Sans code, la première personne qui choisit un nom « à créer » prend l’accès.</span></div>
+      <div class="fld"><label>Déconnexion après inactivité (heures)</label><input class="in" type="number" min="1" max="72" name="sessionHours" value="${c.sessionHours || 12}" ${iAmSuper ? '' : 'disabled'}></div>
+      <div class="fld"><label>Longueur minimale des mots de passe</label><input class="in" type="number" min="8" max="64" name="minPassword" value="${c.minPassword || 8}" ${iAmSuper ? '' : 'disabled'}></div></form>
+    <div class="row wrap" style="margin-top:12px">${iAmSuper ? `<button class="btn pri" data-act="sec-save">${ic('check')} Enregistrer</button>` : '<span class="mut">Modifiable par un super administrateur.</span>'}
+      ${c.https === false ? `<span class="pill" style="${cvar('#b4700c', .14, .35)}">${ic('warn', 'sm')} Connexion non chiffrée (http) : les mots de passe circulent en clair</span>` : ''}</div></div>`;
+  return head + superCard
+    + sec(`Accès des utilisateurs (${D0.acc.length})`, 'usercircle', accHTML)
+    + sec('Journal des connexions', 'activity', logHTML, xpBtn('auth-log', { sm: 1 }))
+    + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr))">${sec('Adresses IP surveillées', 'warn', ipHTML)}${sec('Réglages de sécurité', 'sliders', cfgHTML)}</div>`
+    + sec('Sauvegardes du serveur', 'database', bkHTML, `<button class="btn sm" data-act="bk-now">${ic('plus', 'sm')} Sauvegarder maintenant</button>`);
+}
+XP['auth-log'] = () => SEC.data ? { ds: { title: 'Journal des connexions', sheet: 'Connexions', cols: [{ l: 'Date', t: 'dt' }, { l: 'Événement' }, { l: 'Identifiant' }, { l: 'Adresse IP' }, { l: 'Détail' }],
+  rows: SEC.data.log.map(e => [e.t, (AUTH_EV[e.ev] || [e.ev])[0], e.login, e.ip, e.info]) } } : null;
+const secCall = async (a, body, okMsg) => {
+  const r = await Auth.api(a, body).catch(() => null);
+  toast(r && r.ok ? okMsg : (r && r.body && r.body.error) || 'Serveur injoignable.', r && r.ok ? 'ok' : 'danger');
+  if (r && r.ok) { SEC.data = null; loadSecurity(); }
+  return r && r.ok;
+};
+Object.assign(ACT, {
+  'become-super': async () => {
+    if (!needs('users')) return;
+    if (!await superAdmin('Vous allez recevoir le rôle « Super administrateur » : tous les droits, sans restriction. Saisissez le mot de passe super administrateur pour confirmer.', { ok: 'Devenir super administrateur', forcePwd: true })) return;
+    const myId = (me() || {}).id;
+    mutate('Nomination super administrateur · ' + label(me()), db => {
+      let r = db.roles.find(x => (x.perms || []).includes('super'));
+      if (!r) { r = { id: db.roles.some(x => x.id === 'r_super') ? uid('rol') : 'r_super', name: 'Super administrateur', perms: ['super'], v2: true }; db.roles.unshift(r); }
+      const u = db.users.find(x => x.id === myId); if (u) u.roleId = r.id;
+    });
+    toast('Vous êtes super administrateur', 'ok');
+  },
+  'kick-all': async () => {
+    if (!needs('super')) return;
+    if (!await confirmTyped('Toutes les personnes connectées, sauf vous, seront déconnectées et devront ressaisir leur mot de passe.', { ok: 'Déconnecter tout le monde' })) return;
+    secCall('kick-all', {}, 'Tout le monde a été déconnecté');
+  },
+  unblock: el => { if (needs('security')) secCall('unblock', { ip: el.dataset.ip }, 'Adresse débloquée'); },
+  'bk-now': () => { if (needs('security')) secCall('backup-now', {}, 'Sauvegarde créée sur le serveur'); },
+  'bk-get': async el => {
+    try { download(el.dataset.f, await fetchBackup(el.dataset.f), 'application/json'); }
+    catch (e) { toast('Téléchargement impossible : ' + e.message, 'danger'); }
+  },
+  'bk-restore': async el => {
+    if (!needs('data')) return;
+    let data; try { data = JSON.parse(await fetchBackup(el.dataset.f)); } catch (e) { return toast('Sauvegarde illisible.', 'danger'); }
+    restoreBackup(data, el.dataset.f);
+  },
+  'sec-save': () => {
+    if (!needs('super')) return;
+    const v = formVals($('#sec-f'));
+    secCall('sec-set', { signupCode: v.signupCode, sessionHours: +v.sessionHours, minPassword: +v.minPassword }, 'Réglages de sécurité enregistrés');
+  }
+});
+
+/* =====================================================================
    7. DÉMARRAGE
    ===================================================================== */
 (async function start() {
@@ -4716,7 +4925,7 @@ XP.hb = key => {
   catch (e) { console.error(e); if (e.fatal) return Auth.fatal(e.message); DB = migrate(null); }
   if (Sync.mode === 'server') { UI.user = Auth.user.userId; saveUI(); }
   else if (!UI.user || !DB.users.some(u => u.id === UI.user)) {
-    const a = DB.users.find(u => ((get('roles', u.roleId) || {}).perms || []).includes('admin')) || DB.users[0];
+    const a = DB.users.find(u => isSuperUser(u)) || DB.users.find(u => effPerms(roleOf(u)).includes('users')) || DB.users[0];
     UI.user = a ? a.id : ''; saveUI();
   }
   setSync(Sync.mode === 'memory' ? 'warn' : 'ok',
