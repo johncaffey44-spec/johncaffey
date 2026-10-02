@@ -954,6 +954,10 @@ input, select, textarea { font: inherit; color: inherit; }
   text-decoration: none;
 }
 .btn:hover { background: var(--surface-2); border-color: #CDD3CD; }
+/* Icône dans un bouton : sans taille explicite, le SVG ne s'affichait pas. */
+.btn .ico { display: inline-flex; flex: 0 0 auto; }
+.btn .ico svg { width: 18px; height: 18px; }
+.btn-mini .ico svg { width: 15px; height: 15px; }
 
 .btn-primary {
   background: var(--primaire); border-color: var(--primaire); color: #FFF;
@@ -1855,6 +1859,10 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .barre-lot .input { flex: 1 1 170px; min-width: 0; min-height: 42px; }
 .barre-lot .btn-ghost { color: #BFD0D6; }
 .barre-lot .btn-ghost:hover { background: var(--chrome-2); }
+.selection-rapide { margin: 0 0 .6rem; color: var(--muted); font-size: .93rem; }
+.liste-noms { margin: .3rem 0 .8rem 1.2rem; max-height: 220px; overflow: auto; }
+.liste-noms li, .liste-resultats li { margin: .15rem 0; }
+.liste-resultats { margin: .4rem 0 0 1.2rem; max-height: 320px; overflow: auto; }
 
 /* ------------------------------------------------ raccourcis clavier */
 
@@ -2282,6 +2290,7 @@ const ICONES = {
   chevron: I('<path d="M9 6l6 6-6 6"/>'),
   telecharger: I('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>'),
   importer: I('<path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M5 19h14"/>'),
+  poubelle: I('<path d="M4.5 7h15M10 4h4M6.5 7l1 12.5h9l1-12.5M10 10.5v6M14 10.5v6"/>'),
   hand:   I('<path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V15a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4.4-2.6L5 13.5a1.5 1.5 0 0 1 2.4-1.8L9 13.5V11"/>'),
 };
 function ico(nom) { return '<span class="ico">' + (ICONES[nom] || '') + '</span>'; }
@@ -5381,8 +5390,12 @@ async function vueUtilisateurs() {
         u.created_at || '', Number(u.active) ? 'Actif' : 'Désactivé']) }],
   }));
 
+  const moi = Number(S.user.id);
+  const historique = (u) => Number(u.ticket_count) + Number(u.comment_count) + Number(u.attachment_count) + Number(u.assigned_count);
   const lignes = rows.map(u =>
     '<tr class="' + (Number(u.active) ? '' : 'u-inactif') + '">' +
+    '<td class="col-choix sans-label"><input type="checkbox" class="choix u-choix" data-id="' + u.id + '"' +
+    (Number(u.id) === moi ? ' disabled title="Votre propre compte"' : '') + ' aria-label="Sélectionner ' + esc(u.name) + '"></td>' +
     '<td class="sans-label"><span class="t-titre">' + esc(u.name) + '</span>' +
     (u.phone ? '<span class="t-sub">' + esc(u.phone) + '</span>' : '') + '</td>' +
     '<td data-l="Identifiant">' + esc(u.login || u.email) +
@@ -5395,15 +5408,100 @@ async function vueUtilisateurs() {
     '</tr>'
   ).join('');
 
+  const autres = rows.filter(u => Number(u.id) !== moi);
+  const jamais = autres.filter(u => !u.last_login), inactifs = autres.filter(u => !Number(u.active));
   $('#zone-u').innerHTML =
+    '<p class="selection-rapide">Sélectionner : ' +
+    '<button type="button" class="btn-lien" data-rapide="jamais">les comptes jamais connectés (' + jamais.length + ')</button> · ' +
+    '<button type="button" class="btn-lien" data-rapide="inactifs">les comptes désactivés (' + inactifs.length + ')</button></p>' +
+    '<div class="barre-lot hidden" id="barre-lot-u"></div>' +
     '<div class="tbl-wrap"><table class="tbl">' +
-    '<thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Tickets</th><th>Dernière connexion</th><th>Compte</th><th></th></tr></thead>' +
+    '<thead><tr><th class="col-choix"><input type="checkbox" id="u-tout" aria-label="Tout sélectionner"></th>' +
+    '<th>Nom</th><th>Email</th><th>Rôle</th><th>Tickets</th><th>Dernière connexion</th><th>Compte</th><th></th></tr></thead>' +
     '<tbody>' + lignes + '</tbody></table></div>' +
     '<p class="sous-titre" style="margin-top:.8rem">La colonne « Dernière connexion » aide à repérer les comptes ' +
     "d'anciens salariés qui n'ont jamais été désactivés.</p>";
 
   document.querySelectorAll('#zone-u button[data-id]').forEach(btn => {
     btn.addEventListener('click', () => modaleUtilisateur(rows.find(x => Number(x.id) === Number(btn.dataset.id))));
+  });
+
+  /* ---- Sélection multiple : supprimer, désactiver, réactiver ---- */
+  const cases = () => Array.from(document.querySelectorAll('#zone-u .u-choix:not(:disabled)'));
+  const choisis = () => cases().filter(c => c.checked).map(c => rows.find(u => Number(u.id) === Number(c.dataset.id)));
+  const majBarre = () => {
+    const sel = choisis(), n = sel.length, barre = $('#barre-lot-u');
+    document.querySelectorAll('#zone-u tbody tr').forEach(tr => {
+      const c = tr.querySelector('.u-choix');
+      tr.classList.toggle('choisi', !!(c && c.checked));
+    });
+    const tout = $('#u-tout');
+    tout.checked = n > 0 && n === cases().length;
+    tout.indeterminate = n > 0 && n < cases().length;
+    barre.classList.toggle('hidden', n === 0);
+    if (!n) return;
+    const nbActifs = sel.filter(u => Number(u.active)).length;
+    barre.innerHTML = '<span class="lot-nb">' + n + (n > 1 ? ' comptes sélectionnés' : ' compte sélectionné') + '</span>' +
+      (nbActifs ? '<button type="button" class="btn" data-op="desactiver">Désactiver</button>' : '') +
+      (nbActifs < n ? '<button type="button" class="btn" data-op="reactiver">Réactiver</button>' : '') +
+      '<button type="button" class="btn btn-danger" data-op="supprimer">' + ico('poubelle') + 'Supprimer</button>' +
+      '<button type="button" class="btn btn-ghost" data-op="annuler">Annuler la sélection</button>';
+  };
+  const selectionner = (filtre) => { cases().forEach(c => { c.checked = filtre(rows.find(u => Number(u.id) === Number(c.dataset.id))); }); majBarre(); };
+  $('#u-tout').addEventListener('change', () => selectionner(() => $('#u-tout').checked));
+  cases().forEach(c => c.addEventListener('change', majBarre));
+  document.querySelectorAll('#zone-u [data-rapide]').forEach(b => b.addEventListener('click', () =>
+    selectionner(b.dataset.rapide === 'jamais' ? (u => !u.last_login) : (u => !Number(u.active)))));
+
+  const envoyer = async (op, sel) => {
+    let r;
+    try { r = await api('users_bulk', { op, ids: sel.map(u => Number(u.id)) }); } catch (e) { return; }
+    const compte = (x) => r.resultats.filter(y => y.resultat === x).length;
+    const bilan = [['Supprimé', 'supprimé(s)'], ['Désactivé', 'désactivé(s)'], ['Réactivé', 'réactivé(s)'], ['Inchangé', 'inchangé(s)'], ['Refusé', 'refusé(s)']]
+      .filter(([k]) => compte(k)).map(([k, l]) => compte(k) + ' ' + l).join(', ');
+    const details = r.resultats.filter(x => x.detail);
+    if (details.length) {
+      const m = modale('<h2>Résultat</h2><p><b>' + esc(bilan) + '.</b></p><ul class="liste-resultats">' +
+        details.map(x => '<li><b>' + esc(x.name || ('#' + x.id)) + '</b> — ' + esc(x.resultat.toLowerCase()) + ' : ' + esc(x.detail) + '</li>').join('') +
+        '</ul><div class="modal-actions"><button type="button" class="btn btn-primary" data-a="ok">Fermer</button></div>');
+      $('[data-a="ok"]', m.el).addEventListener('click', m.close);
+    } else {
+      toast(bilan.charAt(0).toUpperCase() + bilan.slice(1) + '.');
+    }
+    if (compte('Supprimé') || compte('Désactivé') || compte('Réactivé')) Son.jouer('succes');
+    vueUtilisateurs();
+  };
+
+  $('#barre-lot-u').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-op]');
+    if (!b) return;
+    const op = b.dataset.op, sel = choisis();
+    if (op === 'annuler') { selectionner(() => false); return; }
+    const noms = (l) => '<ul class="liste-noms">' + l.map(u => '<li>' + esc(u.name) + '</li>').join('') + '</ul>';
+    if (op === 'reactiver' || op === 'desactiver') {
+      const cibles = sel.filter(u => op === 'reactiver' ? !Number(u.active) : Number(u.active));
+      if (!await modaleConfirm((op === 'reactiver' ? 'Réactiver ' : 'Désactiver ') + cibles.length + ' compte(s) ? ' +
+        (op === 'desactiver' ? 'Les personnes concernées ne pourront plus se connecter ; leurs tickets restent consultables.' : ''),
+        { ok: op === 'reactiver' ? 'Réactiver' : 'Désactiver' })) return;
+      envoyer(op, cibles);
+      return;
+    }
+    // Suppression : on annonce avant de confirmer ce qui sera vraiment supprimé.
+    const libres = sel.filter(u => !historique(u)), conserves = sel.filter(u => historique(u));
+    const detail = (u) => [Number(u.ticket_count) ? u.ticket_count + ' ticket(s) demandé(s)' : '', Number(u.assigned_count) ? u.assigned_count + ' ticket(s) traité(s)' : '',
+      Number(u.comment_count) ? u.comment_count + ' message(s)' : '',
+      Number(u.attachment_count) ? u.attachment_count + ' pièce(s) jointe(s)' : ''].filter(Boolean).join(', ');
+    const m = modale('<h2>Supprimer ' + sel.length + ' compte(s)</h2>' +
+      (libres.length ? '<p><b>' + libres.length + ' compte(s) supprimé(s) définitivement</b> (aucun ticket ni message) :</p>' + noms(libres) : '') +
+      (conserves.length ? '<div class="imp-erreur imp-attention"><b>' + conserves.length + ' compte(s) désactivé(s) au lieu d\'être supprimé(s)</b> : ' +
+        'leurs tickets et messages doivent rester rattachés à leur auteur (et compter dans les statistiques). Ils ne pourront plus se connecter.' +
+        '<ul class="liste-noms">' + conserves.map(u => '<li>' + esc(u.name) + ' <span class="aide">(' + esc(detail(u)) + ')</span></li>').join('') + '</ul></div>' : '') +
+      (libres.length ? '<p class="aide">La suppression est définitive. Pensez à exporter la liste avant, si besoin.</p>' : '') +
+      '<div class="modal-actions"><button type="button" class="btn" data-a="non">Annuler</button>' +
+      '<button type="button" class="btn ' + (libres.length ? 'btn-danger' : 'btn-primary') + '" data-a="oui">' +
+      (libres.length ? 'Supprimer ' + libres.length + (conserves.length ? ' et désactiver ' + conserves.length : '') : 'Désactiver ' + conserves.length) + '</button></div>');
+    $('[data-a="non"]', m.el).addEventListener('click', m.close);
+    $('[data-a="oui"]', m.el).addEventListener('click', () => { m.close(); envoyer('supprimer', sel); });
   });
 }
 
@@ -7341,7 +7439,7 @@ const ACTIONS_MODIFIANTES = [
     'ticket_create', 'ticket_update', 'ticket_claim', 'ticket_delete',
     'ticket_close_own', 'ticket_reopen_own', 'comment_add',
     'user_save', 'settings_save', 'mail_test', 'ldap_test',
-    'procedure_save', 'procedure_delete', 'tickets_bulk', 'db_optimize', 'tickets_import',
+    'procedure_save', 'procedure_delete', 'tickets_bulk', 'db_optimize', 'tickets_import', 'users_bulk',
 ];
 if (in_array($action, ACTIONS_MODIFIANTES, true) && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Allow: POST');
@@ -8466,6 +8564,9 @@ case 'users_list': {
     $rows = db()->query(
         'SELECT u.id, u.name, u.login, u.email, u.role, u.phone, u.auth, u.active, u.created_at,
                 (SELECT COUNT(*) FROM tickets t WHERE t.created_by = u.id) AS ticket_count,
+                (SELECT COUNT(*) FROM comments c WHERE c.user_id = u.id) AS comment_count,
+                (SELECT COUNT(*) FROM attachments a WHERE a.uploaded_by = u.id) AS attachment_count,
+                (SELECT COUNT(*) FROM tickets t WHERE t.assigned_to = u.id) AS assigned_count,
                 (SELECT MAX(created_at) FROM logins l WHERE l.user_id = u.id AND l.success = 1) AS last_login
          FROM users u ORDER BY u.active DESC, u.name COLLATE NOCASE'
     )->fetchAll();
@@ -8571,6 +8672,95 @@ case 'user_save': {
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         ->execute([$name, $email, $email, password_hash($pass, PASSWORD_DEFAULT), $phone, $role, $active, now()]);
     ok(['id' => (int) db()->lastInsertId()]);
+}
+
+/*
+ * Actions groupées sur les comptes : supprimer, désactiver, réactiver.
+ * Un compte qui a un historique (tickets demandés ou traités, messages,
+ * pièces jointes) n'est jamais supprimé : ces données lui restent rattachées,
+ * et les statistiques par technicien en dépendent. Il est désactivé à la
+ * place (accès coupé, historique lisible).
+ * Votre propre compte et le dernier administrateur actif sont protégés.
+ */
+case 'users_bulk': {
+    $me = require_auth();
+    require_role($me, ['admin']);
+    check_csrf();
+    $b   = body();
+    $op  = (string) ($b['op'] ?? '');
+    $ids = array_values(array_unique(array_map('intval', is_array($b['ids'] ?? null) ? $b['ids'] : [])));
+    if (!in_array($op, ['supprimer', 'desactiver', 'reactiver'], true) || !$ids || count($ids) > 1000) {
+        fail('Demande invalide.');
+    }
+    $pdo = db();
+    $adminsActifs = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1")->fetchColumn();
+    $compter = static function (string $sql, int $id) use ($pdo): int {
+        $st = $pdo->prepare($sql);
+        $st->execute([$id]);
+        return (int) $st->fetchColumn();
+    };
+    $resultats = [];
+    $pdo->beginTransaction();
+    try {
+        foreach ($ids as $id) {
+            $st = $pdo->prepare('SELECT id, name, role, active FROM users WHERE id = ?');
+            $st->execute([$id]);
+            $u = $st->fetch();
+            if (!$u) { $resultats[] = ['id' => $id, 'name' => '', 'resultat' => 'Refusé', 'detail' => 'compte introuvable']; continue; }
+            $r = ['id' => $id, 'name' => $u['name']];
+            $actif = (int) $u['active'] === 1;
+            $adminActif = $u['role'] === 'admin' && $actif;
+
+            if ($op === 'reactiver') {
+                if ($actif) { $resultats[] = $r + ['resultat' => 'Inchangé', 'detail' => 'déjà actif']; continue; }
+                $pdo->prepare('UPDATE users SET active = 1 WHERE id = ?')->execute([$id]);
+                if ($u['role'] === 'admin') { $adminsActifs++; }
+                $resultats[] = $r + ['resultat' => 'Réactivé', 'detail' => ''];
+                continue;
+            }
+            if ($id === (int) $me['id']) {
+                $resultats[] = $r + ['resultat' => 'Refusé', 'detail' => 'c\'est votre propre compte'];
+                continue;
+            }
+            if ($adminActif && $adminsActifs <= 1) {
+                $resultats[] = $r + ['resultat' => 'Refusé', 'detail' => 'il doit toujours rester au moins un administrateur actif'];
+                continue;
+            }
+            $tickets  = $compter('SELECT COUNT(*) FROM tickets WHERE created_by = ?', $id);
+            $messages = $compter('SELECT COUNT(*) FROM comments WHERE user_id = ?', $id);
+            $pj       = $compter('SELECT COUNT(*) FROM attachments WHERE uploaded_by = ?', $id);
+            $traites  = $compter('SELECT COUNT(*) FROM tickets WHERE assigned_to = ?', $id);
+            $historique = $tickets + $messages + $pj + $traites > 0;
+
+            if ($op === 'desactiver' || $historique) {
+                $raison = $op === 'supprimer'
+                    ? 'conservé car il a un historique (' . implode(', ', array_filter([
+                          $tickets ? $tickets . ' ticket(s) demandé(s)' : '', $traites ? $traites . ' ticket(s) traité(s)' : '',
+                          $messages ? $messages . ' message(s)' : '', $pj ? $pj . ' pièce(s) jointe(s)' : ''])) . ')'
+                    : '';
+                if (!$actif) {
+                    $resultats[] = $r + ['resultat' => 'Inchangé', 'detail' => $raison ?: 'déjà désactivé'];
+                    continue;
+                }
+                $pdo->prepare('UPDATE users SET active = 0 WHERE id = ?')->execute([$id]);
+                if ($adminActif) { $adminsActifs--; }
+                $resultats[] = $r + ['resultat' => 'Désactivé', 'detail' => $raison];
+                continue;
+            }
+
+            // Aucune trace : suppression réelle (le journal des connexions garde l'adresse utilisée).
+            $pdo->prepare('DELETE FROM views WHERE user_id = ?')->execute([$id]);
+            $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
+            if ($adminActif) { $adminsActifs--; }
+            $resultats[] = $r + ['resultat' => 'Supprimé', 'detail' => ''];
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        journal_erreur('Action groupée sur les comptes : ' . $e->getMessage());
+        fail('Opération annulée, aucun compte n\'a été modifié : ' . $e->getMessage(), 500);
+    }
+    ok(['resultats' => $resultats]);
 }
 
 case 'logins_list': {
