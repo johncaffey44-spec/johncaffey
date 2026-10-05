@@ -82,6 +82,8 @@ h1,h2,h3,h4{margin:0;font-weight:640;letter-spacing:-.01em}
 .nav-b.warn{background:#e3a14533;color:#ffd9a6}
 .sb-foot{padding:9px 14px;border-top:1px solid #ffffff12;font-size:11.5px;color:var(--side-mu);display:flex;align-items:center;gap:8px}
 #sb{transition:width .18s ease}
+#mini-top .i-exp{display:none}
+#mini-top>span{place-items:center}#mini-top .i-menu{display:grid}
 .nav-a .ini{display:none}
 .sb-tg{display:flex;align-items:center;gap:8px;width:100%;border:0;background:0;color:var(--side-mu);font-size:12.5px;font-weight:600;padding:7px 8px;border-radius:8px;cursor:pointer}
 .sb-tg:hover{background:var(--side-2);color:#fff}
@@ -93,8 +95,12 @@ h1,h2,h3,h4{margin:0;font-weight:640;letter-spacing:-.01em}
 /* menu réduit : barre d'icônes (écrans larges ; sur mobile le menu reste un tiroir complet) */
 @media(min-width:981px){
   body.mini #sb,body.mini.fs-l #sb,body.mini.fs-xl #sb{width:72px}
-  body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .sb-new .lbl,body.mini .sb-foot #sb-info,body.mini .sb-tg span,body.mini #mini-top{display:none}
-  body.mini .sb-head{justify-content:center;padding:14px 0 6px}
+  body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .sb-new .lbl,body.mini .sb-foot #sb-info,body.mini .sb-tg span,body.mini #mini-top .i-menu{display:none}
+  body.mini #mini-top .i-exp{display:grid}
+  body.mini .sb-head{flex-direction:column}
+  body.mini #mini-top{width:40px;height:30px;border-radius:9px;background:#ffffff0d;border-color:#ffffff14;color:#cfd5dd!important}
+  body.mini #mini-top:hover{background:var(--primary);border-color:var(--primary);color:#fff!important}
+  body.mini .sb-head{justify-content:center;align-items:center;gap:8px;padding:14px 0 6px}
   body.mini .brand{flex:none;gap:0}
   body.mini .brand .trunc{display:none}
   body.mini .sb-new{width:44px;height:44px;margin:6px auto 12px;padding:0;border-radius:13px;box-shadow:0 4px 14px rgba(20,135,201,.35)}
@@ -1732,10 +1738,11 @@ function renderTop(r) {
   $('#av').textContent = u ? initials(label(u)) : '?';
   $('#who-name').textContent = u ? label(u) : 'Utilisateur';
   $('[data-act=theme]').innerHTML = ic(UI.theme === 'dark' ? 'sun' : 'moon');
-  $('#mini-top').innerHTML = ic('menu');
+  $('#mini-top').innerHTML = '<span class="i-menu">' + ic('menu') + '</span><span class="i-exp">' + ic('dright') + '</span>';
   const mini = document.body.classList.contains('mini');
   $('#mini-foot').innerHTML = mini ? ic('dright') : ic('dleft') + '<span>Réduire le menu</span>';
   $('#mini-foot').dataset.tip = mini ? 'Agrandir le menu' : '';
+  $('#mini-top').title = mini ? '' : 'Réduire le menu'; $('#mini-top').dataset.tip = mini ? 'Agrandir le menu' : '';
   if (!$('.sb-new .ic')) $('.sb-new').insertAdjacentHTML('afterbegin', ic('plus'));
   $('#burger').innerHTML = ic('menu');
 }
