@@ -95,10 +95,12 @@ h1,h2,h3,h4{margin:0;font-weight:640;letter-spacing:-.01em}
   body.mini #sb,body.mini.fs-l #sb,body.mini.fs-xl #sb{width:72px}
   body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .sb-new .lbl,body.mini .sb-foot #sb-info,body.mini .sb-tg span,body.mini #mini-top{display:none}
   body.mini .sb-head{justify-content:center;padding:14px 0 6px}
-  body.mini .brand{flex:none}
+  body.mini .brand{flex:none;gap:0}
+  body.mini .brand .trunc{display:none}
   body.mini .sb-new{width:44px;height:44px;margin:6px auto 12px;padding:0;border-radius:13px;box-shadow:0 4px 14px rgba(20,135,201,.35)}
   body.mini .sb-new .ic{width:20px;height:20px}
-  body.mini #nav{padding:0 0 10px;overflow-x:hidden}
+  body.mini #nav{padding:0 0 10px;overflow-x:hidden;scrollbar-width:none}
+  body.mini #nav::-webkit-scrollbar{display:none}
   body.mini .nav-sec{margin:0;padding:7px 0;border-top:1px solid #ffffff12}
   body.mini .nav-sec:first-child{border-top:0;padding-top:0}
   body.mini .nav-sec.closed .nav-list{display:flex}
