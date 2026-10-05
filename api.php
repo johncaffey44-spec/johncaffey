@@ -334,6 +334,37 @@ $action = (string)($_GET['a'] ?? 'ping');
 $lock = fopen($LOCK, 'c');
 if ($lock === false) out(500, ['error' => 'Verrou indisponible']);
 
+/* --- vue écran d'atelier : accès par clé (sans compte), lecture seule, données réduites au strict nécessaire --- */
+if ($action === 'view') {
+    session_write_close();
+    throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
+    $key = (string)($_GET['key'] ?? '');
+    flock($lock, LOCK_SH);
+    $m = read_meta($META);
+    $doc = read_doc($FILE);
+    flock($lock, LOCK_UN);
+    $view = null;
+    $keys = is_array($doc['settings']['viewKeys'] ?? null) ? $doc['settings']['viewKeys'] : [];
+    if (strlen($key) >= 16 && strlen($key) <= 128) {
+        foreach ($keys as $id => $k) { if (is_string($k) && strlen($k) >= 16 && hash_equals($k, $key)) { $view = (string)$id; break; } }
+    }
+    if ($view === null) {
+        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+        auth_log('view-refused', '', 'clé de vue écran invalide');
+        out(403, ['error' => 'Clé d’accès invalide ou révoquée.']);
+    }
+    $only = function ($list, array $keep) {
+        $k = array_flip($keep);
+        return array_values(array_map(function ($x) use ($k) { return array_intersect_key((array)$x, $k); }, array_filter((array)$list, 'is_array')));
+    };
+    $doc['projects'] = $only($doc['projects'] ?? [], ['id', 'client', 'city', 'typeId', 'agencyId', 'daModelId', 'requested', 'tags', 'archived', 'archivedAt', 'part', 'erpRef', 'daCount']);
+    $doc['staff']    = $only($doc['staff'] ?? [], ['id', 'firstName', 'lastName', 'kind', 'groupIds', 'active', 'color']);
+    $doc['absences'] = $only($doc['absences'] ?? [], ['id', 'staffId', 'typeId', 'start', 'startSlot', 'end', 'endSlot']);
+    $doc['users'] = []; $doc['roles'] = []; $doc['log'] = [];
+    unset($doc['settings']['viewKeys']);
+    out(200, ['view' => $view, 'version' => (int)$m['version'], 'data' => $doc]);
+}
+
 $me = auth_user($ACC, $SESSION_IDLE, $lock);
 $PUBLIC = ['me', 'signup-list', 'signup', 'login', 'logout'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);

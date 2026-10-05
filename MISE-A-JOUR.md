@@ -195,3 +195,30 @@ Chaque rôle (*Paramétrage › Rôles & droits*) coche des droits parmi les sui
 - les opérations destructrices.
 
 Les autres droits (par exemple « Suppression » pour quelqu'un qui a « Projets ») sont appliqués par l'interface. Le serveur enregistre l'auteur de chaque modification.
+
+## 8. Reprise de l'outil actuel (projets, paramètres, écrans, utilisateurs)
+
+**Fiche projet** : mêmes rubriques que l'outil actuel.
+- *Projet* : type, commercial, code Vega, agence, terminé & archivé.
+- *Client* : entreprise, civilité, prénom et nom du contact, adresse, code postal, ville, téléphone, portable, email.
+- *Planning* : date demandée.
+- *Distributeur automatique* : modèle, matricule (repris dans l'étape de production), nombre de DA, nombre de clés, système de paiement, particularités.
+
+Ces champs sont aussi dans les exports et les imports Excel/CSV des projets.
+
+**Catalogue des distributeurs** : les modèles n° 18 à 141 de l'outil actuel sont ajoutés automatiquement, une seule fois, au premier chargement de la nouvelle page. Un nom qui commence par « zz » dans l'ancien outil est un modèle retiré : il est ajouté sans le « zz » et décoché « Au catalogue ». Les n° 1 à 17 n'étaient pas dans l'enregistrement fourni : complétez-les dans *Paramétrage › Modèles de distributeur* (colonne « N° outil actuel »).
+
+**Groupes de personnel** : renommés comme dans l'outil actuel, et les groupes « Agences + partiel » (Production) et « Partiel » (Installation) sont ajoutés. Filtres par agence et par service, colonne « Nombre de personnels ».
+
+**Paramètres** :
+- délais après chaque service (production, intersite…) et entre deux opérations ;
+- durée du défilement de chaque vue écran ;
+- clés des vues écrans.
+
+**Clés des vues écrans** (base partagée uniquement) : l'adresse copiée depuis *Vues écrans* contient une clé. Un écran d'atelier l'ouvre sans compte, en lecture seule. Il ne reçoit ni les coordonnées des clients, ni les utilisateurs, ni le journal. Une clé ne donne accès qu'à sa vue ; la clé « Rotation » donne accès à toutes les vues. Changer une clé (bouton ↻ puis *Enregistrer*) coupe immédiatement l'accès des écrans qui utilisent l'ancienne adresse. Une adresse avec clé donne un accès en lecture à qui la possède : ne la diffusez pas hors des postes d'affichage.
+
+**Utilisateurs** : la liste n'est pas intégrée au fichier HTML, car elle contient les emails des collaborateurs et le dépôt GitHub de l'application est public. Importez le fichier `utilisateurs-d8.csv` fourni à part : *Paramétrage › Utilisateurs › Importer*.
+- Une personne déjà présente est reconnue à son email, sinon à son nom.
+- Deux homonymes avec des emails différents restent deux personnes.
+- Le rôle super administrateur n'est jamais retiré par un import.
+- La date de dernière utilisation de l'ancien outil est reprise : le bouton « Désactiver les comptes dormants » s'appuie dessus.

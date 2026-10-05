@@ -288,6 +288,19 @@ label.chip input{display:none}
 .mwrap{position:fixed;inset:0;background:rgba(15,20,28,.45);display:flex;align-items:flex-start;justify-content:center;padding:34px 16px;overflow-y:auto;z-index:60;backdrop-filter:blur(2px)}
 .mdl{background:var(--surface);border-radius:14px;box-shadow:var(--sh-lg);width:100%;max-width:560px;border:1px solid var(--border);animation:mi .14s ease-out}
 .mdl.lg{max-width:830px}.mdl.sm{max-width:420px}.mdl.xl{max-width:1050px}
+.mdl.pfm{max-width:min(1420px,calc(100vw - 32px))}.mdl.pfm .mb{max-height:calc(100vh - 150px);background:var(--surface-2)}
+.pf{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.pf-col{display:flex;flex-direction:column;gap:14px;min-width:0}.pf-sec{margin:0}
+.pf-rows{display:flex;flex-direction:column;gap:11px}
+.pf-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pf-civ{grid-template-columns:120px 1fr;margin-bottom:6px}.pf-zip{grid-template-columns:130px 1fr}
+.pf-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+.in-unit{display:flex}.in-unit .in{border-top-right-radius:0;border-bottom-right-radius:0;min-width:0;flex:1}
+.in-unit span{display:grid;place-items:center;padding:0 11px;border:1px solid var(--border);border-left:0;border-radius:0 8px 8px 0;background:var(--surface-2);color:var(--text-2);font-size:12.5px;white-space:nowrap}
+.keys{display:flex;flex-direction:column;gap:8px}.key-r{display:grid;grid-template-columns:minmax(150px,230px) 1fr auto auto;gap:8px;align-items:center}
+.key-r label{font-size:13px;color:var(--text-2)}.in.mono{font-family:var(--mono);font-size:12.5px}
+@media(max-width:700px){.key-r{grid-template-columns:1fr auto auto}.key-r label{grid-column:1/-1}}
+@media(max-width:1180px){.pf{grid-template-columns:1fr 1fr}.pf-col:last-child{grid-column:1/-1}}
+@media(max-width:760px){.pf{grid-template-columns:1fr}.pf-g{grid-template-columns:1fr}}
 @keyframes mi{from{transform:translateY(-8px);opacity:.6}to{transform:none;opacity:1}}
 .mdl>header{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--border)}
 .mdl>header h3{font-size:16px;flex:1;min-width:0}
@@ -497,6 +510,8 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const pushMap = (m, k, v) => { const a = m.get(k); a ? a.push(v) : m.set(k, [v]); };
 const debounce = (f, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; };
 const label = x => !x ? '' : (x.name != null ? x.name : [x.firstName, x.lastName].filter(Boolean).join(' '));
+// groupes de personnel : plusieurs peuvent porter le même nom (« Vitry ») dans des services différents
+const rlab = (coll, x) => coll === 'staffGroups' && x ? label(x) + ' · ' + label(DB.services.find(s => s.id === x.serviceId)) : label(x);
 const byOrder = (a, b) => (a.order ?? 99) - (b.order ?? 99) || label(a).localeCompare(label(b), 'fr');
 const byName = (a, b) => label(a).localeCompare(label(b), 'fr');
 const initials = s => String(s || '?').split(/[\s-]+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
@@ -689,8 +704,14 @@ const DEFAULT_SETTINGS = {
   hoursPerDay: 7, workDays: [0, 1, 2, 3, 4], holidaysFR: true, closures: [],
   prepHorizon: 14, prepScroll: 40, occLow: 50, occHigh: 85, autoArchive: true,
   kioskRefresh: 30, pollSec: 15, amStart: '08:00', amEnd: '12:00', pmStart: '13:30', pmEnd: '17:00',
-  dormantDays: 180, maintenance: false
+  dormantDays: 180, maintenance: false, opGapMin: 0, viewKeys: {}
 };
+const newKey = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+const viewIds = d => ['preparation', ...d.services.filter(s => s.active !== false && s.screen !== false).map(s => s.id), 'rotation'];
+function viewUrl(id) {
+  const k = (DB.settings.viewKeys || {})[id], base = location.href.split('#')[0].split('?')[0];
+  return Sync.mode === 'server' && k ? `${base}?cle=${k}#/ecran/${id}` : `${base}#/ecran/${id}`;
+}
 
 let DB = null, REV = 0, IX = null, AL = null;
 const UI = (() => { try { return JSON.parse(localStorage.getItem(KEY + ':ui')) || {}; } catch (e) { return {}; } })();
@@ -938,8 +959,42 @@ function seed() {
 }
 
 /* ---------- migration / normalisation ---------- */
+/* ---------- référentiel de l'outil actuel (catalogue des distributeurs, groupes de personnel) ----------
+   Appliqué une seule fois par base ; « zz » en tête de nom = modèle retiré du catalogue dans l'ancien outil. */
+const D8_DA = '18|Brio 3 C-UP;19|Canto Blue;20|zz--Canto;21|Canto Blue Touch;23|zz--Concerto Blue;24|Kikko Blue;25|Concerto C;26|zzLEI 700 2 CUP;27|Kikko Max;28|Melodia;29|zz--Kikko;30|Jazz;31|Kobalto;32|Vista Slave;33|Oblo;34|zzPalma;36|Wittenborg 9100;37|zzNe pas utiliser-Opéra;38|Faster;39|Concerto Touch;40|Mini Snakki;41|Mini Vending;42|Vista L;43|Vista M;44|Smart;45|zz--Aulika Saeco;46|Brio Blue,MiniSnakki;47|Melodia Slave;48|Cino;49|Lei 600;50|zzOpéra DG Tactile;51|Solista;52|zz--Conti;53|Palma B6;54|Palma B5;55|Zeta;56|zzKikko Max Lyo;57|zz--Astro DG;58|Opéra C Touch;59|zz--Concerto Blue Grain;60|zz--Brio 250Gob;61|Snakki Slave;62|zzSpazio----;63|Brio Up, Mini Snakki;64|zzAstro C;65|zzBrio I;67|zz--Brio C UP;68|Canto Blue 2 Cup;69|Canto C;70|Canto C Touch;71|zzCanto 2C;72|zzColibri C4;73|zzColibri Lyo;74|Diesis 500/7;75|zzColibri BLUE (Semi auto);76|Kikko C;77|zzKOBALTO C simple expresso;78|zzKOBALTO C 4 expresso;79|Krystal;80|Lei 2 Cup;81|Mistral H70;82|Opera Lyo;83|Rondo;84|Sfera;85|Top 480/10;86|Mini Snakky Monnayeur;87|zz--CONCERTO ES7;88|Brio 3 C;89|Opera C;90|Brio 3 UP Blue;91|Brio 3 UP Blue Mini Snakky;92|Concerto Touch Blue Grain;93|zzRheavendors;95|LB 4200;96|VM 130;97|Rhéa V+ Grande;98|Samba;99|zzVenezia Luxe;100|Fontaine;101|Krea Touch;102|zzClara;103|Sofia;104|Saphir;106|Meuble Brio 3;107|Brio 3 C-R;108|Colibri Blue-R;109|Astro C-R;110|Canto C Blue;111|Concerto C Blue;112|Kikko C-R;113|Kikko Max-R;114|zz--Saeco Royal;115|Twist food;116|Opera one;117|Concerto one;118|Krea Prime;119|Brio 3 Lyo;120|Mistral H85;121|Astro Touch;122|Kikko Touch;123|G-DRINK;124|VIVACE;125|Barista 500;126|Barista 600;127|Barista 500 touch;128|Barista 600 touch;129|Fas 900 excel visual;130|GUSTO L;131|OCS;132|Barista 600 one touch;133|Barista 500 one touch;134|EVERLY 8 BACS;135|LB 2600;137|GUSTO 8L;138|GUSTO 6M;139|GUSTO 6L;140|GAGGIA 100;141|GAGGIA 300';
+const D8_GROUPS = [   // [id, nom d'origine dans cette page, nom de l'outil actuel, agence, service]
+  ['g_instv', 'Installateurs Vitry', 'Vitry', 'ag_vitry', 'sv_inst'], ['g_presta', 'Prestataires Vitry', 'Presta ext.', 'ag_vitry', 'sv_inst'],
+  ['g_instsm', 'Installateurs St Maximin', 'St Maximin', 'ag_stmax', 'sv_inst'], ['g_instjg', 'Installateurs Jargeau', 'Jargeau', 'ag_jarg', 'sv_inst'],
+  ['g_mon', 'Monétique', 'Monétique', 'ag_vitry', 'sv_mon'], ['g_navsm', 'Navette St Maximin', 'Envoi St Max.', 'ag_stmax', 'sv_trans'],
+  ['g_navjg', 'Navette Jargeau', 'Envoi Jarg.', 'ag_jarg', 'sv_trans'], ['g_atelier', 'Atelier Vitry', 'Vitry', 'ag_vitry', 'sv_prod'],
+  ['g_agpart', '', 'Agences + partiel', 'ag_vitry', 'sv_prod'], ['g_partiel', '', 'Partiel', 'ag_vitry', 'sv_inst']];
+const daKey = n => norm(n).replace(/[^a-z0-9]+/g, '');
+const MIG = { ref: false, keys: false };      // migrations appliquées au chargement, à enregistrer une fois
+function refD8(d) {
+  if ((d.meta.refD8 || 0) >= 1) return;
+  MIG.ref = true;
+  const have = new Map(d.daModels.map(m => [daKey(m.name), m])), ids = new Set(d.daModels.map(m => m.id));
+  for (const row of D8_DA.split(';')) {
+    const [code, raw] = row.split('|'), off = /^zz/i.test(raw), name = raw.replace(/^zz[-\s]*/i, '').replace(/-+$/, '').trim();
+    const m = have.get(daKey(name));
+    if (m) { if (!m.code) m.code = code; if (off) m.active = false; continue; }
+    let id = daId(name); if (ids.has(id)) id += '_' + code;
+    ids.add(id);
+    const x = { id, name, category: '', order: 100 + +code, code, active: !off };
+    d.daModels.push(x); have.set(daKey(name), x);
+  }
+  const ag = new Set(d.agencies.map(a => a.id)), sv = new Set(d.services.map(s => s.id));
+  for (const [id, was, name, agencyId, serviceId] of D8_GROUPS) {
+    const g = d.staffGroups.find(x => x.id === id);
+    if (g) { if (g.name === was) g.name = name; continue; }
+    if (was || !ag.has(agencyId) || !sv.has(serviceId)) continue;
+    if (d.staffGroups.some(x => norm(x.name) === norm(name) && x.serviceId === serviceId)) continue;
+    d.staffGroups.push({ id, name, agencyId, serviceId, order: 9, active: true });
+  }
+  d.meta.refD8 = 1;
+}
 function migrate(d) {
-  if (!d || typeof d !== 'object' || Array.isArray(d)) return seed();
+  if (!d || typeof d !== 'object' || Array.isArray(d)) d = seed();
   d.schema = d.schema || 1;
   d.meta = d.meta || {};
   d.meta.gen = d.meta.gen || uid('g');      // identité de la base : change quand elle est vidée, réinitialisée ou restaurée
@@ -953,6 +1008,9 @@ function migrate(d) {
   for (const a of d.agencies) a.circuit = a.circuit || [];
   for (const t of d.projectTypes) t.services = t.services || [];
   for (const r of d.roles) r.perms = r.perms || [];
+  d.settings.viewKeys = d.settings.viewKeys && typeof d.settings.viewKeys === 'object' && !Array.isArray(d.settings.viewKeys) ? d.settings.viewKeys : {};
+  for (const id of viewIds(d)) if (!d.settings.viewKeys[id]) { d.settings.viewKeys[id] = newKey(); MIG.keys = true; }
+  refD8(d);
   return d;
 }
 
@@ -1237,7 +1295,16 @@ function superAdmin(msg, o = {}) {
 const Sync = {
   mode: 'memory', version: 0, pending: [], busy: false, retry: 0, bc: null, lastSave: '',
   async init() {
-    const forceLocal = new URLSearchParams(location.search).has('local');
+    const forceLocal = new URLSearchParams(location.search).has('local'), vkey = new URLSearchParams(location.search).get('cle');
+    if (/^https?:/.test(location.protocol) && !forceLocal && vkey) {   // écran d'atelier : clé d'accès, sans compte, lecture seule
+      let r = null;
+      try { r = await fetchJSON('api.php?a=view&key=' + encodeURIComponent(vkey), {}, 30000); } catch (e) { }
+      if (r && r.ok && r.body && r.body.data) {
+        this.mode = 'view'; this.view = r.body.view; this.key = vkey; this.version = r.body.version;
+        return migrate(r.body.data);
+      }
+      if (r && r.body && r.body.error) throw fatalErr(r.status === 403 ? 'Clé d’accès invalide ou révoquée : demandez la nouvelle adresse de cette vue à un administrateur (Paramètres › Vues écrans).' : r.body.error);
+    }
     if (/^https?:/.test(location.protocol) && !forceLocal) {
       let r = null;
       try { r = await Auth.api('me'); } catch (e) { /* pas d'API → mode local */ }
@@ -1336,6 +1403,14 @@ const Sync = {
     if (this.pending.length) this.flush();
   },
   async poll() {
+    if (this.mode === 'view') {
+      try {
+        const r = await fetchJSON('api.php?a=view&key=' + encodeURIComponent(this.key), {}, 20000);
+        if (r.status === 403) { location.reload(); return; }      // clé changée : la page affiche le message d'accès refusé
+        if (r.ok && r.body && r.body.data && r.body.version !== this.version) { DB = migrate(r.body.data); this.version = r.body.version; REV++; render(); }
+      } catch (e) { }
+      return;
+    }
     if (this.mode !== 'server' || this.busy || this.pending.length || Auth.waiting) return;
     try {
       const r = await fetchJSON('api.php?a=ping&page=' + encodeURIComponent(PAGE), {}, 6000);
@@ -1569,7 +1644,9 @@ function dayLoad(svId, d, staffList) {
     if (isWork(d)) for (const sl of [0, 1]) if (!absenceAt(s.id, d, sl)) av++;
     const ops = (idx().dayOps.get(s.id + '|' + d) || []).filter(o => o.serviceId === svId);
     if (sv.capMode === 'count') { cap += av / 2 * (+sv.perDay || 1); load += ops.length; }
-    else { cap += av * h / 2; load += ops.reduce((t, o) => t + opHalves(o).filter(x => x[0] === d).length * h / 2, 0); }
+    else {                                         // + battement réglé entre deux opérations d'une même ressource ce jour-là
+      cap += av * h / 2; load += ops.reduce((t, o) => t + opHalves(o).filter(x => x[0] === d).length * h / 2, 0) + Math.max(0, ops.length - 1) * (+DB.settings.opGapMin || 0) / 60;
+    }
   }
   return { cap, load, pct: cap > 0 ? Math.round(load / cap * 100) : (load > 0 ? 200 : null), unit: sv.capMode === 'count' ? 'op.' : 'h' };
 }
@@ -1642,6 +1719,10 @@ function render() {
   if (!DB) return;
   CH = {}; chN = 0;
   kioskTimers.forEach(clearInterval); kioskTimers = [];
+  if (Sync.mode === 'view') {                       // accès par clé : uniquement la vue écran concernée
+    const want = '#/ecran/' + Sync.view, rr = route();
+    if (rr.seg[0] !== 'ecran' || (Sync.view !== 'rotation' && rr.seg[1] !== Sync.view)) { location.replace(want); return; }
+  }
   const r = route();
   document.body.classList.toggle('kiosk', r.seg[0] === 'ecran');
   const act = document.activeElement, aid = act && act.id, asel = act && act.selectionStart;
@@ -2256,12 +2337,17 @@ function openProject(id) {
      ${info('Type', typeChip(p))}${info('Agence', ag ? esc(ag.name) : '')}${info('Modèle', esc(da ? da.name : ''))}
      ${info('Ville', esc(p.city))}${info('Date demandée', p.requested ? D.fmt(p.requested) + lateFlag(p) : '')}
      ${info('Commercial', esc(label(get('users', p.commercialId))))}
-     ${info('Commande', p.erpRef ? esc(p.erpRef) + (p.part ? ' · ' + esc(p.part) : '') + (linked.length ? ` <span class="mut">(${linked.length} autre${linked.length > 1 ? 's' : ''} machine${linked.length > 1 ? 's' : ''})</span>` : '') : '')}
-     ${info('Contact sur site', esc([p.contactName, p.phone].filter(Boolean).join(' · ')))}
+     ${info('Code Vega', p.erpRef ? esc(p.erpRef) + (p.part ? ' · ' + esc(p.part) : '') + (linked.length ? ` <span class="mut">(${linked.length} autre${linked.length > 1 ? 's' : ''} machine${linked.length > 1 ? 's' : ''})</span>` : '') : '')}
+     ${info('Contact', esc(p.contactName || ''))}
+     ${info('Téléphone', [p.phone, p.mobile].filter(Boolean).map(t => `<a href="tel:${esc(String(t).replace(/[^\d+]/g, ''))}">${esc(t)}</a>`).join(' · '))}
+     ${info('Email', p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '')}
+     ${info('Adresse', esc([p.address, [p.zip, p.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')))}
+     ${info('Distributeur', esc([p.daCount !== '' && p.daCount != null ? p.daCount + ' DA' : '', p.matricule ? 'matricule ' + p.matricule : '',
+       p.keyCount ? p.keyCount + ' clé' + (p.keyCount > 1 ? 's' : '') : '', p.payment ? 'système de paiement' : ''].filter(Boolean).join(' · ')))}
      ${info('Étiquettes', tagChips(p))}
      ${info('Créé le', D.dt(p.createdAt) + (p.createdBy ? ' par ' + esc(p.createdBy) : ''))}
    </div>
-   ${p.notes ? `<div class="card" style="background:var(--surface-2);margin-bottom:14px"><div class="card-b" style="padding:10px 12px;white-space:pre-wrap">${esc(p.notes)}</div></div>` : ''}
+   ${p.notes ? `<div class="card" style="background:var(--surface-2);margin-bottom:14px"><div class="card-b" style="padding:10px 12px;white-space:pre-wrap"><div class="mut" style="font-size:11.5px;margin-bottom:3px">Particularités</div>${esc(p.notes)}</div></div>` : ''}
    <h4 style="margin:0 0 8px">Étapes</h4>
    <div class="steps">${ops.map(o => stepRow(o)).join('') || emptyBox('Aucune étape', 'Ajoutez les étapes à réaliser pour ce projet.')}</div>
    <div class="row" style="margin-top:10px">
@@ -2296,35 +2382,58 @@ function stepRow(o) {
       <button class="ibtn" data-act="open-op" data-id="${o.id}" title="Modifier l’étape">${ic('edit')}</button>
       <button class="ibtn" data-act="del-step" data-id="${o.id}" title="Supprimer l’étape">${ic('trash')}</button></span></div>`;
 }
+const PF_DEF = { daCount: 1, keyCount: 0, civ: '', payment: false };
 function projectForm(id) {
   const p = id ? P(id) : null;
   // nouveau projet : brouillon conservé (sur ce poste) tant qu'on n'a ni créé le projet ni cliqué sur « Annuler »
   const draft = !p && UI.projDraft && typeof UI.projDraft === 'object' ? UI.projDraft : null;
-  const d = p || Object.assign({ typeId: (DB.projectTypes[0] || {}).id, agencyId: (DB.agencies[0] || {}).id, tags: [], requested: '' }, draft || {});
+  const d = Object.assign({}, p || Object.assign({ typeId: (DB.projectTypes[0] || {}).id, agencyId: (DB.agencies[0] || {}).id, tags: [], requested: '' }, PF_DEF, draft || {}));
+  if (p && !p.contactFirst && !p.contactLast && p.contactName) d.contactLast = p.contactName;   // ancien champ unique « Contact sur site »
+  if (d.daCount === undefined || d.daCount === '') d.daCount = p ? '' : 1;
   const f = (l, h, help) => `<div class="fld"><label>${l}</label>${h}${help ? `<span class="help">${help}</span>` : ''}</div>`;
-  const body = `<div class="fgrid">
-    ${f('Client *', `<input class="in" name="client" required value="${esc(d.client || '')}" autofocus>`)}
-    ${f('Type de projet *', `<select class="in" name="typeId" data-steps>${selOpts(DB.projectTypes.filter(t => t.active !== false), d.typeId)}</select>`)}
-    ${f('Agence *', `<select class="in" name="agencyId" data-steps>${selOpts(DB.agencies.filter(a => a.active !== false), d.agencyId)}</select>`)}
-    ${f('Modèle de distributeur', `<select class="in" name="daModelId">${selOpts(DB.daModels.filter(x => x.active !== false || x.id === d.daModelId).sort(byOrder), d.daModelId, '—')}</select>`)}
-    ${f('Ville', `<input class="in" name="city" value="${esc(d.city || '')}">`)}
-    ${f('Adresse', `<input class="in" name="address" value="${esc(d.address || '')}">`)}
-    ${f('Date demandée', `<input class="in" type="date" name="requested" value="${esc(d.requested || '')}">`, 'Engagement pris auprès du client')}
-    ${f('Commercial', `<select class="in" name="commercialId">${selOpts(DB.users.filter(u => u.active !== false || u.id === d.commercialId).sort(byName), d.commercialId, '—')}</select>`)}
-    ${f('N° de commande', `<input class="in" name="erpRef" value="${esc(d.erpRef || '')}">`, 'Référence Vega / bon de commande')}
-    ${f('Machine n°', `<input class="in" name="part" value="${esc(d.part || '')}" placeholder="1/3">`, 'Si la commande comporte plusieurs machines')}
-    ${f('Durée de production', `<select class="in" name="opGroupId">${selOpts(DB.opGroups.filter(g => g.active !== false), d.opGroupId, '— durée par défaut du service —')}</select>`)}
-    ${f('Contact sur site', `<input class="in" name="contactName" value="${esc(d.contactName || '')}">`)}
-    ${f('Téléphone', `<input class="in" name="phone" value="${esc(d.phone || '')}">`)}
-  </div>
-  <div class="fld" style="margin-top:12px"><label>Étiquettes</label><div class="chips">${DB.tags.map(t =>
+  const inp = (n, ph, t = 'text', x = '') => `<input class="in" type="${t}" name="${n}" placeholder="${esc(ph)}" value="${esc(d[n] ?? '')}"${x}>`;
+  const sec = (t, icn, inner) => `<div class="card pf-sec"><div class="card-h">${ic(icn)}<span>${t}</span></div><div class="card-b">${inner}</div></div>`;
+  const pair = (a, b, cls = '') => `<div class="pf-pair${cls}">${a}${b}</div>`;
+  const body = `<div class="pf">
+   <div class="pf-col">
+    ${sec('Projet', 'flag', `<div class="fgrid pf-g">
+      ${f('Type de projet *', `<select class="in" name="typeId" data-steps>${selOpts(DB.projectTypes.filter(t => t.active !== false), d.typeId)}</select>`)}
+      ${f('Commercial', `<select class="in" name="commercialId">${selOpts(DB.users.filter(u => u.active !== false || u.id === d.commercialId).sort(byName), d.commercialId, 'Sélectionner le commercial')}</select>`)}
+      ${f('Code Vega', inp('erpRef', 'Code Vega'), 'N° de commande / bon de commande')}
+      ${f('Agence *', `<select class="in" name="agencyId" data-steps>${selOpts(DB.agencies.filter(a => a.active !== false), d.agencyId)}</select>`)}
+      ${f('Machine n°', inp('part', '1/3'), 'Si la commande comporte plusieurs machines')}
+      ${f('Durée de production', `<select class="in" name="opGroupId">${selOpts(DB.opGroups.filter(g => g.active !== false), d.opGroupId, '— durée par défaut du service —')}</select>`)}
+    </div>
+    <div class="fld" style="margin-top:12px"><label>Étiquettes</label><div class="chips">${DB.tags.map(t =>
     `<label class="chip" style="${cvar(t.color, .13, .35)}"><input type="checkbox" name="tags" data-multi="1" value="${t.id}"${(d.tags || []).includes(t.id) ? ' checked' : ''}><i class="dot"></i>${esc(t.name)}</label>`).join('')}</div></div>
-  <div class="fld" style="margin-top:12px"><label>Notes</label><textarea class="in" name="notes" rows="2">${esc(d.notes || '')}</textarea></div>
-  ${p ? '' : `<div class="bnr info" style="margin-top:14px">${ic('info')}<span id="steps-prev"></span></div>`}`;
+    ${p ? `<label class="sw" style="margin-top:12px"><input type="checkbox" name="archived"${p.archived ? ' checked' : ''}><i></i><span>${ic('archive', 'sm')} Terminé &amp; archivé</span></label>
+      <span class="help" style="display:block;margin-top:4px">${DB.settings.autoArchive ? 'Une fois toutes les opérations terminées, le projet est archivé automatiquement.' : 'L’archivage automatique est désactivé dans les paramètres.'}</span>` : ''}`)}
+    ${sec('Planning', 'cal', f('Date demandée', inp('requested', '', 'date'), 'Engagement pris auprès du client'))}
+   </div>
+   <div class="pf-col">
+    ${sec('Client', 'building', `<div class="pf-rows">
+      ${f('Entreprise *', inp('client', 'Entreprise', 'text', ' required autofocus'))}
+      ${f('Contact', `<div class="pf-pair pf-civ"><select class="in" name="civ">${[['', 'M. / Mme'], ['M.', 'M.'], ['Mme', 'Mme']].map(([v, l]) => `<option value="${v}"${(d.civ || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select>${inp('contactFirst', 'Prénom')}</div>${inp('contactLast', 'Nom')}`)}
+      ${f('Adresse', `<textarea class="in" name="address" rows="2" placeholder="Adresse">${esc(d.address || '')}</textarea>`)}
+      ${f('Ville', pair(inp('zip', 'Code postal', 'text', ' inputmode="numeric" maxlength="10"'), inp('city', 'Ville'), ' pf-zip'))}
+      ${pair(f('Téléphone', inp('phone', 'Téléphone', 'tel')), f('Portable', inp('mobile', 'Portable', 'tel')))}
+      ${f('Email', inp('email', 'Email', 'email'))}
+    </div>`)}
+   </div>
+   <div class="pf-col">
+    ${sec('Distributeur automatique', 'coffee', `<div class="pf-rows">
+      ${f('Distributeur', `<select class="in" name="daModelId">${selOpts(DB.daModels.filter(x => x.active !== false || x.id === d.daModelId).sort(byOrder), d.daModelId, 'Sélectionner un DA')}</select>`)}
+      ${f('Matricule', inp('matricule', '123456'), 'Repris dans l’étape de production')}
+      ${pair(f('Nombre de DA', inp('daCount', '1', 'number', ' min="0" max="99"')), f('Nombre de clés', inp('keyCount', '0', 'number', ' min="0" max="99"')))}
+      <label class="sw"><input type="checkbox" name="payment"${d.payment ? ' checked' : ''}><i></i><span>Système de paiement (monnayeur, lecteur CB…)</span></label>
+      ${f('Particularités', `<textarea class="in" name="notes" rows="4" placeholder="Informations complémentaires (meuble, monnayeur, …)" style="min-height:90px">${esc(d.notes || '')}</textarea>`)}
+    </div>`)}
+    ${p ? '' : `<div class="bnr info" style="margin:0">${ic('info')}<span id="steps-prev"></span></div>`}
+   </div></div>`;
   const draftBar = draft ? `<div class="bnr warn" id="draft-bar" style="margin:0 0 12px">${ic('info')}<span style="flex:1">Brouillon repris : votre saisie précédente a été conservée.</span>
     <button class="btn sm" type="button" data-draft-clear>Repartir de zéro</button></div>` : '';
   const m = modal({
-    title: p ? `Modifier le projet #${p.id}` : 'Nouveau projet', size: 'lg', body: draftBar + body,
+    title: p ? `Modifier le projet #${p.id}` : 'Nouveau projet', size: 'xl pfm', body: draftBar + body,
     foot: `<span class="spacer"></span><button class="btn" ${p ? 'data-close' : 'data-cancel'}>Annuler</button>
            <button class="btn pri" data-save>${p ? 'Enregistrer' : 'Créer le projet'}</button>`,
     onMount(el, close) {
@@ -2337,7 +2446,8 @@ function projectForm(id) {
       $$('[data-steps]', el).forEach(x => x.addEventListener('change', prev)); prev();
       if (!p) {
         const keep = () => {                    // chaque frappe est mémorisée ; un formulaire vide n'est pas gardé
-          const v = formVals(el), filled = Object.entries(v).some(([k, x]) => !['typeId', 'agencyId'].includes(k) && (Array.isArray(x) ? x.length : String(x ?? '').trim()));
+          const v = formVals(el), filled = Object.entries(v).some(([k, x]) => !['typeId', 'agencyId'].includes(k) && x !== false && String(x) !== String(PF_DEF[k] ?? '')
+            && (Array.isArray(x) ? x.length : String(x ?? '').trim()));
           if (filled) UI.projDraft = v; else delete UI.projDraft;
           saveUI();
         };
@@ -2348,9 +2458,16 @@ function projectForm(id) {
       }
       $('[data-save]', el).onclick = () => {
         const v = formVals(el);
-        if (!v.client.trim()) { toast('Le nom du client est obligatoire.', 'danger'); return; }
+        if (!v.client.trim()) { toast('Le nom de l’entreprise est obligatoire.', 'danger'); return; }
+        if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email.trim())) { toast('L’adresse email n’est pas valide.', 'danger'); return; }
+        v.contactName = [v.civ, v.contactFirst, v.contactLast].map(x => String(x || '').trim()).filter(Boolean).join(' ');
         if (p) {
-          mutate('Modification du projet', db => { Object.assign(db.projects.find(x => x.id === p.id), v); }, { ref: 'p' + p.id });
+          const arch = v.archived; delete v.archived;
+          mutate('Modification du projet', db => {
+            const x = db.projects.find(y => y.id === p.id); Object.assign(x, v);
+            if (arch !== undefined && !!arch !== !!x.archived) { x.archived = !!arch; x.autoArch = false; x.archivedAt = arch ? D.today() : ''; }
+            if (v.matricule) for (const o of db.ops) if (o.projectId === x.id && !o.matricule && (db.services.find(s => s.id === o.serviceId) || {}).needsPrep) o.matricule = v.matricule;
+          }, { ref: 'p' + p.id });
         } else {
           const who = me() ? label(me()) : '';
           mutate('Création du projet ' + v.client, db => {
@@ -2358,7 +2475,7 @@ function projectForm(id) {
             db.projects.push(Object.assign({
               id, archived: false, archivedAt: '', autoArch: false, createdAt: D.now(), createdBy: who
             }, v));
-            for (const s of stepsFor(v.typeId, v.agencyId)) db.ops.push(newOp(db, id, s, v.opGroupId));
+            for (const s of stepsFor(v.typeId, v.agencyId)) { const o = newOp(db, id, s, v.opGroupId); if (v.matricule && (db.services.find(x => x.id === s) || {}).needsPrep) o.matricule = v.matricule; db.ops.push(o); }
           }, { ref: 'p' + (DB.counters.project) });
           delete UI.projDraft; saveUI();
           toast('Projet créé', 'ok');
@@ -2381,14 +2498,14 @@ function openOp(id) {
      <div class="row wrap" style="gap:8px"><b>${esc(p.client || '')}</b><span class="n mut">#${p.id}</span>${typeChip(p)}${tagChips(p)}
        <span class="spacer"></span><button class="btn sm" data-act="open-project" data-id="${p.id}">Voir le projet</button></div>
      <div class="mut" style="font-size:12.5px;margin-top:4px">${esc([da && da.name, p.city, p.address].filter(Boolean).join(' — '))}
-       ${p.requested ? ' · demandé pour le ' + D.fmt(p.requested) : ''}${p.phone ? ' · ' + esc(p.phone) : ''}</div></div></div>
+       ${p.requested ? ' · demandé pour le ' + D.fmt(p.requested) : ''}${[p.contactName, p.phone, p.mobile].filter(Boolean).length ? ' · ' + esc([p.contactName, p.phone, p.mobile].filter(Boolean).join(' ')) : ''}${p.daCount > 1 ? ' · ' + p.daCount + ' DA' : ''}${p.payment ? ' · paiement' : ''}</div></div></div>
    <div class="fgrid">
      ${f('Statut', `<select class="in" name="statusId">${selOpts(DB.statuses.slice().sort(byOrder), o.statusId)}</select>`)}
      ${f('Ressource', staffSelect(o.serviceId, o.staffId))}
      ${f('Date', `<input class="in" type="date" name="date" value="${esc(o.date)}">`)}
      ${half ? f('Créneau', `<select class="in" name="slot"><option value="AM"${o.slot !== 'PM' ? ' selected' : ''}>Matin</option><option value="PM"${o.slot === 'PM' ? ' selected' : ''}>Après-midi</option></select>`) : ''}
      ${f('Durée', `<select class="in" name="halfDays">${[1, 2, 3, 4, 5, 6, 8, 10].map(n => `<option value="${n}"${n === o.halfDays ? ' selected' : ''}>${num(n / 2, 1)} jour${n > 2 ? 's' : ''} (${num(n * hpd() / 2, 1)} h)</option>`).join('')}</select>`)}
-     ${sv.needsPrep ? f('Matricule machine', `<input class="in" name="matricule" value="${esc(o.matricule || '')}">`) : ''}
+     ${sv.needsPrep ? f('Matricule machine', `<input class="in" name="matricule" value="${esc(o.matricule || p.matricule || '')}">`) : ''}
      ${sv.needsContact ? f('Contact client', `<select class="in" name="contact">
         <option value="none"${o.contact === 'none' ? ' selected' : ''}>Non contacté</option>
         <option value="msg"${o.contact === 'msg' ? ' selected' : ''}>Message laissé</option>
@@ -2775,12 +2892,11 @@ function absenceForm(id, pre) {
 /* ------------------------------ vues écrans ------------------------------ */
 function screenList() {
   const l = DB.services.filter(s => s.active !== false && s.screen !== false).sort(byOrder)
-    .map(s => ({ id: s.id, name: 'Planning ' + s.name, desc: s.desc || '', scroll: s.scroll || 30, color: s.color, icon: s.icon }));
+    .map(s => ({ id: s.id, name: 'Planning ' + s.name, desc: s.desc || '', scroll: s.scroll ?? 30, color: s.color, icon: s.icon }));
   l.unshift({ id: 'preparation', name: 'Préparation atelier', desc: 'Machines à préparer, par date de production', scroll: DB.settings.prepScroll, color: '#7c5cc4', icon: 'clipboard' });
   return l;
 }
 function pageScreens() {
-  const base = location.href.split('#')[0];
   return `${phead('Vues écrans', 'Affichages plein écran pour l’atelier, le garage et les agences — sans menu, rafraîchis automatiquement')}
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(310px,1fr))">
     ${screenList().map(v => `<div class="card"><div class="card-h"><span style="color:${v.color}">${ic(v.icon)}</span><span>${esc(v.name)}</span></div>
@@ -2789,11 +2905,11 @@ function pageScreens() {
           <input class="in" type="number" min="0" max="600" style="width:82px" data-on="scroll" data-id="${v.id}" value="${v.scroll}">
           <span class="mut" style="font-size:12.5px">secondes (0 = figé)</span></div>
         <div class="row" style="gap:7px"><a class="btn pri" href="#/ecran/${v.id}" target="_blank">${ic('ext')} Ouvrir</a>
-          <button class="btn" data-act="copy-url" data-url="${esc(base + '#/ecran/' + v.id)}">${ic('copy')} Copier l’adresse</button></div></div></div>`).join('')}
+          <button class="btn" data-act="copy-url" data-url="${esc(viewUrl(v.id))}" title="${Sync.mode === 'server' ? 'Adresse avec la clé d’accès : l’écran n’a pas besoin de compte' : ''}">${ic('copy')} Copier l’adresse</button></div></div></div>`).join('')}
     <div class="card"><div class="card-h">${ic('play')}<span>Rotation</span></div><div class="card-b">
       <p class="mut" style="margin:0 0 12px">Enchaîne toutes les vues l’une après l’autre, comme un diaporama.</p>
       <div class="row" style="gap:7px"><a class="btn pri" href="#/ecran/rotation" target="_blank">${ic('ext')} Ouvrir</a>
-        <button class="btn" data-act="copy-url" data-url="${esc(base + '#/ecran/rotation')}">${ic('copy')} Copier l’adresse</button></div></div></div>
+        <button class="btn" data-act="copy-url" data-url="${esc(viewUrl('rotation'))}">${ic('copy')} Copier l’adresse</button></div></div></div>
   </div>
   <div class="card" style="margin-top:14px"><div class="card-h">${ic('info')}<span>Mettre un écran en service</span></div><div class="card-b">
     <ol style="margin:0;padding-left:20px;line-height:1.8">
@@ -2803,7 +2919,7 @@ function pageScreens() {
       <li>La vue se rafraîchit toute seule (${DB.settings.kioskRefresh} s) et défile selon la durée réglée ci-dessus.</li>
     </ol>
     <div class="bnr warn" style="margin-top:12px">${ic('warn')}<span>En mode local, un écran n’affiche que les données du navigateur où elles ont été saisies.
-      Pour des écrans répartis sur plusieurs sites, déployez <b>api.php</b> (base partagée) et protégez l’accès au dossier côté serveur.</span></div>
+      Pour des écrans répartis sur plusieurs sites, déployez <b>api.php</b> (base partagée) : l’adresse copiée contient alors une clé d’accès (Paramètres › Clés des vues écrans) qui évite de créer un compte pour l’écran.</span></div>
   </div></div>`;
 }
 function pageKiosk(id, q) {
@@ -3055,6 +3171,7 @@ const SCHEMAS = {
     label: 'Modèles de distributeur', one: 'un modèle', icon: 'coffee',
     desc: 'Catalogue des machines. Décochez « Au catalogue » plutôt que de préfixer un modèle obsolète.',
     fields: [
+      { k: 'code', l: 'N° outil actuel', t: 'text', list: 1, help: 'Identifiant du modèle dans l’ancien outil de planning (reprise de l’historique).' },
       { k: 'name', l: 'Modèle', t: 'text', req: 1, list: 1 },
       { k: 'category', l: 'Famille', t: 'text', list: 1 },
       { k: 'order', l: 'Ordre', t: 'number', def: 50 },
@@ -3134,7 +3251,7 @@ function cellVal(f, x) {
     case 'bool': return v !== false ? `<span style="color:var(--ok)" title="oui">${ic('check', 'sm')}</span>` : '<span class="mut">non</span>';
     case 'color': return `<span class="chip" style="${cvar(v || '#999', .16, .4)}"><i class="dot"></i>${esc(v || '')}</span>`;
     case 'ref': return esc(label(get(f.ref, v))) || '<span class="mut">—</span>';
-    case 'refs': return (v || []).map(id => `<span class="chip">${esc(label(get(f.ref, id)))}</span>`).join(' ') || '<span class="mut">—</span>';
+    case 'refs': return (v || []).map(id => `<span class="chip">${esc(rlab(f.ref, get(f.ref, id)))}</span>`).join(' ') || '<span class="mut">—</span>';
     case 'multi': return (v || []).map(k => `<span class="chip">${esc((f.opts.find(o => o[0] === k) || [])[1] || k)}</span>`).join(' ') || '<span class="mut">aucun</span>';
     case 'select': return esc((f.opts.find(o => o[0] === v) || [])[1] || v || '');
     case 'number': return v === '' || v == null ? '<span class="mut">—</span>' : num(v, String(v).includes('.') ? 1 : 0);
@@ -3155,7 +3272,7 @@ function fieldHTML(f, v) {
     case 'icon': return `<select class="in" name="${f.k}" id="${id}">${Object.keys(ICONS).map(k => `<option value="${k}"${k === v ? ' selected' : ''}>${k}</option>`).join('')}</select>`;
     case 'ref': return `<select class="in" name="${f.k}" id="${id}">${selOpts(DB[f.ref].filter(x => (x.active !== false || x.id === v) && (!f.filter || f.filter(x) || x.id === v)).sort(f.ref === 'staff' || f.ref === 'users' ? byName : byOrder), v, f.req ? '' : '—')}</select>`;
     case 'refs': return `<div class="chips">${DB[f.ref].filter(x => x.active !== false || (v || []).includes(x.id)).sort(byOrder).map(x =>
-      `<label class="chip${(v || []).includes(x.id) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="${f.k}" value="${esc(x.id)}"${(v || []).includes(x.id) ? ' checked' : ''}>${esc(label(x))}</label>`).join('')}</div>`;
+      `<label class="chip${(v || []).includes(x.id) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="${f.k}" value="${esc(x.id)}"${(v || []).includes(x.id) ? ' checked' : ''}>${esc(rlab(f.ref, x))}</label>`).join('')}</div>`;
     case 'perms': {
       const sup = (v || []).includes('super'), keys = new Set(f.opts.map(o => o[0]));
       return `<div class="perm-list" data-perms><div class="row wrap" style="gap:6px;padding:4px 6px 2px">
@@ -3235,6 +3352,13 @@ function pageAdmin(kind, q) {
   const qq = (UI.adq || {})[kind] || '';
   let rows = DB[kind].slice().sort(kind === 'staff' || kind === 'users' ? byName : byOrder);
   if (qq) rows = rows.filter(x => norm(JSON.stringify(Object.values(x))).includes(norm(qq)));
+  const FLT = { staffGroups: [['agencyId', 'agencies', 'Agences'], ['serviceId', 'services', 'Services']], staff: [['groupIds', 'staffGroups', 'Groupes']], daModels: [['active', null, 'Catalogue']] }[kind] || [];
+  const fv = (UI.adf || {})[kind] || {};
+  for (const [k] of FLT) if (fv[k]) rows = rows.filter(x => k === 'active' ? String(x.active !== false) === fv[k] : Array.isArray(x[k]) ? x[k].includes(fv[k]) : x[k] === fv[k]);
+  const fltHTML = FLT.map(([k, ref, l]) => `<select class="in" style="width:auto;min-width:150px" data-on="adf" data-k="${kind}" data-f="${k}">
+    <option value="">${esc(l)} : tous</option>${ref ? DB[ref].slice().sort(byOrder).map(x => `<option value="${esc(x.id)}"${fv[k] === x.id ? ' selected' : ''}>${esc(rlab(ref, x))}</option>`).join('')
+      : `<option value="true"${fv[k] === 'true' ? ' selected' : ''}>Au catalogue</option><option value="false"${fv[k] === 'false' ? ' selected' : ''}>Retirés</option>`}</select>`).join('');
+  const nStaff = g => DB.staff.filter(s => s.active !== false && (s.groupIds || []).includes(g.id)).length;
   const cols = S.fields.filter(f => f.list);
   const accs = kind === 'users' && Sync.mode === 'server';
   if (accs && (Auth.acc === null || lastPath !== route().path)) { if (lastPath !== route().path) Auth.acc = null; Auth.loadAccounts(); }
@@ -3263,14 +3387,15 @@ function pageAdmin(kind, q) {
     ${xpBtn('admin:' + kind)}${kind !== 'roles' ? impBtn(kind) : ''}`)}
   ${extra}
   <div class="toolbar"><input class="in srchin" id="adq_${kind}" data-on="adq" data-k="${kind}" placeholder="Filtrer" value="${esc(qq)}">
+    ${fltHTML}${FLT.some(([k]) => fv[k]) ? `<button class="btn sm gh" data-act="adf-clear" data-k="${kind}" title="Effacer les filtres">${ic('x', 'sm')}</button>` : ''}
     <span class="mut">${rows.length} élément${rows.length > 1 ? 's' : ''}</span></div>
-  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}${accs ? '<th>Identifiant</th>' : ''}<th style="width:${accs ? 180 : 110}px"></th></tr></thead><tbody>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}${kind === 'staffGroups' ? '<th class="r">Nombre de personnels</th>' : ''}${accs ? '<th>Identifiant</th>' : ''}<th style="width:${accs ? 180 : 110}px"></th></tr></thead><tbody>
     ${rows.map(x => `<tr class="clic" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}">
-      ${cols.map(f => `<td>${kind === 'roles' && f.k === 'perms' ? permsCell(x) : cellVal(f, x)}</td>`).join('')}${accCell(x)}
+      ${cols.map(f => `<td>${kind === 'roles' && f.k === 'perms' ? permsCell(x) : cellVal(f, x)}</td>`).join('')}${kind === 'staffGroups' ? `<td class="r n">${nStaff(x)}</td>` : ''}${accCell(x)}
       <td class="nowrap">${accBtn(x)}<button class="ibtn" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}" title="Modifier">${ic('edit')}</button>
         <button class="ibtn" data-act="crud-dup" data-c="${kind}" data-id="${esc(x.id)}" title="Dupliquer">${ic('copy')}</button>
         <button class="ibtn" data-act="crud-del" data-c="${kind}" data-id="${esc(x.id)}" title="Supprimer">${ic('trash')}</button></td></tr>`).join('')
-    || `<tr><td colspan="${cols.length + (accs ? 2 : 1)}">${emptyBox('Liste vide', 'Ajoutez un premier élément pour commencer.')}</td></tr>`}
+    || `<tr><td colspan="${cols.length + (accs ? 2 : 1) + (kind === 'staffGroups' ? 1 : 0)}">${FLT.some(([k]) => fv[k]) || qq ? emptyBox('Aucun résultat', 'Aucun élément ne correspond aux filtres.') : emptyBox('Liste vide', 'Ajoutez un premier élément pour commencer.')}</td></tr>`}
   </tbody></table></div>`;
 }
 function pageSettings() {
@@ -3301,10 +3426,26 @@ function pageSettings() {
     <div class="row wrap" style="gap:20px;margin-top:12px">
       <label class="sw"><input type="checkbox" name="autoArchive"${S.autoArchive ? ' checked' : ''}><i></i><span>Archiver automatiquement les projets dont toutes les étapes sont terminées</span></label>
       <label class="sw"><input type="checkbox" name="maintenance"${S.maintenance ? ' checked' : ''}><i></i><span>Mode maintenance (lecture seule sauf administrateurs)</span></label></div>`)}
+  ${sec('Délais', 'clock', `<div class="fgrid">
+    ${DB.services.filter(s => s.active !== false).sort(byOrder).map(s => f(`Délai après ${esc(s.id === 'sv_trans' ? 'intersite (' + s.name + ')' : s.name.toLowerCase())}`,
+      `<div class="in-unit"><input class="in" type="number" name="dly_${esc(s.id)}" min="0" max="60" value="${+s.delayAfter || 0}"><span>jours</span></div>`,
+      'Délai avant la planification de l’opération suivante une fois celle-ci terminée.')).join('')}
+    ${f('Délai entre les opérations', `<div class="in-unit"><input class="in" type="number" name="opGapMin" min="0" max="240" step="5" value="${+S.opGapMin || 0}"><span>minutes</span></div>`,
+      'Battement entre deux opérations planifiées d’une même ressource, compté dans la charge des services mesurés en heures.')}</div>`)}
   ${sec('Vues écrans & synchronisation', 'monitor', `<div class="fgrid">
-    ${f('Rafraîchissement des écrans (s)', `<input class="in" type="number" name="kioskRefresh" min="5" max="600" value="${S.kioskRefresh}">`)}
-    ${f('Défilement de la vue préparation (s)', `<input class="in" type="number" name="prepScroll" min="0" max="600" value="${S.prepScroll}">`)}
-    ${f('Intervalle de synchronisation (s)', `<input class="in" type="number" name="pollSec" min="5" max="300" value="${S.pollSec}">`, 'Mode serveur uniquement : fréquence de récupération des modifications des autres postes.')}</div>`)}
+    ${screenList().map(v => f(`Durée du défilement · ${esc(v.name.replace(/^Planning /, 'vue ').replace('Préparation atelier', 'vue préparation'))}`,
+      `<div class="in-unit"><input class="in" type="number" name="scr_${esc(v.id)}" min="0" max="600" value="${+v.scroll || 0}"><span>secondes</span></div>`)).join('')}
+    ${f('Rafraîchissement des écrans', `<div class="in-unit"><input class="in" type="number" name="kioskRefresh" min="5" max="600" value="${S.kioskRefresh}"><span>secondes</span></div>`)}
+    ${f('Intervalle de synchronisation', `<div class="in-unit"><input class="in" type="number" name="pollSec" min="5" max="300" value="${S.pollSec}"><span>secondes</span></div>`, 'Mode serveur uniquement : fréquence de récupération des modifications des autres postes.')}</div>
+    <p class="help" style="margin:10px 0 0">0 seconde = vue figée, sans défilement.</p>`)}
+  ${sec('Clés des vues écrans', 'lock', `<p class="mut" style="margin:0 0 12px">Les clés donnent accès aux vues écrans sans compte (écran d’atelier, télévision d’agence), en lecture seule et sans les coordonnées des clients.
+      <b>Changer une clé annule l’accès</b> des écrans qui utilisent l’ancienne adresse.</p>
+    <div class="keys">${[...screenList(), { id: 'rotation', name: 'Rotation (toutes les vues)' }].map(v => `<div class="key-r">
+      <label for="key_${esc(v.id)}">${esc(v.name.replace(/^Planning /, 'Vue '))}</label>
+      <input class="in mono" id="key_${esc(v.id)}" name="key_${esc(v.id)}" value="${esc((S.viewKeys || {})[v.id] || '')}" spellcheck="false" autocomplete="off">
+      <button class="ibtn" type="button" data-act="key-new" data-id="${esc(v.id)}" title="Générer une nouvelle clé (annule l’ancienne adresse)">${ic('refresh')}</button>
+      <button class="ibtn" type="button" data-act="copy-url" data-url="${esc(viewUrl(v.id))}" title="Copier l’adresse de l’écran">${ic('copy')}</button></div>`).join('')}</div>
+    ${Sync.mode !== 'server' ? `<div class="bnr info" style="margin:12px 0 0">${ic('info')}<span>Les clés ne servent qu’en base partagée (api.php) : en base locale, un écran lit les données du navigateur où il est ouvert.</span></div>` : ''}`)}
   </form>`;
 }
 function pageData() {
@@ -3537,17 +3678,31 @@ Object.assign(ACT, {
     if (!await ask(`Désactiver ${l.length} compte(s) sans connexion depuis plus de ${lim} jours ? Les projets qui leur sont rattachés ne changent pas.`, { ok: 'Désactiver' })) return;
     mutate('Désactivation des comptes dormants', db => l.filter(u => can('super') || !isSuperUser(u)).forEach(u => { const x = db.users.find(y => y.id === u.id); if (x) x.active = false; }), { undo: true });
   },
+  'adf-clear': el => { if (UI.adf) delete UI.adf[el.dataset.k]; saveUI(); render(); },
+  'key-new': el => { const i = $('#key_' + el.dataset.id); if (i) { i.value = newKey(); i.focus(); toast('Nouvelle clé générée : cliquez sur « Enregistrer » pour l’appliquer.', 'info'); } },
   'save-settings': () => {
     if (!needs('settings')) return;
     const v = formVals($('#settings'));
+    const bad = Object.entries(v).filter(([k, x]) => k.startsWith('key_') && !/^[A-Za-z0-9_-]{16,128}$/.test(String(x).trim()));
+    if (bad.length) return toast('Une clé doit faire au moins 16 caractères (lettres, chiffres, - ou _). Utilisez le bouton ↻ pour en générer une.', 'danger');
+    const keys = Object.entries(v).filter(([k]) => k.startsWith('key_')).map(([, x]) => String(x).trim());
+    if (new Set(keys).size !== keys.length) return toast('Deux vues ne peuvent pas avoir la même clé.', 'danger');
     mutate('Modification des paramètres', db => {
       Object.assign(db.settings, v, {
         workDays: (v.workDays || []).map(Number).sort(),
         closures: String(v.closures || '').split('\n').map(x => D.fromAny(x)).filter(Boolean),
         hoursPerDay: +v.hoursPerDay || 7, prepHorizon: +v.prepHorizon || 14,
         occLow: +v.occLow || 50, occHigh: +v.occHigh || 85, kioskRefresh: +v.kioskRefresh || 30,
-        prepScroll: +v.prepScroll || 0, pollSec: +v.pollSec || 15, dormantDays: +v.dormantDays || 180
+        pollSec: +v.pollSec || 15, dormantDays: +v.dormantDays || 180, opGapMin: Math.max(0, +v.opGapMin || 0)
       });
+      for (const k of Object.keys(db.settings)) if (/^(dly|scr|key)_/.test(k)) delete db.settings[k];
+      for (const [k, x] of Object.entries(v)) {
+        const m = k.match(/^(dly|scr|key)_(.+)$/); if (!m) continue;
+        const s = db.services.find(y => y.id === m[2]);
+        if (m[1] === 'dly' && s) s.delayAfter = Math.max(0, +x || 0);
+        if (m[1] === 'scr') { if (m[2] === 'preparation') db.settings.prepScroll = Math.max(0, +x || 0); else if (s) s.scroll = Math.max(0, +x || 0); }
+        if (m[1] === 'key') db.settings.viewKeys[m[2]] = /^[A-Za-z0-9_-]{16,128}$/.test(String(x).trim()) ? String(x).trim() : (db.settings.viewKeys[m[2]] || newKey());
+      }
     });
     toast('Paramètres enregistrés', 'ok');
   },
@@ -3602,6 +3757,7 @@ const ON = {
   prepf: el => { UI.prepF[el.dataset.k] = el.value; saveUI(); scheduleRender(); },
   rep: el => { UI.rep[el.dataset.k] = el.value; saveUI(); scheduleRender(); },
   adq: el => { UI.adq = UI.adq || {}; UI.adq[el.dataset.k] = el.value; scheduleRender(); },
+  adf: el => { UI.adf = UI.adf || {}; const o = UI.adf[el.dataset.k] = UI.adf[el.dataset.k] || {}; o[el.dataset.f] = el.value; saveUI(); scheduleRender(); },
   logq: el => { UI.logq = el.value; scheduleRender(); },
   mat: el => { if (can('planning')) matSave(el.dataset.id, el.value); },
   scroll: el => { if (can('settings') || can('admin')) scrollSave(el.dataset.id, el.value); }
@@ -3825,7 +3981,7 @@ function afterRender() {
   const cur = r.seg[1] === 'rotation' ? views[(UI.rotIdx || 0) % views.length] : views.find(v => v.id === r.seg[1]);
   const clock = () => { const el = $('#ki-clock'); if (el) el.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); };
   clock(); kioskTimers.push(setInterval(clock, 15000));
-  kioskTimers.push(setInterval(() => { Sync.mode === 'server' ? Sync.poll() : Sync.reloadLocal(); }, Math.max(10, +DB.settings.kioskRefresh || 30) * 1000));
+  kioskTimers.push(setInterval(() => { Sync.mode === 'server' || Sync.mode === 'view' ? Sync.poll() : Sync.reloadLocal(); }, Math.max(10, +DB.settings.kioskRefresh || 30) * 1000));
   const sec = cur ? +cur.scroll || 0 : 0;
   if (sec > 0) {
     let t = 0;
@@ -4164,12 +4320,13 @@ const DS = {
       title, sheet, pdf: ['N°', 'Client', 'Type', 'Modèle', 'Ville', 'Date demandée', 'Agence', 'Commercial', 'Prochaine étape'],
       cols: [{ l: 'N°', t: 'int' }, { l: 'Client' }, { l: 'Commande' }, { l: 'Rang' }, { l: 'Type' }, { l: 'Modèle' }, { l: 'Ville' }, { l: 'Adresse' },
         { l: 'Date demandée', t: 'date' }, { l: 'Agence' }, { l: 'Commercial' }, { l: 'Étiquettes' }, { l: 'Contact' }, { l: 'Téléphone' },
-        { l: 'Prochaine étape' }, { l: 'Avancement' }, { l: 'En retard' }, { l: 'Créé le', t: 'date' }, { l: 'Archivé le', t: 'date' }, { l: 'Notes' }],
+        { l: 'Code postal' }, { l: 'Portable' }, { l: 'Email' }, { l: 'Matricule' }, { l: 'Nombre de DA', t: 'int' }, { l: 'Nombre de clés', t: 'int' }, { l: 'Système de paiement' },
+        { l: 'Prochaine étape' }, { l: 'Avancement' }, { l: 'En retard' }, { l: 'Créé le', t: 'date' }, { l: 'Archivé le', t: 'date' }, { l: 'Particularités' }],
       rows: list.map(p => {
         const ops = projOps(p.id);
         return [p.id, p.client, p.erpRef, p.part, label(get('projectTypes', p.typeId)), label(get('daModels', p.daModelId)), p.city, p.address,
           p.requested, label(get('agencies', p.agencyId)), label(get('users', p.commercialId)), (p.tags || []).map(t => label(get('tags', t))).filter(Boolean).join(', '),
-          p.contactName, p.phone, nextStepText(p), ops.length ? ops.filter(o => stage(o) === 'done').length + '/' + ops.length + ' étapes' : '',
+          p.contactName, p.phone, p.zip, p.mobile, p.email, p.matricule, p.daCount ?? '', p.keyCount ?? '', p.payment === undefined ? '' : yesNo(!!p.payment), nextStepText(p), ops.length ? ops.filter(o => stage(o) === 'done').length + '/' + ops.length + ' étapes' : '',
           yesNo(!!lateFlag(p)), String(p.createdAt || '').slice(0, 10), p.archivedAt, p.notes];
       })
     };
@@ -4202,7 +4359,7 @@ const DS = {
       const v = x[f.k];
       if (f.t === 'bool') return yesNo(v !== false);
       if (f.t === 'ref') return label(get(f.ref, v));
-      if (f.t === 'refs') return (v || []).map(id => label(get(f.ref, id))).filter(Boolean).join(', ');
+      if (f.t === 'refs') return (v || []).map(id => rlab(f.ref, get(f.ref, id))).filter(Boolean).join(', ');
       if (f.t === 'multi' || f.t === 'perms') return (v || []).map(k => (f.opts.find(o => o[0] === k) || [])[1] || k).join(', ');
       if (f.t === 'select') return (f.opts.find(o => o[0] === v) || [])[1] || v || '';
       return v ?? '';
@@ -4391,9 +4548,10 @@ const IMPORTS = {
   ...Object.fromEntries(Object.keys(SCHEMAS).filter(k => k !== 'roles').map(k => [k, { label: SCHEMAS[k].label, perm: collPerm(k) }]))
 };
 const PROJ_COLS = {
-  id: ['n°', 'numero', 'num', '#', 'id'], client: ['client', 'nom'], type: ['type', 'mouvement'], da: ['modele', 'distributeur', 'machine'],
+  id: ['n°', 'numero', 'num', '#', 'id'], client: ['client', 'entreprise', 'nom'], type: ['type', 'mouvement'], da: ['modele', 'distributeur', 'machine'],
   city: ['ville'], address: ['adresse'], req: ['date demandee', 'demand', 'date'], ag: ['agence', 'site'], com: ['commercial'],
-  ref: ['commande', 'reference', 'ref'], part: ['rang'], tags: ['etiquette', 'tag'], contact: ['contact'], phone: ['telephone', 'tel'], notes: ['note', 'commentaire']
+  ref: ['code vega', 'commande', 'vega', 'reference', 'ref'], part: ['rang'], tags: ['etiquette', 'tag'], contact: ['contact'], phone: ['telephone', 'tel'], notes: ['particularites', 'note', 'commentaire'],
+  zip: ['code postal', 'cp'], mobile: ['portable', 'mobile'], email: ['email', 'courriel', 'mail'], matricule: ['matricule'], daCount: ['nombre de da', 'nb da'], keyCount: ['nombre de cles', 'cles'], payment: ['systeme de paiement', 'paiement']
 };
 const ABS_COLS = { staff: ['ressource', 'personne', 'salarie', 'technicien', 'nom'], type: ['motif', 'type'], start: ['du', 'debut le', 'date de debut', 'date debut', 'depuis'], startSlot: ['debut'], end: ['au', 'fin le', 'date de fin', 'date fin', 'jusqu'], endSlot: ['fin'], note: ['note', 'commentaire'] };
 function mapCols(head, spec) {
@@ -4480,7 +4638,7 @@ function importSummary(title, lines, run) {
 function importColl(kind, rows, fileName) {
   if (!needs('import') || !needs(collPerm(kind))) return;
   const S = SCHEMAS[kind], head = rows[0].map(h => norm(h)), C = collCols(kind, head);
-  const findRef = (coll, s) => { const n = norm(s); return (DB[coll].find(x => norm(label(x)) === n || norm(x.id) === n) || {}).id; };
+  const findRef = (coll, s) => { const n = norm(s); return (DB[coll].find(x => norm(rlab(coll, x)) === n || norm(x.id) === n) || DB[coll].find(x => norm(label(x)) === n) || {}).id; };
   let warn = 0;
   const conv = (f, raw) => {
     const s = String(raw ?? '').trim();
@@ -4500,11 +4658,13 @@ function importColl(kind, rows, fileName) {
   const keyOf = x => norm(label(x));
   const items = rows.slice(1).map(r => {
     const v = {};
-    for (const f of S.fields) { if (f.ro || C[f.k] < 0) continue; const x = conv(f, r[C[f.k]]); if (x !== undefined) v[f.k] = x; }
+    for (const f of S.fields) { if ((f.ro && !(kind === 'users' && f.k === 'lastLogin')) || C[f.k] < 0) continue; const x = conv(f, r[C[f.k]]); if (x !== undefined) v[f.k] = x; }
     return { v, id: C.id >= 0 ? String(r[C.id] || '').trim() : '' };
   }).filter(x => Object.keys(x.v).length);
   const plan = items.map(x => {
-    const ex = (x.id && DB[kind].find(y => y.id === x.id)) || DB[kind].find(y => keyOf(y) && keyOf(y) === norm(label(x.v)));
+    const mail = kind === 'users' ? norm(x.v.email) : '';         // utilisateurs : l'email départage deux homonymes
+    const ex = (x.id && DB[kind].find(y => y.id === x.id)) || (mail && DB[kind].find(y => norm(y.email) === mail))
+      || DB[kind].find(y => keyOf(y) && keyOf(y) === norm(label(x.v)) && !(mail && y.email && norm(y.email) !== mail));
     const missing = !ex && S.fields.find(f => f.req && (x.v[f.k] == null || x.v[f.k] === '' || (Array.isArray(x.v[f.k]) && !x.v[f.k].length)) && !(kind === 'users' && f.k === 'roleId'));
     return { ...x, ex, skip: !!missing };
   });
@@ -4519,7 +4679,12 @@ function importColl(kind, rows, fileName) {
     mutate(`Import ${S.label} (${nNew + nUpd})`, db => {
       for (const p of plan) {
         if (p.skip) continue;
-        if (p.ex) { const t = db[kind].find(y => y.id === p.ex.id); if (t) Object.assign(t, p.v); continue; }
+        if (p.ex) {
+          const t = db[kind].find(y => y.id === p.ex.id); if (!t) continue;
+          const v = Object.assign({}, p.v); if (v.lastLogin && t.lastLogin && t.lastLogin > v.lastLogin) delete v.lastLogin;   // on garde la plus récente
+          if (kind === 'users' && isSuperUser(t) && v.roleId && !isSuperRole(db.roles.find(r => r.id === v.roleId))) delete v.roleId;   // un import ne retire jamais le rôle super administrateur
+          Object.assign(t, v); continue;
+        }
         const base = Object.fromEntries(S.fields.filter(f => f.def !== undefined).map(f => [f.k, f.def]));
         if (kind === 'users') Object.assign(base, { roleId: defRole, lastLogin: '' });
         const o = Object.assign({ id: p.id && !db[kind].some(y => y.id === p.id) ? p.id : uid(kind.slice(0, 3)) }, base, p.v);
@@ -4564,7 +4729,8 @@ function importProjects(rows, fileName) {
   const data = rows.slice(1).map(r => ({
     id: C.id >= 0 ? parseInt(cell(r, 'id').replace(/\D/g, ''), 10) : NaN,
     raw: cell(r, 'client'), type: cell(r, 'type'), da: cell(r, 'da'), city: cell(r, 'city'), address: cell(r, 'address'), req: D.fromAny(cell(r, 'req')),
-    ag: cell(r, 'ag'), com: cell(r, 'com'), ref: cell(r, 'ref'), part: cell(r, 'part'), tags: cell(r, 'tags'), contact: cell(r, 'contact'), phone: cell(r, 'phone'), notes: cell(r, 'notes')
+    ag: cell(r, 'ag'), com: cell(r, 'com'), ref: cell(r, 'ref'), part: cell(r, 'part'), tags: cell(r, 'tags'), contact: cell(r, 'contact'), phone: cell(r, 'phone'), notes: cell(r, 'notes'),
+    zip: cell(r, 'zip'), mobile: cell(r, 'mobile'), email: cell(r, 'email'), matricule: cell(r, 'matricule'), daCount: cell(r, 'daCount'), keyCount: cell(r, 'keyCount'), payment: cell(r, 'payment')
   })).filter(x => x.raw);
   if (!data.length) return toast('Aucune colonne « client » reconnue dans ce fichier.', 'danger');
   const findBy = (coll, name) => DB[coll].find(x => norm(label(x)) === norm(name));
@@ -4607,6 +4773,8 @@ function importProjects(rows, fileName) {
           daModelId: ref('daModels', d.da, n => ({ id: daId(n), name: n, category: '', order: 99, active: true })),
           commercialId: !can('users') ? ((db.users.find(x => norm(label(x)) === norm(d.com)) || {}).id || '') : ref('users', d.com, n => ({ id: uid('usr'), firstName: n.split(' ')[0] || n, lastName: n.split(' ').slice(1).join(' '), email: '', roleId: 'r_com', active: true, lastLogin: '' })),
           city: d.city, address: d.address, requested: d.req, contactName: d.contact, phone: d.phone, notes: d.notes,
+          zip: d.zip, mobile: d.mobile, email: d.email, matricule: d.matricule,
+          daCount: d.daCount === '' ? '' : +d.daCount || 0, keyCount: d.keyCount === '' ? '' : +d.keyCount || 0, payment: C.payment >= 0 ? /^(oui|o|1|x|vrai|true|yes)$/i.test(d.payment) : '',
           tags: [...new Set([...tags, ...(C.tags >= 0 ? tagIds(d.tags) : [])])]
         };
         if (old) {
@@ -5123,12 +5291,13 @@ Object.assign(ACT, {
   try { DB = await Sync.init(); }
   catch (e) { console.error(e); if (e.fatal) return Auth.fatal(e.message); DB = migrate(null); }
   if (Sync.mode === 'server') { UI.user = Auth.user.userId; saveUI(); }
+  else if (Sync.mode === 'view') { }
   else if (!UI.user || !DB.users.some(u => u.id === UI.user)) {
     const a = DB.users.find(u => isSuperUser(u)) || DB.users.find(u => effPerms(roleOf(u)).includes('users')) || DB.users[0];
     UI.user = a ? a.id : ''; saveUI();
   }
   setSync(Sync.mode === 'memory' ? 'warn' : 'ok',
-    Sync.mode === 'server' ? 'Synchronisé · v' + Sync.version : Sync.mode === 'local' ? 'Enregistré sur ce poste' : 'Aucun stockage');
+    Sync.mode === 'server' ? 'Synchronisé · v' + Sync.version : Sync.mode === 'view' ? 'Vue écran' : Sync.mode === 'local' ? 'Enregistré sur ce poste' : 'Aucun stockage');
   if (Sync.mode === 'server' && !me()) banner('danger', 'Votre fiche utilisateur n’existe plus dans le planning : consultation seule. Contactez un administrateur.', 'nouser');
   if (Sync.mode === 'memory') banner('danger', 'Ce navigateur bloque le stockage : les modifications seront perdues à la fermeture. Exportez régulièrement une sauvegarde.', 'nostore');
   if (!location.hash) location.hash = '#/';
@@ -5138,9 +5307,14 @@ Object.assign(ACT, {
     applyFs();
     if (['gantt', 'planning', 'ecran'].includes(route().seg[0])) render(); else drawCharts();
   }, 200));
-  setInterval(() => Sync.poll(), Math.max(5, +DB.settings.pollSec || 15) * 1000);
+  if (Sync.mode !== 'view') setInterval(() => Sync.poll(), Math.max(5, +DB.settings.pollSec || 15) * 1000);
+  const canW = WRITE_PERMS.some(p => can(p));
+  if (Sync.mode !== 'view' && (MIG.ref || MIG.keys) && canW)
+    mutate('Mise à jour du référentiel : catalogue des distributeurs, groupes de personnel, clés des vues écrans', () => { }, { toast: false });
+  if (Sync.mode !== 'view' && can('users') && !DB.roles.some(r => norm(r.name) === 'monetique'))
+    mutate('Création du rôle Monétique', db => { if (!db.roles.some(r => norm(r.name) === 'monetique')) db.roles.push({ id: 'r_mon', name: 'Monétique', perms: ['projects', 'planning', 'absences', 'reports', 'export'], v2: true }); }, { toast: false });
   const u = me();
-  if (u && u.lastLogin !== D.today()) mutate('Connexion', db => { const x = db.users.find(y => y.id === u.id); if (x) x.lastLogin = D.today(); }, { nolog: true });
+  if (u && u.lastLogin !== D.today() && (canW || !(MIG.ref || MIG.keys))) mutate('Connexion', db => { const x = db.users.find(y => y.id === u.id); if (x) x.lastLogin = D.today(); }, { nolog: true });
 })();
 </script>
 </body>
