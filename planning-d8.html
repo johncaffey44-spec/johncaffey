@@ -324,6 +324,20 @@ body.kiosk .tbl{font-size:15px}
 #print table{width:100%;border-collapse:collapse;font-size:10.5px}
 #print th,#print td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
 #print th{background:#f0f0f0}
+/* fenêtre d'absence : large et lisible */
+.abs-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px 20px}
+.abs-form .in{padding:10px 12px;font-size:15px}
+.abs-form .fld>label{font-size:13.5px}
+.abs-form .full{grid-column:1/-1}
+.seg2{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border-2);border-radius:8px;overflow:hidden;margin-top:8px}
+.seg2 label{position:relative;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 6px;cursor:pointer;font-weight:600;font-size:14px;color:var(--text-2);background:var(--surface)}
+.seg2 label+label{border-left:1px solid var(--border-2)}
+.seg2 label:hover{background:var(--surface-2)}
+.seg2 input{position:absolute;opacity:0;width:0;height:0}
+.seg2 label.on{background:var(--primary);color:#fff}
+.abs-sum{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:9px;background:var(--surface-2);border:1px solid var(--border);font-size:14px}
+.abs-sum b{font-size:16px}
+.fld .row>input.in{min-width:0}
 /* taille d'affichage (automatique selon la largeur de l'écran, ou choisie dans le menu en haut à droite) */
 body.fs-l{font-size:15.5px}
 body.fs-l .tbl{font-size:14.5px}body.fs-l .tbl th{font-size:13px}body.fs-l .tbl td{padding:10px 12px}
@@ -1983,6 +1997,7 @@ function formVals(root) {
   for (const el of $$('[name]', root)) {
     const k = el.name;
     if (el.type === 'checkbox') { if (el.dataset.multi) { v[k] = v[k] || []; if (el.checked) v[k].push(el.value); } else v[k] = el.checked; }
+    else if (el.type === 'radio') { if (el.checked) v[k] = el.value; }
     else if (el.type === 'number') v[k] = el.value === '' ? '' : +el.value;
     else v[k] = el.value;
   }
@@ -2657,35 +2672,47 @@ function absYearCard(yr) {                   // jours ouvrés d'absence par mois
 function absenceForm(id, pre) {
   const a = id ? DB.absences.find(x => x.id === id) : null;
   const d = a || Object.assign({ staffId: '', typeId: (DB.absenceTypes[0] || {}).id, start: D.today(), end: D.today(), startSlot: 'AM', endSlot: 'PM', note: '' }, pre || {});
-  const body = `<div class="fgrid">
-    <div class="fld"><label>Ressource *</label><select class="in" name="staffId">${selOpts(DB.staff.filter(s => s.active !== false).sort(byName), d.staffId, '—')}</select></div>
+  const slot = (name, val, from) => `<div class="seg2">${[['AM', from ? 'Dès le matin' : 'Jusqu’au matin'], ['PM', from ? 'Dès l’après-midi' : 'Jusqu’au soir']].map(([k, l]) =>
+    `<label class="${val === k ? 'on' : ''}"><input type="radio" name="${name}" value="${k}"${val === k ? ' checked' : ''}>${l}</label>`).join('')}</div>`;
+  const body = `<div class="abs-form">
+    <div class="fld"><label>Ressource *</label><select class="in" name="staffId">${selOpts(DB.staff.filter(s => s.active !== false).sort(byName), d.staffId, '— choisir —')}</select></div>
     <div class="fld"><label>Motif</label><select class="in" name="typeId">${selOpts(DB.absenceTypes.filter(t => t.active !== false), d.typeId)}</select></div>
-    <div class="fld"><label>Du</label><div class="row"><input class="in" type="date" name="start" value="${esc(d.start)}">
-      <select class="in" name="startSlot" style="width:120px"><option value="AM"${d.startSlot !== 'PM' ? ' selected' : ''}>matin</option><option value="PM"${d.startSlot === 'PM' ? ' selected' : ''}>après-midi</option></select></div></div>
-    <div class="fld"><label>Au</label><div class="row"><input class="in" type="date" name="end" value="${esc(d.end)}">
-      <select class="in" name="endSlot" style="width:120px"><option value="AM"${d.endSlot === 'AM' ? ' selected' : ''}>matin</option><option value="PM"${d.endSlot !== 'AM' ? ' selected' : ''}>après-midi</option></select></div></div>
-    </div>
-    <div class="fld" style="margin-top:12px"><label>Note</label><input class="in" name="note" value="${esc(d.note || '')}"></div>
-    <div id="abs-warn" style="margin-top:12px"></div>`;
+    <div class="fld"><label>Premier jour</label><input class="in" type="date" name="start" value="${esc(d.start)}">${slot('startSlot', d.startSlot === 'PM' ? 'PM' : 'AM', true)}</div>
+    <div class="fld"><label>Dernier jour</label><input class="in" type="date" name="end" value="${esc(d.end)}">${slot('endSlot', d.endSlot === 'AM' ? 'AM' : 'PM', false)}</div>
+    <div class="fld full"><label>Note</label><input class="in" name="note" value="${esc(d.note || '')}" placeholder="facultatif"></div>
+    <div class="full" id="abs-sum"></div>
+    <div class="full" id="abs-warn"></div></div>`;
   modal({
-    title: a ? 'Modifier l’absence' : 'Nouvelle absence', body,
+    title: a ? 'Modifier l’absence' : 'Nouvelle absence', size: 'lg', body,
     foot: `${a ? `<button class="btn dgr" data-del>${ic('trash', 'sm')} Supprimer</button>` : ''}<span class="spacer"></span>
       <button class="btn" data-close>Annuler</button><button class="btn pri" data-save>Enregistrer</button>`,
     onMount(el, close) {
-      const upd = () => {
-        const v = formVals(el);
-        if (!v.staffId || !v.start) return;
+      const upd = e => {
+        $$('.seg2 label', el).forEach(l => l.classList.toggle('on', $('input', l).checked));
+        const sIn = $('[name=start]', el), eIn = $('[name=end]', el);
+        if (e && e.target === sIn && sIn.value && (!eIn.value || eIn.value < sIn.value)) eIn.value = sIn.value;   // fin jamais avant le début
+        const v = formVals(el), sum = $('#abs-sum', el);
+        if (v.start && v.end) {
+          const ok = v.end > v.start || (v.end === v.start && !(v.startSlot === 'PM' && v.endSlot === 'AM'));
+          const n = ok ? absHalves(v, v.start, v.end) / 2 : 0;
+          sum.innerHTML = ok ? `<div class="abs-sum">${ic('cal')}<span><b>${numSmart(n, 1)} jour${n > 1 ? 's' : ''} ouvré${n > 1 ? 's' : ''}</b> &nbsp;·&nbsp;
+              du ${esc(D.long(v.start))} ${v.startSlot === 'PM' ? 'après-midi' : 'matin'} au ${esc(D.long(v.end))} ${v.endSlot === 'AM' ? 'midi' : 'soir'}</span></div>`
+            : `<div class="bnr danger" style="margin:0">${ic('warn')}<span>La fin de l’absence précède son début.</span></div>`;
+        } else sum.innerHTML = '';
+        if (!v.staffId || !v.start) { $('#abs-warn', el).innerHTML = ''; return; }
         const clash = (idx().opsByStaff.get(v.staffId) || []).filter(o => o.date >= v.start && o.date <= v.end && stage(o) !== 'done');
         $('#abs-warn', el).innerHTML = clash.length ? `<div class="bnr warn" style="margin:0">${ic('warn')}<span>${clash.length} opération(s) planifiée(s) sur cette période :
           ${clash.slice(0, 4).map(o => esc((P(o.projectId) || {}).client + ' le ' + D.short(o.date))).join(', ')}${clash.length > 4 ? '…' : ''}</span></div>` : '';
       };
       $$('.mb select,.mb input', el).forEach(x => x.addEventListener('change', upd)); upd();
+      setTimeout(() => { const f = $('[name=staffId]', el); if (f && !f.value) f.focus(); }, 40);
       const del = $('[data-del]', el);
       if (del) del.onclick = async () => { if (await ask('Supprimer cette absence ?', { ok: 'Supprimer', danger: true })) { mutate('Suppression d’une absence', db => { db.absences = db.absences.filter(x => x.id !== a.id); }, { undo: true }); close(); } };
       $('[data-save]', el).onclick = () => {
         const v = formVals(el);
         if (!v.staffId) return toast('Choisissez une ressource.', 'danger');
-        if (v.end < v.start) return toast('La date de fin précède la date de début.', 'danger');
+        if (!v.start || !v.end) return toast('Indiquez le premier et le dernier jour.', 'danger');
+        if (v.end < v.start || (v.end === v.start && v.startSlot === 'PM' && v.endSlot === 'AM')) return toast('La fin de l’absence précède son début.', 'danger');
         mutate(a ? 'Modification d’une absence' : 'Saisie d’une absence', db => {
           if (a) Object.assign(db.absences.find(x => x.id === a.id), v);
           else db.absences.push(Object.assign({ id: uid('ab') }, v));
