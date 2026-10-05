@@ -81,13 +81,42 @@ h1,h2,h3,h4{margin:0;font-weight:640;letter-spacing:-.01em}
 .nav-b.danger{background:#e0525233;color:#ffadad}
 .nav-b.warn{background:#e3a14533;color:#ffd9a6}
 .sb-foot{padding:9px 14px;border-top:1px solid #ffffff12;font-size:11.5px;color:var(--side-mu);display:flex;align-items:center;gap:8px}
-body.mini #sb{width:62px}
-body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .nav-b,body.mini .sb-new .lbl,body.mini .sb-foot span{display:none}
-body.mini .nav-a{justify-content:center;padding:9px 0}
-body.mini .sb-head{flex-direction:column;padding:12px 0 6px;gap:6px}
-body.mini .brand{flex:none}
-body.mini .sb-new{margin:6px 10px 8px;padding:9px 0}
-body.mini .sb-foot{justify-content:center}
+#sb{transition:width .18s ease}
+.nav-a .ini{display:none}
+.sb-tg{display:flex;align-items:center;gap:8px;width:100%;border:0;background:0;color:var(--side-mu);font-size:12.5px;font-weight:600;padding:7px 8px;border-radius:8px;cursor:pointer}
+.sb-tg:hover{background:var(--side-2);color:#fff}
+.sb-tg .ic{width:16px;height:16px}
+.sb-foot{flex-direction:column;align-items:stretch;gap:4px}
+.sb-tip{position:fixed;z-index:95;transform:translateY(-50%);background:#0b0c0f;color:#fff;padding:6px 11px;border-radius:8px;font-size:13px;font-weight:550;box-shadow:0 8px 24px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap;border:1px solid #ffffff1c}
+.sb-tip::before{content:"";position:absolute;left:-5px;top:50%;width:8px;height:8px;background:#0b0c0f;border-left:1px solid #ffffff1c;border-bottom:1px solid #ffffff1c;transform:translateY(-50%) rotate(45deg)}
+.sb-tip small{color:#aab2bd;margin-left:6px;font-weight:400}
+/* menu réduit : barre d'icônes (écrans larges ; sur mobile le menu reste un tiroir complet) */
+@media(min-width:981px){
+  body.mini #sb,body.mini.fs-l #sb,body.mini.fs-xl #sb{width:72px}
+  body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .sb-new .lbl,body.mini .sb-foot #sb-info,body.mini .sb-tg span,body.mini #mini-top{display:none}
+  body.mini .sb-head{justify-content:center;padding:14px 0 6px}
+  body.mini .brand{flex:none}
+  body.mini .sb-new{width:44px;height:44px;margin:6px auto 12px;padding:0;border-radius:13px;box-shadow:0 4px 14px rgba(20,135,201,.35)}
+  body.mini .sb-new .ic{width:20px;height:20px}
+  body.mini #nav{padding:0 0 10px;overflow-x:hidden}
+  body.mini .nav-sec{margin:0;padding:7px 0;border-top:1px solid #ffffff12}
+  body.mini .nav-sec:first-child{border-top:0;padding-top:0}
+  body.mini .nav-sec.closed .nav-list{display:flex}
+  body.mini .nav-list{display:flex;flex-direction:column;align-items:center;gap:3px}
+  body.mini .nav-a{width:48px;height:42px;padding:0;justify-content:center;border-radius:12px}
+  body.mini .nav-a .ic{width:20px;height:20px}
+  body.mini .nav-a:hover{background:var(--side-3)}
+  body.mini .nav-a.on{background:var(--primary);color:#fff;box-shadow:0 4px 12px rgba(20,135,201,.3)}
+  body.mini .nav-a.on::before{display:none}
+  body.mini .nav-a .dot{display:none}
+  body.mini .nav-a .ini{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--c);color:#fff;font-size:11px;font-weight:750;letter-spacing:.02em}
+  body.mini .nav-a.on .ini{box-shadow:0 0 0 2px #fff}
+  body.mini .nav-a .nav-b{position:absolute;top:1px;right:1px;margin:0;min-width:17px;height:17px;padding:0 4px;display:grid;place-items:center;font-size:10px;line-height:1;border-radius:9px;background:#5b6472;color:#fff;box-shadow:0 0 0 2px var(--side)}
+  body.mini .nav-a .nav-b.danger{background:#e05252}
+  body.mini .nav-a .nav-b.warn{background:#d98b1c}
+  body.mini .sb-foot{padding:8px 0;align-items:center}
+  body.mini .sb-tg{width:48px;justify-content:center;padding:9px 0}
+}
 #main{flex:1;min-width:0;display:flex;flex-direction:column}
 #top{height:54px;display:flex;align-items:center;gap:10px;padding:0 18px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:25}
 #crumbs{font-size:13px;color:var(--text-3);display:flex;align-items:center;gap:6px;min-width:0}
@@ -394,7 +423,7 @@ body.fs-xl .chart text[font-size="10"]{font-size:13px}body.fs-xl .chart text[fon
 @media(max-width:980px){
   #sb{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .18s;box-shadow:var(--sh-lg)}
   body.sb-open #sb{transform:none}
-  body.mini #sb{width:250px}
+  body.mini #sb,body.mini.fs-l #sb,body.mini.fs-xl #sb{width:250px}
   body.mini .brand b,body.mini .brand small,body.mini .nav-h,body.mini .nav-a .lbl,body.mini .nav-b,body.mini .sb-new .lbl,body.mini .sb-foot span{display:revert}
   body.mini .sb-head{flex-direction:row;padding:14px 10px 8px 14px}
   body.mini .brand{flex:1}
@@ -413,11 +442,11 @@ body.fs-xl .chart text[font-size="10"]{font-size:13px}body.fs-xl .chart text[fon
   <aside id="sb">
     <div class="sb-head">
       <a class="brand" href="#/"><span class="logo">D8</span><span class="trunc"><b id="app-name">D8 Production</b><small id="app-sub">Planning atelier &amp; terrain</small></span></a>
-      <button class="ibtn" style="color:var(--side-mu)" data-act="mini" title="Réduire / agrandir le menu"></button>
+      <button class="ibtn" id="mini-top" style="color:var(--side-mu)" data-act="mini" title="Réduire le menu"></button>
     </div>
-    <button class="sb-new" data-act="new-project" title="Nouveau projet"><span class="lbl">Nouveau projet</span></button>
+    <button class="sb-new" data-act="new-project" data-tip="Nouveau projet"><span class="lbl">Nouveau projet</span></button>
     <nav id="nav"></nav>
-    <div class="sb-foot"><span id="sb-info"></span></div>
+    <div class="sb-foot"><button class="sb-tg" id="mini-foot" data-act="mini"></button><span id="sb-info"></span></div>
   </aside>
   <div id="main">
     <header id="top">
@@ -629,6 +658,8 @@ const ICONS = {
   lock: 'M5 11h14v11H5zM8 11V7a4 4 0 0 1 8 0v4',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   gantt: 'M3 3v18h18M7 7h7M10 12h8M8 17h6',
+  dleft: 'M11 17l-5-5 5-5M18 17l-5-5 5-5',
+  dright: 'M13 17l5-5-5-5M6 17l5-5-5-5',
   shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4',
   image: 'M3 3h18v18H3zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 21',
   sheet: 'M3 3h18v18H3zM3 9h18M3 15h18M9 3v18',
@@ -1671,12 +1702,14 @@ function navModel() {
 }
 function renderNav(r) {
   UI.navClosed = UI.navClosed || {};
+  hideSbTip();
   $('#nav').innerHTML = navModel().map(s => {
     const closed = UI.navClosed[s.h] ? ' closed' : '';
     return `<div class="nav-sec${closed}"><button class="nav-h" data-act="nav-sec" data-h="${esc(s.h)}">${ic('down')}<span>${esc(s.h)}</span></button>
     <div class="nav-list">${s.items.map(i => {
       const on = i.r === r.path || (i.r !== '/' && r.path.startsWith(i.r)) ? ' on' : '';
-      return `<a class="nav-a${on}" href="#${i.r}" title="${esc(i.t)}">${i.c ? `<i class="dot" style="--c:${i.c}"></i>` : ic(i.ic)}<span class="lbl trunc">${esc(i.t)}</span>${i.b ? `<span class="nav-b ${i.bc || ''}">${i.b}</span>` : ''}</a>`;
+      const ini = String(i.t).split(/[\s-]+/).filter(w => w.length > 2 || /^[A-Z]/.test(w)).slice(0, 2).map(w => w[0]).join('').toUpperCase() || String(i.t).slice(0, 2).toUpperCase();
+      return `<a class="nav-a${on}" href="#${i.r}" data-tip="${esc(i.t)}"${i.b ? ` data-tipn="${esc(i.b)}"` : ''}>${i.c ? `<i class="dot" style="--c:${i.c}"></i><span class="ini" style="--c:${i.c}">${esc(ini)}</span>` : ic(i.ic)}<span class="lbl trunc">${esc(i.t)}</span>${i.b ? `<span class="nav-b ${i.bc || ''}">${i.b}</span>` : ''}</a>`;
     }).join('')}</div></div>`;
   }).join('');
   $('#app-name').textContent = DB.settings.appName;
@@ -1697,7 +1730,10 @@ function renderTop(r) {
   $('#av').textContent = u ? initials(label(u)) : '?';
   $('#who-name').textContent = u ? label(u) : 'Utilisateur';
   $('[data-act=theme]').innerHTML = ic(UI.theme === 'dark' ? 'sun' : 'moon');
-  $('[data-act=mini]').innerHTML = ic('menu');
+  $('#mini-top').innerHTML = ic('menu');
+  const mini = document.body.classList.contains('mini');
+  $('#mini-foot').innerHTML = mini ? ic('dright') : ic('dleft') + '<span>Réduire le menu</span>';
+  $('#mini-foot').dataset.tip = mini ? 'Agrandir le menu' : '';
   if (!$('.sb-new .ic')) $('.sb-new').insertAdjacentHTML('afterbegin', ic('plus'));
   $('#burger').innerHTML = ic('menu');
 }
@@ -1906,7 +1942,11 @@ function printHTML(html) {
 Object.assign(ACT, {
   go: el => go(el.dataset.to),
   'nav-sec': el => { UI.navClosed[el.dataset.h] = !UI.navClosed[el.dataset.h]; saveUI(); render(); },
-  mini: () => { document.body.classList.toggle('mini'); document.body.classList.toggle('sb-open'); UI.mini = document.body.classList.contains('mini'); saveUI(); },
+  mini: () => {
+    hideSbTip();
+    if (window.innerWidth <= 980) { document.body.classList.remove('sb-open'); return; }   // mobile : le bouton referme le tiroir
+    document.body.classList.toggle('mini'); UI.mini = document.body.classList.contains('mini'); saveUI(); render();
+  },
   'sb-open': () => document.body.classList.toggle('sb-open'),
   theme: () => { UI.theme = UI.theme === 'dark' ? 'light' : 'dark'; saveUI(); applyTheme(); render(); },
   'bnr-x': el => { BANNERS = BANNERS.filter(b => b.id !== el.dataset.id); renderBanner(); },
@@ -3557,6 +3597,19 @@ const ON = {
   mat: el => { if (can('planning')) matSave(el.dataset.id, el.value); },
   scroll: el => { if (can('settings') || can('admin')) scrollSave(el.dataset.id, el.value); }
 };
+
+/* ---------- info-bulles du menu réduit ---------- */
+let SBTIP = null;
+function hideSbTip() { if (SBTIP) { SBTIP.remove(); SBTIP = null; } }
+document.addEventListener('mouseover', e => {
+  const a = document.body.classList.contains('mini') && window.innerWidth > 980 && e.target.closest && e.target.closest('#sb [data-tip]');
+  if (!a || !a.dataset.tip) { if (!e.target.closest || !e.target.closest('#sb [data-tip]')) hideSbTip(); return; }
+  if (!SBTIP) { SBTIP = document.createElement('div'); SBTIP.className = 'sb-tip'; document.body.appendChild(SBTIP); }
+  const r = a.getBoundingClientRect();
+  SBTIP.innerHTML = esc(a.dataset.tip) + (a.dataset.tipn ? `<small>${esc(a.dataset.tipn)}</small>` : '');
+  SBTIP.style.top = Math.round(r.top + r.height / 2) + 'px'; SBTIP.style.left = Math.round(r.right + 12) + 'px';
+});
+document.addEventListener('scroll', hideSbTip, true);
 
 /* ---------- délégation d'événements ---------- */
 document.addEventListener('click', e => {
