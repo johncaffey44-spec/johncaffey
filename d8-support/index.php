@@ -545,6 +545,35 @@ function setting_save_list(string $key, array $values): void
     unset($GLOBALS['__settings']);
 }
 
+/**
+ * Liste complète (cochées et décochées) d'un réglage categories ou sites.
+ * « categories » ne contient que les valeurs proposées dans le formulaire :
+ * tout le reste de l'outil s'appuie dessus. « categories_toutes » garde en
+ * plus l'ordre et les valeurs décochées, pour les recocher plus tard.
+ * Une valeur proposée absente de la liste complète (ajout par un import)
+ * est rajoutée à la fin, cochée.
+ */
+function liste_complete(string $key): array
+{
+    $actifs = setting_list($key);
+    $out = [];
+    $vus = [];
+    foreach (array_merge(setting_list($key . '_toutes'), $actifs) as $v) {
+        if (!is_string($v) || $v === '' || isset($vus[$v])) {
+            continue;
+        }
+        $vus[$v] = true;
+        $out[] = ['nom' => $v, 'actif' => in_array($v, $actifs, true)];
+    }
+    return $out;
+}
+
+/** Valeurs décochées d'une liste : masquées du formulaire, gardées pour la recherche. */
+function liste_inactives(string $key): array
+{
+    return array_values(array_map(fn($x) => $x['nom'], array_filter(liste_complete($key), fn($x) => !$x['actif'])));
+}
+
 /* ============================ Envoi d'e-mails ============================= */
 /**
  * D8 Support — envoi d'emails
@@ -1859,6 +1888,31 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .barre-lot .input { flex: 1 1 170px; min-width: 0; min-height: 42px; }
 .barre-lot .btn-ghost { color: #BFD0D6; }
 .barre-lot .btn-ghost:hover { background: var(--chrome-2); }
+.le-legende { margin: 0 0 .7rem; color: var(--muted); font-size: .93rem; }
+.le-lignes { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.le-ligne { display: flex; align-items: center; gap: .6rem; }
+.le-actif { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; accent-color: var(--primaire); cursor: pointer; }
+.le-nom { flex: 1 1 auto; min-width: 0; max-width: 40rem; }
+.le-off .le-nom { color: var(--muted); background: var(--surface-2); text-decoration: line-through; text-decoration-color: rgba(98, 108, 116, .5); }
+.le-double .le-nom { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(180, 35, 24, .15); }
+.le-outils { display: inline-flex; gap: .15rem; flex: 0 0 auto; }
+.le-btn { display: inline-flex; align-items: center; justify-content: center; width: 2.1rem; height: 2.1rem;
+  border: 1px solid transparent; border-radius: var(--r-champ); background: transparent; color: var(--muted); cursor: pointer; }
+.le-btn svg { width: 17px; height: 17px; }
+.le-btn:hover { background: rgba(53, 80, 196, .09); color: var(--encre); }
+.le-btn:focus-visible { outline: none; box-shadow: var(--focus); }
+.le-suppr:hover { background: rgba(180, 35, 24, .09); color: var(--danger); }
+.le-ligne:first-child .le-btn[data-a="haut"], .le-ligne:last-child .le-btn[data-a="bas"] { visibility: hidden; }
+.le-pied { display: flex; align-items: center; gap: 1rem; margin-top: .8rem; flex-wrap: wrap; }
+.le-nb { color: var(--muted); font-size: .9rem; }
+.le-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.le-etat { color: #8a5a00; font-size: .93rem; font-weight: 600; }
+.le .aide { font-size: .92rem; color: var(--muted); margin-top: .6rem; }
+@media (max-width: 600px) {
+  .le-ligne { gap: .4rem; }
+  .le-outils { gap: 0; }
+  .le-btn { width: 1.75rem; }
+}
 .recherche-u { position: relative; display: flex; align-items: center; gap: .8rem; margin: 0 0 .8rem; }
 .recherche-u .ico { position: absolute; left: .7rem; display: inline-flex; color: var(--muted); pointer-events: none; }
 .recherche-u .ico svg { width: 18px; height: 18px; }
@@ -2158,6 +2212,11 @@ function options(list, selected, placeholder) {
   }
   return h;
 }
+/* Filtres de recherche : les valeurs décochées dans « Listes » restent cherchables, à part. */
+function optionsFiltre(actifs, inactifs, selected, placeholder) {
+  return options(actifs, selected, placeholder) + (inactifs && inactifs.length
+    ? '<optgroup label="Plus proposées">' + options(inactifs, selected) + '</optgroup>' : '');
+}
 function optionsMap(map, selected, placeholder) {
   let h = placeholder != null ? '<option value="">' + esc(placeholder) + '</option>' : '';
   for (const k of Object.keys(map)) {
@@ -2453,6 +2512,8 @@ function appliquerBoot(d) {
   S.csrf = d.csrf;
   S.appName = d.app_name || 'D8 Support';
   S.categories = d.categories || [];
+  S.categoriesInactives = d.categories_inactives || [];
+  S.sitesInactives = d.sites_inactives || [];
   S.sites = d.sites || [];
   S.templates = d.templates || [];
   S.assignables = d.assignables || [];
@@ -4818,8 +4879,8 @@ function vueTickets() {
     '<div class="field"><label for="fl-statut">Statut</label><select id="fl-statut" class="input">' + optionsMap(STATUTS, f.status, 'Tous') + '</select></div>' +
     (staff ?
       '<div class="field"><label for="fl-prio">Priorité</label><select id="fl-prio" class="input">' + optionsMap(PRIORITES, f.priority, 'Toutes') + '</select></div>' +
-      '<div class="field"><label for="fl-cat">Catégorie</label><select id="fl-cat" class="input">' + options(S.categories, f.category, 'Toutes') + '</select></div>' +
-      '<div class="field"><label for="fl-site">Site</label><select id="fl-site" class="input">' + options(S.sites, f.site, 'Tous') + '</select></div>' +
+      '<div class="field"><label for="fl-cat">Catégorie</label><select id="fl-cat" class="input">' + optionsFiltre(S.categories, S.categoriesInactives, f.category, 'Toutes') + '</select></div>' +
+      '<div class="field"><label for="fl-site">Site</label><select id="fl-site" class="input">' + optionsFiltre(S.sites, S.sitesInactives, f.site, 'Tous') + '</select></div>' +
       '<div class="field"><label for="fl-assigne">Assigné à</label><select id="fl-assigne" class="input">' + optAssigne + '</select></div>'
       : '') +
     '<div class="filtres-cases">' +
@@ -5857,6 +5918,112 @@ async function vueParametres() {
 
 /* ================================================ listes */
 
+/* Éditeur de liste à cocher : une ligne par valeur, cochée = proposée dans le formulaire. */
+function editeurListe(racine, lignes, conf) {
+  const ul = racine.querySelector('.le-lignes');
+  const cle = (v) => rechercheNorm(v).replace(/\s+/g, ' ').trim();
+  const ligne = (nom, actif) => {
+    const li = document.createElement('li');
+    li.className = 'le-ligne' + (actif ? '' : ' le-off');
+    li.innerHTML =
+      '<input type="checkbox" class="le-actif"' + (actif ? ' checked' : '') + ' aria-label="Proposer dans le formulaire" title="Cochée : proposée dans le formulaire">' +
+      '<input type="text" class="input le-nom" maxlength="150" value="' + esc(nom) + '" placeholder="' + esc(conf.vide) + '" aria-label="' + esc(conf.libelle) + '">' +
+      '<span class="le-outils">' +
+      '<button type="button" class="le-btn" data-a="haut" title="Monter" aria-label="Monter">' + I('<path d="M12 19V5M6 11l6-6 6 6"/>') + '</button>' +
+      '<button type="button" class="le-btn" data-a="bas" title="Descendre" aria-label="Descendre">' + I('<path d="M12 5v14M6 13l6 6 6-6"/>') + '</button>' +
+      '<button type="button" class="le-btn le-suppr" data-a="suppr" title="Retirer la ligne" aria-label="Retirer la ligne">' + I('<path d="M6 6l12 12M18 6L6 18"/>') + '</button>' +
+      '</span>';
+    return li;
+  };
+  const lignesDom = () => Array.from(ul.querySelectorAll('.le-ligne'));
+  const maj = () => {
+    const ls = lignesDom(), noms = ls.map(li => cle(li.querySelector('.le-nom').value));
+    ls.forEach((li, i) => {
+      const double = noms[i] !== '' && noms.indexOf(noms[i]) !== i;
+      li.classList.toggle('le-double', double);
+      li.querySelector('.le-nom').title = double ? 'Déjà dans la liste plus haut' : '';
+      li.classList.toggle('le-off', !li.querySelector('.le-actif').checked);
+    });
+    const pleines = ls.filter((li, i) => noms[i] !== '');
+    const cochees = pleines.filter(li => li.querySelector('.le-actif').checked).length;
+    racine.querySelector('.le-nb').textContent = cochees + ' ' + conf.proposees + ' sur ' + pleines.length;
+  };
+  const ajouter = (apres, nom, focus) => {
+    const li = ligne(nom || '', true);
+    if (apres) apres.after(li); else ul.appendChild(li);
+    if (focus) li.querySelector('.le-nom').focus();
+    return li;
+  };
+  lignes.forEach(l => ul.appendChild(ligne(l.nom, l.actif)));
+  if (!lignes.length) ajouter(null, '', false);
+
+  racine.querySelector('.le-ajout').addEventListener('click', () => { ajouter(null, '', true); maj(); conf.modifie(); });
+  ul.addEventListener('input', () => { maj(); conf.modifie(); });
+  ul.addEventListener('change', () => { maj(); conf.modifie(); });
+  ul.addEventListener('click', (e) => {
+    const b = e.target.closest('.le-btn');
+    if (!b) return;
+    const li = b.closest('.le-ligne');
+    if (b.dataset.a === 'haut' && li.previousElementSibling) li.previousElementSibling.before(li);
+    if (b.dataset.a === 'bas' && li.nextElementSibling) li.nextElementSibling.after(li);
+    if (b.dataset.a === 'suppr') {
+      const voisin = li.nextElementSibling || li.previousElementSibling;
+      li.remove();
+      if (!lignesDom().length) ajouter(null, '', false);
+      (voisin ? voisin.querySelector('.le-nom') : racine.querySelector('.le-ajout')).focus();
+    } else {
+      b.focus();
+    }
+    maj(); conf.modifie();
+  });
+  ul.addEventListener('keydown', (e) => {
+    const champ = e.target.closest('.le-nom');
+    if (!champ) return;
+    const li = champ.closest('.le-ligne');
+    // Entrée : nouvelle ligne juste en dessous, comme dans une liste à puces.
+    if (e.key === 'Enter') { e.preventDefault(); ajouter(li, '', true); maj(); conf.modifie(); }
+    // Retour arrière sur une ligne vide : on la retire et on remonte.
+    if (e.key === 'Backspace' && champ.value === '' && lignesDom().length > 1) {
+      e.preventDefault();
+      const prec = li.previousElementSibling || li.nextElementSibling;
+      li.remove();
+      const c = prec.querySelector('.le-nom'); c.focus(); c.setSelectionRange(c.value.length, c.value.length);
+      maj(); conf.modifie();
+    }
+  });
+  // Coller plusieurs lignes (depuis Excel, un mail…) crée autant de lignes.
+  ul.addEventListener('paste', (e) => {
+    const champ = e.target.closest('.le-nom');
+    const texte = (e.clipboardData || window.clipboardData).getData('text');
+    if (!champ || !/[\r\n]/.test(texte)) return;
+    e.preventDefault();
+    const parts = texte.split(/\r?\n/).map(x => x.replace(/\t/g, ' ').trim()).filter(Boolean);
+    if (!parts.length) return;
+    champ.setRangeText(parts[0], champ.selectionStart, champ.selectionEnd, 'end');
+    let apres = champ.closest('.le-ligne');
+    parts.slice(1).forEach(v => { apres = ajouter(apres, v, false); });
+    apres.querySelector('.le-nom').focus();
+    maj(); conf.modifie();
+  });
+  maj();
+
+  return {
+    // Valeurs à enregistrer, ou { erreur, champ } si la liste n'est pas valable.
+    lire() {
+      const vus = {}, out = [];
+      for (const li of lignesDom()) {
+        const champ = li.querySelector('.le-nom'), nom = champ.value.replace(/\s+/g, ' ').trim();
+        if (!nom) continue;
+        if (vus[cle(nom)]) return { erreur: '« ' + nom + ' » figure deux fois dans la liste des ' + conf.titre + '.', champ };
+        vus[cle(nom)] = true;
+        out.push({ nom, actif: li.querySelector('.le-actif').checked });
+      }
+      if (!out.some(l => l.actif)) return { erreur: 'Cochez au moins une valeur dans la liste des ' + conf.titre + ' : le formulaire de ticket en a besoin.', champ: racine.querySelector('.le-nom') };
+      return { lignes: out };
+    },
+  };
+}
+
 async function vueListes() {
   const token = S.vueToken;
   const main = $('#main');
@@ -5865,42 +6032,62 @@ async function vueListes() {
   try { c = await api('settings_get'); } catch (e) { return; }
   if (!encoreValide(token)) return;
 
+  const carte = (id, titre, aide) =>
+    '<div class="card"><h2>' + titre + '</h2>' +
+    '<div class="le" id="' + id + '"><p class="le-legende">Cochée : proposée dans le formulaire de ticket. ' +
+    'Décochée : masquée du formulaire mais gardée, et toujours disponible dans les filtres de recherche.</p>' +
+    '<ul class="le-lignes"></ul>' +
+    '<div class="le-pied"><button type="button" class="btn le-ajout">' + ico('plus') + (id === 'le-cat' ? 'Ajouter une catégorie' : 'Ajouter un site') + '</button>' +
+    '<span class="le-nb" aria-live="polite"></span></div>' +
+    '<div class="aide">' + aide + '</div></div></div>';
+
   main.innerHTML =
     '<div class="page-head"><div><h1>Listes</h1>' +
     '<p class="sous-titre">Ce que le personnel voit dans les menus déroulants du formulaire</p></div>' +
     '<div class="page-actions">' + boutonImport('imp-listes') + boutonsExport('exp-listes') + '</div></div>' +
     '<form id="f-listes" novalidate>' +
-    '<div class="card"><h2>Catégories de tickets</h2>' +
-    '<div class="field"><label for="li-cat">Une par ligne</label>' +
-    '<textarea id="li-cat" class="input" rows="10">' + esc((c.categories || []).join('\n')) + '</textarea>' +
-    '<div class="aide">Retirer une catégorie n\'affecte pas les tickets qui l\'utilisent : ils la conservent ' +
-    'et restent retrouvables.</div></div></div>' +
-    '<div class="card"><h2>Sites et agences</h2>' +
-    '<div class="field"><label for="li-sites">Un par ligne</label>' +
-    '<textarea id="li-sites" class="input" rows="5">' + esc((c.sites || []).join('\n')) + '</textarea>' +
-    '<div class="aide">Si la connexion par l\'annuaire est active, le site de chacun est déduit ' +
-    'automatiquement de son unité d\'organisation : les noms doivent donc se ressembler.</div></div></div>' +
-    '<button class="btn btn-primary" type="submit">Enregistrer les listes</button>' +
+    carte('le-cat', 'Catégories de tickets',
+      'Entrée ajoute une ligne en dessous ; coller plusieurs lignes en crée autant. Renommer ou retirer une catégorie ' +
+      'ne modifie pas les tickets qui l\'utilisent : ils la conservent et restent retrouvables.') +
+    carte('le-sites', 'Sites et agences',
+      'Si la connexion par l\'annuaire est active, le site de chacun est déduit automatiquement de son unité ' +
+      'd\'organisation : les noms doivent donc se ressembler. Un site décoché n\'est plus attribué ainsi.') +
+    '<div class="le-actions"><button class="btn btn-primary" type="submit">Enregistrer les listes</button>' +
+    '<span class="le-etat hidden" id="le-etat">Modifications non enregistrées</span></div>' +
     '</form>';
+
+  const etat = $('#le-etat');
+  const modifie = () => etat.classList.remove('hidden');
+  let edCat, edSites;
+  const monter = (d) => {
+    $('#le-cat .le-lignes').innerHTML = ''; $('#le-sites .le-lignes').innerHTML = '';
+    edCat = editeurListe($('#le-cat'), d.categories_completes || [], { titre: 'catégories', libelle: 'Nom de la catégorie', vide: 'Nouvelle catégorie', proposees: 'proposées', modifie });
+    edSites = editeurListe($('#le-sites'), d.sites_completes || [], { titre: 'sites', libelle: 'Nom du site', vide: 'Nouveau site', proposees: 'proposés', modifie });
+  };
+  monter(c);
 
   $('#imp-listes').addEventListener('click', () => ouvrirImport(confImportListes(
     { categories: c.categories || [], sites: c.sites || [] }, vueListes)));
   brancherExport('exp-listes', () => {
-    const cats = c.categories || [], sites = c.sites || [];
+    const cats = c.categories_completes || [], sites = c.sites_completes || [];
+    const on = (l) => l ? (l.actif ? 'Oui' : 'Non') : '';
     return { base: 'listes', titre: 'Listes', sousTitre: 'Catégories de tickets et sites',
-      feuilles: [{ nom: 'Listes', colonnes: ['Catégorie', 'Site'],
-        lignes: Array.from({ length: Math.max(cats.length, sites.length) }, (_, i) => [cats[i] || '', sites[i] || '']) }] };
+      feuilles: [{ nom: 'Listes', colonnes: ['Catégorie', 'Proposée', 'Site', 'Proposé'],
+        lignes: Array.from({ length: Math.max(cats.length, sites.length) }, (_, i) =>
+          [cats[i] ? cats[i].nom : '', on(cats[i]), sites[i] ? sites[i].nom : '', on(sites[i])]) }] };
   });
   $('#f-listes').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const lister = (v) => v.split('\n').map(x => x.trim()).filter(x => x !== '');
+    const rc = edCat.lire(), rs = edSites.lire();
+    const pb = rc.erreur ? rc : rs.erreur ? rs : null;
+    if (pb) { toast(pb.erreur, true); pb.champ.focus(); return; }
     try {
-      const d = await api('settings_save', {
-        categories: lister($('#li-cat').value),
-        sites: lister($('#li-sites').value),
-      });
-      S.categories = d.categories;
-      S.sites = d.sites;
+      const d = await api('settings_save', { categories_completes: rc.lignes, sites_completes: rs.lignes });
+      S.categories = d.categories; S.sites = d.sites;
+      S.categoriesInactives = d.categories_inactives; S.sitesInactives = d.sites_inactives;
+      Object.assign(c, d);
+      monter(d);
+      etat.classList.add('hidden');
       Son.jouer('succes');
       toast('Listes enregistrées.');
     } catch (err) {}
@@ -7536,6 +7723,9 @@ case 'boot': {
         'app_name'    => setting_get('app_name', 'D8 Support'),
         'categories'  => setting_list('categories'),
         'sites'       => setting_list('sites'),
+        // Valeurs décochées : plus proposées à la création, mais encore filtrables par l'équipe.
+        'categories_inactives' => $u && is_staff($u) ? liste_inactives('categories') : [],
+        'sites_inactives'      => $u && is_staff($u) ? liste_inactives('sites') : [],
         'templates'   => $u && is_staff($u) ? procedures_pour($u, true) : [],
         'procedures'  => $u ? count(procedures_pour($u)) : 0,
         'assignables' => $u && is_staff($u) ? staff_users() : [],
@@ -8853,6 +9043,8 @@ case 'settings_get': {
         'ref_prefix'          => setting_get('ref_prefix', 'D8'),
         'categories'          => setting_list('categories'),
         'sites'               => setting_list('sites'),
+        'categories_completes' => liste_complete('categories'),
+        'sites_completes'     => liste_complete('sites'),
         'stale_days'          => setting_get('stale_days', '3'),
         'auto_close_days'     => setting_get('auto_close_days', '7'),
         'idle_minutes'        => setting_get('idle_minutes', '0'),
@@ -8884,6 +9076,35 @@ case 'settings_save': {
     require_role($me, ['admin']);
     check_csrf();
     $b = body();
+
+    // Écran « Listes » : chaque ligne avec sa case (cochée = proposée dans le formulaire).
+    foreach (['categories', 'sites'] as $key) {
+        if (!array_key_exists($key . '_completes', $b)) {
+            continue;
+        }
+        $nomListe = $key === 'categories' ? 'catégories' : 'sites';
+        $toutes = [];
+        $actifs = [];
+        foreach ((is_array($b[$key . '_completes']) ? $b[$key . '_completes'] : []) as $l) {
+            $v = trim(preg_replace('/\s+/u', ' ', (string) (is_array($l) ? ($l['nom'] ?? '') : '')));
+            if ($v === '' || in_array($v, $toutes, true)) {
+                continue;
+            }
+            if (len($v) > 150) {
+                fail('« ' . mb_substr($v, 0, 40) . '… » est trop long (150 caractères maximum).');
+            }
+            $toutes[] = $v;
+            if (!empty($l['actif'])) {
+                $actifs[] = $v;
+            }
+        }
+        if (!$actifs) {
+            fail('Cochez au moins une valeur dans la liste des ' . $nomListe . ' : le formulaire de ticket en a besoin.');
+        }
+        setting_save_list($key . '_toutes', $toutes);
+        setting_save_list($key, $actifs);
+        unset($b[$key]);   // la forme détaillée l'emporte
+    }
 
     foreach (['categories', 'sites'] as $key) {
         if (!array_key_exists($key, $b)) {
@@ -8945,6 +9166,8 @@ case 'settings_save': {
     }
 
     ok(['categories' => setting_list('categories'), 'sites' => setting_list('sites'),
+        'categories_completes' => liste_complete('categories'), 'sites_completes' => liste_complete('sites'),
+        'categories_inactives' => liste_inactives('categories'), 'sites_inactives' => liste_inactives('sites'),
         'app_name' => setting_get('app_name')]);
 }
 
