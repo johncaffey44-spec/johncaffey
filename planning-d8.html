@@ -303,6 +303,7 @@ label.chip input{display:none}
 .pf-rows{display:flex;flex-direction:column;gap:11px}
 .pf-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pf-civ{grid-template-columns:120px 1fr;margin-bottom:6px}.pf-zip{grid-template-columns:130px 1fr}
 .pf-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+.inv-code{font-size:26px;font-weight:700;letter-spacing:.08em;text-align:center;padding:14px;border-radius:12px;background:var(--surface-2);border:1px dashed var(--border);user-select:all}
 .tbl.atl td,.tbl.atl th{padding-left:6px;padding-right:6px}.tbl tr.tot td{border-top:2px solid var(--border);background:var(--surface-2)}
 .dq{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.dq .chip{cursor:pointer;border:1px solid var(--border);background:var(--surface-2)}.dq .chip:hover{border-color:var(--primary);color:var(--primary)}
 .pf-split{padding:8px 10px;border-radius:9px;background:var(--surface-2);border:1px dashed var(--border)}.pf-split[hidden]{display:none}
@@ -652,6 +653,7 @@ const ICONS = {
   layers: 'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   users: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
   user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6',
   usercircle: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5.6 19a7 7 0 0 1 12.8 0',
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7',
@@ -1110,53 +1112,76 @@ const Auth = {
   },
   async show(info, done) {
     const el = $('#auth'), exp = !!(info.expired && this.user), boot = !!info.bootstrap;
-    let tab = boot ? 'signup' : 'login', list = null, needCode = !!info.needCode, min = info.minPassword || 8;
+    // un accès ne se crée qu'avec une invitation (code à usage unique donné par un administrateur) ;
+    // seule la mise en service (aucun accès sur le serveur) propose les administrateurs, avec le mot de passe super administrateur
+    const urlInv = new URLSearchParams(location.search).get('invitation') || '';
+    let tab = boot || urlInv ? 'signup' : 'login', list = null, min = info.minPassword || 8, fresh = true, inv = { code: urlInv, name: '', err: '' };
     const loadList = async () => {
-      if (boot) {                                   // 1re mise en service : le planning n'existe pas encore sur le serveur
-        this.bootDB = this.bootDB || migrate(await Sync.readLocal() || seed());
-        const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).some(x => x === 'admin' || x === 'super')).map(r => r.id));
-        return this.bootDB.users.filter(u => u.active !== false && adm.has(u.roleId)).sort(byName).map(u => ({ id: u.id, name: label(u) }));
-      }
       const r = await this.api('signup-list').catch(() => null);
-      if (!r || !r.ok || !r.body) return [];
-      needCode = !!r.body.needCode; if (r.body.minPassword) min = r.body.minPassword;
-      return (r.body.users || []).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+      if (r && r.ok && r.body) { fresh = r.body.fresh !== false; if (r.body.minPassword) min = r.body.minPassword; }
+      if (!fresh) return ((r && r.body && r.body.users) || []).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+      this.bootDB = this.bootDB || migrate(await Sync.readLocal() || seed());   // 1re mise en service : le planning n'existe pas encore sur le serveur
+      const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).some(x => x === 'users' || x === 'admin' || x === 'super')).map(r => r.id));
+      return this.bootDB.users.filter(u => u.active !== false && adm.has(u.roleId)).sort(byName).map(u => ({ id: u.id, name: label(u) }));
+    };
+    const checkInv = async () => {
+      const c = String(inv.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      inv.name = ''; inv.err = '';
+      if (c.length !== 16) return;
+      const r = await fetchJSON('api.php?a=invite-check&code=' + encodeURIComponent(c), {}, 15000).catch(() => null);
+      if (r && r.ok && r.body) { inv.name = r.body.name; inv.expires = r.body.expires; if (r.body.minPassword) min = r.body.minPassword; }
+      else inv.err = (r && r.body && r.body.error) || 'Serveur injoignable.';
     };
     const draw = async () => {
-      if (tab === 'signup' && !list) {
+      if (tab === 'signup' && boot && !list) {
         el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b mut">Chargement…</div></div></div>`;
         list = await loadList();
       }
+      if (tab === 'signup' && !boot && inv.code && !inv.name && !inv.err) await checkInv();
       const head = exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
+        : boot && !fresh ? `<h3>Remise en route des accès</h3><p class="auth-note" style="margin-bottom:12px">Aucun accès n’existe sur le serveur.
+            Un administrateur du planning recrée le sien avec le mot de passe super administrateur, puis invite les autres utilisateurs.</p>`
         : boot ? `<h3>Première mise en service</h3><p class="auth-note" style="margin-bottom:12px">Le serveur ne contient encore aucun planning.
             ${this.bootFile ? `Données reprises de <b>${esc(this.bootFile)}</b> (${this.bootDB.projects.length} projets).`
               : `Si vous utilisiez déjà le planning sur un poste, exportez-y une sauvegarde (Paramétrage › Données &amp; sauvegarde › Exporter) et reprenez-la ici ; sinon le jeu de démonstration sera utilisé.`}</p>
             <button class="btn" type="button" data-import style="width:100%;margin-bottom:12px">${ic('upload')} ${this.bootFile ? 'Choisir une autre sauvegarde' : 'Reprendre une sauvegarde (.json)'}</button>
             <p class="auth-note" style="margin-bottom:12px">Créez ensuite l’accès d’un administrateur :</p>`
           : `<div class="auth-tabs"><button type="button" data-t="login" class="${tab === 'login' ? 'on' : ''}">Se connecter</button>
-             <button type="button" data-t="signup" class="${tab === 'signup' ? 'on' : ''}">Créer mon accès</button></div>`;
+             <button type="button" data-t="signup" class="${tab === 'signup' ? 'on' : ''}">J’ai une invitation</button></div>`;
       const login = `<form data-f="login" class="fgrid one" novalidate>
         <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false"${exp ? ` value="${esc(this.user.login)}" readonly` : ''}></div>
         <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="current-password"></div>
         <button class="btn pri" type="submit">Se connecter</button>
         ${exp ? `<button class="btn gh" type="button" data-other>Se connecter avec un autre compte</button>`
-          : `<p class="auth-note">Première connexion ? Choisissez « Créer mon accès ».<br>Mot de passe oublié ? Un administrateur peut réinitialiser votre accès.</p>`}</form>`;
+          : `<p class="auth-note">Première connexion ? Il vous faut une invitation : demandez-la à un administrateur, puis choisissez « J’ai une invitation ».<br>Mot de passe oublié ? Un administrateur réinitialise votre accès et vous renvoie une invitation.</p>`}</form>`;
+      const who = boot
+        ? `<div class="fld"><label for="au-u">Administrateur</label><select class="in" id="au-u" name="userId"><option value="">— choisissez votre nom —</option>
+            ${(list || []).map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
+            <span class="help">Seuls les administrateurs du planning sont proposés.</span></div>
+          <div class="fld"><label for="au-s">Mot de passe super administrateur</label><input class="in" id="au-s" type="password" name="sa" autocomplete="off">
+            <span class="help">Prouve que vous êtes habilité à mettre le planning en service.</span></div>`
+        : `<div class="fld"><label for="au-k">Code d’invitation</label><input class="in mono" id="au-k" name="invite" value="${esc(inv.code)}" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <span class="help">Reçu d’un administrateur, avec le lien d’invitation. Valable une seule fois.</span></div>
+          ${inv.name ? `<div class="bnr info" style="margin:0">${ic('user')}<span>Invitation pour <b>${esc(inv.name)}</b>${inv.expires ? ` · valable jusqu’au ${esc(D.dt(inv.expires))}` : ''}</span></div>`
+            : inv.err ? `<div class="bnr warn" style="margin:0">${ic('warn')}<span>${esc(inv.err)}</span></div>` : ''}`;
       const signup = `<form data-f="signup" class="fgrid one" novalidate>
-        <div class="fld"><label for="au-u">Vous êtes</label><select class="in" id="au-u" name="userId"><option value="">— choisissez votre nom —</option>
-          ${list && list.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
-          <span class="help">${boot ? 'Seuls les administrateurs du jeu de départ sont proposés.' : 'Votre nom n’apparaît pas ? Un administrateur doit d’abord créer votre fiche (Paramétrage › Utilisateurs), ou votre accès existe déjà.'}</span></div>
+        ${who}
         <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false">
           <span class="help">3 caractères minimum : lettres, chiffres, point, tiret, @.</span></div>
         <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="new-password">
           <span class="help">${min} caractères minimum.</span></div>
         <div class="fld"><label for="au-c">Confirmation du mot de passe</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
-        ${needCode ? `<div class="fld"><label for="au-k">Code d’accès</label><input class="in" id="au-k" name="code" autocomplete="off"><span class="help">Communiqué par le service informatique.</span></div>` : ''}
         <button class="btn pri" type="submit">Créer mon accès</button></form>`;
       el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b">${head}
         <div class="bnr danger hide" data-err></div>${tab === 'login' || exp ? login : signup}</div></div>
         <p class="auth-foot">La session reste ouverte jusqu’à la fermeture du navigateur ou une longue inactivité.${location.protocol === 'https:' ? ''
           : '<br>Connexion non chiffrée (http) : n’utilisez pas un mot de passe qui sert ailleurs.'}</p></div>`;
-      const f = $(exp ? '#au-p' : tab === 'signup' ? '#au-u' : '#au-l', el); if (f) f.focus();
+      const f = $(exp ? '#au-p' : tab === 'signup' ? (boot ? '#au-u' : inv.name ? '#au-l' : '#au-k') : '#au-l', el); if (f) f.focus();
+      const k = $('#au-k', el);
+      if (k) k.oninput = () => {                     // code complet saisi : on vérifie l'invitation et on affiche à qui elle est destinée
+        const c = k.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (c.length === 16 && c !== String(inv.code).toUpperCase().replace(/[^A-Z0-9]/g, '')) { inv = { code: k.value.trim(), name: '', err: '' }; draw(); }
+      };
     };
     const err = m => { const b = $('[data-err]', el); if (!b) return; b.innerHTML = m ? ic('warn') + '<span>' + esc(m) + '</span>' : ''; b.classList.toggle('hide', !m); };
     el.onclick = e => {
@@ -1182,22 +1207,27 @@ const Auth = {
       v.login = String(v.login || '').trim();
       if (!v.login || !v.password) return err('Renseignez l’identifiant et le mot de passe.');
       if (kind === 'signup') {
-        if (!v.userId) return err('Choisissez votre nom dans la liste.');
+        if (boot && !v.userId) return err('Choisissez votre nom dans la liste.');
+        if (boot && !v.sa) return err('Saisissez le mot de passe super administrateur.');
+        if (!boot && String(v.invite || '').replace(/[^A-Za-z0-9]/g, '').length !== 16) return err('Saisissez le code d’invitation reçu (16 caractères).');
         if (!/^[a-z0-9._@-]{3,60}$/i.test(v.login)) return err('Identifiant : 3 à 60 caractères parmi lettres, chiffres, point, tiret, @.');
         if (v.password.length < min) return err(`Mot de passe trop court (${min} caractères minimum).`);
         if (v.password !== v.confirm) return err('Les deux mots de passe ne correspondent pas.');
         delete v.confirm;
         if (boot) v.name = (list.find(u => u.id === v.userId) || {}).name || '';
+        if (!boot) v.invite = String(v.invite).trim();
       }
       const btn = $('button[type=submit]', form); btn.disabled = true; err('');
       let r = null; try { r = await this.api(kind, v); } catch (x) { }
       btn.disabled = false;
       if (r && r.ok && r.body && r.body.auth) {
         el.onclick = el.onsubmit = null;
+        if (urlInv) history.replaceState(null, '', location.pathname + location.hash);   // le code est consommé : on le retire de l'adresse
         this.set(r.body); done(r.body);
       } else {
         err((r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.');
         if (kind === 'signup' && r && r.status === 409) list = null;   // la liste a pu changer entre-temps
+        if (kind === 'signup' && r && r.status === 403 && !boot) { inv.name = ''; inv.err = r.body.error; draw(); }
       }
     };
     draw();
@@ -1236,6 +1266,8 @@ const Auth = {
     if (this.accBusy) return; this.accBusy = true;
     let r = null; try { r = await this.api('accounts'); } catch (e) { }
     this.acc = r && r.ok && r.body ? Object.fromEntries(r.body.accounts.map(a => [a.userId, a])) : {};
+    let iv = null; try { iv = can('users') ? await this.api('invites') : null; } catch (e) { }
+    this.inv = iv && iv.ok && iv.body ? Object.fromEntries(iv.body.invites.map(a => [a.userId, a])) : {};
     this.accBusy = false;
     if (route().path === '/admin/users') render();
   },
@@ -1250,6 +1282,24 @@ const Auth = {
   }
 };
 
+/* ---------- invitation : code à usage unique + lien, à transmettre à la personne ---------- */
+function showInvite(u, inv) {
+  const link = location.href.split('#')[0].split('?')[0] + '?invitation=' + encodeURIComponent(inv.code);
+  const until = D.dt(inv.expires);
+  const msg = `Bonjour ${u.firstName || label(u)},\n\nVoici votre invitation pour créer votre accès au planning ${DB.settings.appName} :\n${link}\n\nCode d’invitation (si le lien ne s’ouvre pas) : ${inv.code}\nValable une seule fois, jusqu’au ${until}.\n\nVous choisirez votre identifiant et votre mot de passe.`;
+  const m = modal({
+    title: 'Invitation · ' + label(u), size: '',
+    body: `<p style="margin:0 0 12px">Transmettez ce lien ou ce code à <b>${esc(label(u))}</b>. Il permet de créer <b>une seule fois</b> l’accès de cette personne, jusqu’au <b>${esc(until)}</b>.</p>
+      <div class="inv-code mono">${esc(inv.code)}</div>
+      <div class="fld" style="margin-top:12px"><label>Lien d’invitation</label><div class="row" style="gap:6px"><input class="in mono" readonly value="${esc(link)}" style="flex:1" onclick="this.select()">
+        <button class="btn" data-copy="${esc(link)}">${ic('copy')} Copier</button></div></div>
+      <div class="bnr warn" style="margin:12px 0 0">${ic('warn')}<span>Quiconque possède ce code peut créer l’accès de ${esc(label(u))} : transmettez-le à la personne elle-même
+        (en main propre, par téléphone ou sur sa messagerie professionnelle), pas sur un canal partagé. Le code n’est plus affiché ensuite : en cas de perte, cliquez sur « Renvoyer ».</span></div>`,
+    foot: `${u.email ? `<a class="btn" href="mailto:${esc(u.email)}?subject=${encodeURIComponent('Votre accès au planning ' + DB.settings.appName)}&body=${encodeURIComponent(msg)}">${ic('mail')} Préparer l’email</a>` : ''}
+      <button class="btn" data-copy="${esc(msg)}">${ic('copy')} Copier le message</button><span class="spacer"></span><button class="btn pri" data-close>Terminé</button>`
+  });
+  $$('[data-copy]', m.el).forEach(b => b.onclick = () => copyText(b.dataset.copy).then(() => toast('Copié', 'ok')));
+}
 /* ---------- super administrateur ----------
    Exigé pour vider, réinitialiser ou restaurer la base. En base partagée, le mot de passe est
    vérifié par le serveur (api.php), qui refuse aussi ces opérations sans confirmation.
@@ -3540,11 +3590,15 @@ function pageAdmin(kind, q) {
   const cols = S.fields.filter(f => f.list);
   const accs = kind === 'users' && Sync.mode === 'server';
   if (accs && (Auth.acc === null || lastPath !== route().path)) { if (lastPath !== route().path) Auth.acc = null; Auth.loadAccounts(); }
+  const invOf = x => (Auth.inv || {})[x.id];
   const accCell = x => !accs ? '' : `<td>${!Auth.acc ? '<span class="mut">…</span>' : Auth.acc[x.id]
     ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>`
-    : '<span class="mut">à créer</span>'}</td>`;
-  const accBtn = x => accs && Auth.acc && Auth.acc[x.id] && !(Auth.user && Auth.user.userId === x.id) && (can('super') || !isSuperUser(x))
-    ? `<button class="ibtn" data-act="kick" data-id="${esc(x.id)}" title="Forcer la déconnexion">${ic('logout')}</button><button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>` : '';
+    : invOf(x) ? `<span class="pill nowrap" style="${cvar('#1487c9', .13, .35)}" title="Invitation de ${esc(invOf(x).by)}, le ${esc(D.dt(invOf(x).created))}">${ic('mail', 'sm')} invité · jusqu’au ${esc(D.short(invOf(x).expires.slice(0, 10)))}</span>`
+    : x.active === false ? '<span class="mut">compte désactivé</span>' : '<span class="mut">sans accès</span>'}</td>`;
+  const accBtn = x => !(accs && Auth.acc && can('users') && (can('super') || !isSuperUser(x))) ? ''
+    : Auth.acc[x.id] ? (Auth.user && Auth.user.userId === x.id ? '' : `<button class="ibtn" data-act="kick" data-id="${esc(x.id)}" title="Forcer la déconnexion">${ic('logout')}</button><button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>`)
+    : x.active === false ? ''
+    : `<button class="btn sm${invOf(x) ? '' : ' pri'}" data-act="invite" data-id="${esc(x.id)}" title="${invOf(x) ? 'Générer un nouveau code (l’ancien ne fonctionnera plus)' : 'Créer une invitation à usage unique pour que cette personne crée son accès'}">${ic('mail', 'sm')} ${invOf(x) ? 'Renvoyer' : 'Inviter'}</button>${invOf(x) ? `<button class="ibtn" data-act="invite-revoke" data-id="${esc(x.id)}" title="Annuler l’invitation">${ic('x')}</button>` : ''}`;
   let extra = '';
   if (kind === 'roles') {
     const sup = DB.roles.find(isSuperRole), holders = sup ? DB.users.filter(u => u.roleId === sup.id) : [];
@@ -3567,7 +3621,7 @@ function pageAdmin(kind, q) {
   <div class="toolbar"><input class="in srchin" id="adq_${kind}" data-on="adq" data-k="${kind}" placeholder="Filtrer" value="${esc(qq)}">
     ${fltHTML}${FLT.some(([k]) => fv[k]) ? `<button class="btn sm gh" data-act="adf-clear" data-k="${kind}" title="Effacer les filtres">${ic('x', 'sm')}</button>` : ''}
     <span class="mut">${rows.length} élément${rows.length > 1 ? 's' : ''}</span></div>
-  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}${XC ? `<th class="r">${XC[0]}</th>` : ''}${accs ? '<th>Identifiant</th>' : ''}<th style="width:${accs ? 180 : 110}px"></th></tr></thead><tbody>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map(f => `<th>${esc(f.l)}</th>`).join('')}${XC ? `<th class="r">${XC[0]}</th>` : ''}${accs ? '<th>Identifiant</th>' : ''}<th style="width:${accs ? 230 : 110}px"></th></tr></thead><tbody>
     ${rows.map(x => `<tr class="clic" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}">
       ${cols.map(f => `<td>${kind === 'roles' && f.k === 'perms' ? permsCell(x) : cellVal(f, x)}</td>`).join('')}${XC ? `<td class="r n">${XC[1](x)}</td>` : ''}${accCell(x)}
       <td class="nowrap">${accBtn(x)}<button class="ibtn" data-act="crud-edit" data-c="${kind}" data-id="${esc(x.id)}" title="Modifier">${ic('edit')}</button>
@@ -3856,13 +3910,32 @@ Object.assign(ACT, {
     toast(r && r.ok ? label(u) + ' a été déconnecté(e)' : (r && r.body && r.body.error) || 'Serveur injoignable.', r && r.ok ? 'ok' : 'danger');
     if (r && r.ok) { SEC.data = null; if (route().path === '/admin/securite') loadSecurity(); }
   },
+  invite: async (el, e) => {
+    if (e) e.stopPropagation(); if (!needs('users')) return;
+    const u = get('users', el.dataset.id); if (!u || !guardSuper('users', u)) return;
+    if (!(Auth.inv || {})[u.id] ? false : !await ask(`Une invitation est déjà en cours pour <b>${esc(label(u))}</b>. En créer une nouvelle ? L’ancien code ne fonctionnera plus.`, { ok: 'Nouvelle invitation' })) return;
+    const r = await Auth.api('invite', { userId: u.id }).catch(() => null);
+    if (!r || !r.ok) return toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+    showInvite(u, r.body); Auth.acc = null; Auth.loadAccounts();
+  },
+  'invite-revoke': async (el, e) => {
+    if (e) e.stopPropagation(); if (!needs('users')) return;
+    const u = get('users', el.dataset.id); if (!u) return;
+    if (!await ask(`Annuler l’invitation de <b>${esc(label(u))}</b> ? Le code envoyé ne fonctionnera plus.`, { ok: 'Annuler l’invitation', danger: true })) return;
+    const r = await Auth.api('invite-revoke', { userId: u.id }).catch(() => null);
+    if (r && r.ok) { toast('Invitation annulée', 'ok'); Auth.acc = null; Auth.loadAccounts(); }
+    else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+  },
   'reset-access': async (el, e) => {
     if (e) e.stopPropagation(); if (!needs('users')) return;
     if (!guardSuper('users', get('users', el.dataset.id))) return;
     const u = get('users', el.dataset.id); if (!u) return;
-    if (!await ask(`Réinitialiser l’accès de <b>${esc(label(u))}</b> ?<br><br>Son identifiant et son mot de passe seront supprimés et ses sessions ouvertes fermées. La personne recréera son accès à sa prochaine connexion (« Créer mon accès »).`, { ok: 'Réinitialiser', danger: true })) return;
+    if (!await ask(`Réinitialiser l’accès de <b>${esc(label(u))}</b> ?<br><br>Son identifiant et son mot de passe seront supprimés et ses sessions ouvertes fermées. Pour recréer son accès, la personne aura besoin d’une nouvelle invitation : elle vous sera proposée tout de suite.`, { ok: 'Réinitialiser', danger: true })) return;
     const r = await Auth.api('reset', { userId: u.id }).catch(() => null);
-    if (r && r.ok) { toast('Accès de ' + label(u) + ' réinitialisé', 'ok'); Auth.acc = null; Auth.loadAccounts(); }
+    if (r && r.ok) {
+      toast('Accès de ' + label(u) + ' réinitialisé', 'ok'); Auth.acc = null; Auth.loadAccounts();
+      if (await ask(`Créer maintenant une invitation pour <b>${esc(label(u))}</b> ?`, { ok: 'Inviter' })) ACT.invite({ dataset: { id: u.id } });
+    }
     else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
   },
   'disable-dormant': async () => {
@@ -5488,8 +5561,8 @@ function pageSecurity() {
       : '<p class="mut" style="margin:0">Aucune copie pour l’instant.</p>'}</div>`;
   const c = D0.cfg;
   const cfgHTML = `<div class="card-b"><form id="sec-f" class="fgrid">
-      <div class="fld"><label>Code pour créer son accès</label><input class="in" name="signupCode" value="${esc(c.signupCode || '')}" ${iAmSuper ? '' : 'disabled'} placeholder="aucun code demandé" autocomplete="off">
-        <span class="help">Sans code, la première personne qui choisit un nom « à créer » prend l’accès.</span></div>
+      <div class="fld"><label>Validité des invitations (jours)</label><input class="in" type="number" min="1" max="30" name="inviteDays" value="${c.inviteDays || 7}" ${iAmSuper ? '' : 'disabled'}>
+        <span class="help">Un accès ne se crée qu’avec une invitation d’un administrateur (Utilisateurs › Inviter), à usage unique.</span></div>
       <div class="fld"><label>Déconnexion après inactivité (heures)</label><input class="in" type="number" min="1" max="72" name="sessionHours" value="${c.sessionHours || 12}" ${iAmSuper ? '' : 'disabled'}></div>
       <div class="fld"><label>Longueur minimale des mots de passe</label><input class="in" type="number" min="8" max="64" name="minPassword" value="${c.minPassword || 8}" ${iAmSuper ? '' : 'disabled'}></div></form>
     <div class="row wrap" style="margin-top:12px">${iAmSuper ? `<button class="btn pri" data-act="sec-save">${ic('check')} Enregistrer</button>` : '<span class="mut">Modifiable par un super administrateur.</span>'}
@@ -5539,7 +5612,7 @@ Object.assign(ACT, {
   'sec-save': () => {
     if (!needs('super')) return;
     const v = formVals($('#sec-f'));
-    secCall('sec-set', { signupCode: v.signupCode, sessionHours: +v.sessionHours, minPassword: +v.minPassword }, 'Réglages de sécurité enregistrés');
+    secCall('sec-set', { inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword }, 'Réglages de sécurité enregistrés');
   }
 });
 

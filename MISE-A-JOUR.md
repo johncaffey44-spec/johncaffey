@@ -91,16 +91,23 @@ Ordre à respecter :
 3. Copier **les deux fichiers ensemble** : `planning-d8.html` et `api.php`.
 4. Vérifier que le compte du serveur web (sous IIS : `IIS AppPool\<pool>` ou `IUSR`) peut **écrire** dans `data`. Le sous-dossier `data/sessions` est créé automatiquement.
 5. Rouvrir la page avec **Ctrl + F5** sur chaque poste.
-6. Commencer par vous connecter vous-même, en tant qu'administrateur : *Créer mon accès*, puis choisir votre nom, un identifiant et un mot de passe.
-7. Chacun fait de même à sa première connexion. Ensuite, l'identifiant et le mot de passe sont demandés **à chaque ouverture du navigateur**.
-8. **Écrans d'atelier** : créez une fiche utilisateur dédiée (ex. « Écran atelier », rôle *Lecture seule*), créez son accès une fois sur chaque écran, puis laissez le navigateur ouvert. La session reste active tant que l'écran interroge le serveur.
+6. Commencer par vous connecter vous-même : choisissez votre nom (seuls les administrateurs sont proposés), saisissez **le mot de passe super administrateur**, puis votre identifiant et votre mot de passe.
+7. Invitez ensuite chaque personne (*Paramétrage › Utilisateurs › Inviter*, voir section 4). Une fois l'accès créé, l'identifiant et le mot de passe sont demandés **à chaque ouverture du navigateur**.
+8. **Écrans d'atelier** : utilisez l'adresse avec clé (*Vues écrans › Copier l'adresse*, section 8). Elle ne demande aucun compte.
 
 ## 4. Fonctionnement de la connexion
 
-- **Créer son accès** : on choisit son nom dans la liste des fiches *Paramétrage › Utilisateurs* qui sont actives et n'ont pas encore d'accès, puis on saisit un identifiant et un mot de passe (8 caractères minimum).
+- **Créer son accès : uniquement sur invitation.** Il n'y a plus de liste de noms : personne ne peut s'approprier la fiche d'un collègue.
+  1. Un administrateur (droit « Utilisateurs ») clique sur **Inviter** en face de la personne, dans *Paramétrage › Utilisateurs*.
+  2. La page affiche un **code à usage unique** (ex. `PQ66-RNA4-KQYD-AXQ4`) et un **lien**, valables 7 jours (réglable dans *Sécurité & accès*). Le bouton « Préparer l'email » ouvre la messagerie avec un message prêt à envoyer.
+  3. La personne ouvre le lien, ou saisit le code dans « J'ai une invitation ». Son nom s'affiche ; elle choisit son identifiant et son mot de passe (8 caractères minimum).
+  4. Le code ne sert qu'une fois. *Renvoyer* génère un nouveau code et annule l'ancien ; la croix annule l'invitation.
+  - Le serveur ne garde que l'empreinte du code (`data/invites.json`) : le code n'est plus affiché après la fermeture de la fenêtre.
+  - Un super administrateur ne peut être invité que par un super administrateur.
+- **Mise en service, ou plus aucun accès sur le serveur** (`accounts.json` supprimé) : la page propose les administrateurs du planning et exige le **mot de passe super administrateur**. C'est le seul cas où l'on choisit un nom.
 - **Se connecter** : identifiant et mot de passe. La session dure jusqu'à la fermeture du navigateur, ou jusqu'à 12 h sans aucun échange avec le serveur (`$SESSION_IDLE`).
 - **Session expirée pendant le travail** : les modifications en attente sont **conservées**. La page redemande le mot de passe, puis les enregistre.
-- **Mot de passe oublié** : un administrateur clique sur le cadenas de la personne dans *Paramétrage › Utilisateurs* (colonne « Identifiant »). L'accès est supprimé et la personne le recrée.
+- **Mot de passe oublié** : un administrateur clique sur le cadenas de la personne dans *Paramétrage › Utilisateurs* (colonne « Identifiant »). L'accès est supprimé et la page propose aussitôt une nouvelle invitation à lui transmettre.
 - **Changer son mot de passe** : menu en haut à droite › *Changer mon mot de passe*. Cette action ferme ses sessions sur les autres postes.
 - **Compte désactivé** (case « Compte actif ») : la connexion est refusée.
 - **Anti-force brute** : après 8 échecs depuis une même adresse IP, la connexion est bloquée 15 min.
@@ -108,7 +115,7 @@ Ordre à respecter :
 
 ### Limites à connaître
 
-1. **Création libre des accès** : sans code, la première personne qui choisit un nom encore « à créer » en prend l'accès. Il y a deux parades : renseigner `$SIGNUP_CODE` dans `api.php` et le donner de vive voix, ou faire créer les accès le jour même de la mise en service.
+1. **Une invitation vaut une clé** jusqu'à son utilisation : transmettez-la à la personne elle-même (en main propre, par téléphone, sur sa messagerie professionnelle), jamais sur un canal partagé. Si elle a pu être vue par un tiers, cliquez sur *Renvoyer*.
 2. **En http, les mots de passe circulent en clair** sur le réseau interne. Passez en HTTPS dès que possible (certificat interne de l'AD CS, par exemple).
 3. **Le serveur vérifie *qui* enregistre, pas *ce qui* est modifié.** Les droits par rôle (Commercial, Lecture seule…) sont appliqués par l'interface. Une personne connectée et techniquement habile peut encore modifier le document complet. Ses enregistrements sont toutefois signés par sa session, dans le journal et dans `planning.meta.json`.
 4. **« Reprendre là où je m'étais arrêté »** (Chrome, Edge) conserve les cookies de session : dans ce cas, la fermeture du navigateur ne déconnecte pas. La déconnexion se fait par le menu, ou après 12 h d'inactivité.
@@ -181,7 +188,7 @@ Chaque rôle (*Paramétrage › Rôles & droits*) coche des droits parmi les sui
 
 **Ce que seul le super administrateur peut faire** :
 - nommer ou retirer un super administrateur, modifier ce rôle ou la fiche d'un super administrateur ;
-- régler la sécurité : code de création d'accès, durée de session, longueur des mots de passe ;
+- régler la sécurité : validité des invitations, durée de session, longueur des mots de passe ;
 - déconnecter tout le monde d'un coup.
 
 **Même pour le super administrateur**, *Vider les projets*, *Tout réinitialiser* et *Restaurer* exigent de retaper le mot de passe super administrateur, et le serveur le vérifie. Changer ce mot de passe exige l'ancien. En cas d'oubli, supprimez `data/superadmin.json` sur le serveur (voir section 5).

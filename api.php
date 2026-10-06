@@ -25,9 +25,11 @@
  *   1. Servez l'application en HTTPS si possible : sans HTTPS, les mots de
  *      passe circulent en clair sur le réseau interne.
  *   2. $ALLOWED_NETS limite l'accès aux plages IP internes : ajustez-le.
- *   3. $SIGNUP_CODE : sans code, n'importe qui sur le réseau peut créer
- *      l'accès d'une personne qui n'en a pas encore. Définissez un code et
- *      communiquez-le de vive voix, ou faites créer les accès rapidement.
+ *   3. Un accès ne se crée qu'avec une invitation (code à usage unique,
+ *      valable $INVITE_DAYS jours) générée par un administrateur : personne
+ *      ne peut choisir un nom dans une liste et s'approprier sa fiche. La
+ *      mise en service (aucun accès sur le serveur) exige le mot de passe
+ *      super administrateur.
  *   4. Le dossier « data » contient toutes les données (planning, comptes,
  *      sessions) : placez-le hors de la racine web si votre hébergement le
  *      permet ($DATA_DIR ci-dessous), et sauvegardez-le avec vos autres
@@ -50,7 +52,7 @@ $BACKUP_EVERY  = 900;                 // une copie au maximum toutes les N secon
 $MAX_BYTES     = 40 * 1024 * 1024;    // taille maximale acceptée pour un enregistrement
 
 /* --- connexion --- */
-$SIGNUP_CODE   = '';                  // code à saisir pour créer son accès ('' = aucun code demandé)
+$INVITE_DAYS   = 7;                   // validité (jours) d'une invitation à créer son accès
 $SESSION_IDLE  = 12 * 3600;           // déconnexion après N secondes sans aucun échange avec le serveur
 $MIN_PASSWORD  = 8;                   // longueur minimale des mots de passe
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
@@ -270,9 +272,10 @@ $META  = "$DATA_DIR/planning.meta.json";
 $LOCK  = "$DATA_DIR/planning.lock";
 $ACC   = "$DATA_DIR/accounts.json";      // identifiants + mots de passe hachés
 $FAILS = "$DATA_DIR/auth-fails.json";    // tentatives de connexion ratées
+$INV   = "$DATA_DIR/invites.json";       // invitations en attente (empreinte du code → personne, échéance)
 $SECF  = "$DATA_DIR/security.json";      // réglages de sécurité modifiés par un super administrateur (priment sur ceux ci-dessus)
 $SEC = read_json($SECF);
-if (isset($SEC['signupCode']) && is_string($SEC['signupCode'])) $SIGNUP_CODE = $SEC['signupCode'];
+if (!empty($SEC['inviteDays'])) $INVITE_DAYS = max(1, min(30, (int)$SEC['inviteDays']));
 if (!empty($SEC['sessionHours'])) $SESSION_IDLE = max(1, min(72, (int)$SEC['sessionHours'])) * 3600;
 if (!empty($SEC['minPassword'])) $MIN_PASSWORD = max(8, min(64, (int)$SEC['minPassword']));
 
@@ -311,6 +314,23 @@ function open_session(string $login, array $a, string $name): array {
     session_regenerate_id(true);                // nouvel identifiant de session à chaque connexion
     $_SESSION['auth'] = ['login' => $login, 'userId' => (string)$a['userId'], 'name' => $name, 'stamp' => (string)$a['stamp'], 'seen' => time()];
     return $_SESSION['auth'];
+}
+/** code d'invitation : 4 groupes de 4 caractères sans ambiguïté (ni 0/O, ni 1/I/L) — 31^16 ≈ 7·10^23 possibilités */
+function invite_code(): string {
+    $al = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; $s = '';
+    for ($i = 0; $i < 16; $i++) $s .= $al[random_int(0, strlen($al) - 1)];
+    return implode('-', str_split($s, 4));
+}
+function invite_norm(string $c): string { return strtoupper((string)preg_replace('/[^A-Za-z0-9]/', '', $c)); }
+/** invitation valide pour ce code, ou null ; les invitations expirées sont purgées au passage */
+function invite_find(string $F, string $code): ?array {
+    $all = read_json($F); $now = time(); $keep = [];
+    foreach ($all as $k => $v) if (is_array($v) && (int)($v['exp'] ?? 0) > $now) $keep[$k] = $v;
+    if (count($keep) !== count($all)) write_json($F, $keep);
+    $c = invite_norm($code);
+    if (strlen($c) !== 16) return null;
+    $v = $keep[hash('sha256', $c)] ?? null;
+    return $v ? ['userId' => (string)$v['userId'], 'name' => (string)$v['name'], 'expires' => date('c', (int)$v['exp'])] : null;
 }
 function superadmin_hash(string $DATA_DIR, string $default): string {
     $h = read_json("$DATA_DIR/superadmin.json")['hash'] ?? '';
@@ -366,7 +386,7 @@ if ($action === 'view') {
 }
 
 $me = auth_user($ACC, $SESSION_IDLE, $lock);
-$PUBLIC = ['me', 'signup-list', 'signup', 'login', 'logout'];
+$PUBLIC = ['me', 'signup-list', 'invite-check', 'signup', 'login', 'logout'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);
 // la session n'est plus modifiée ensuite : on la libère pour ne pas bloquer les requêtes parallèles
 if (!in_array($action, ['signup', 'login', 'logout', 'password', 'sa-check', 'sa-change', 'kick-all'], true)) session_write_close();
@@ -401,25 +421,40 @@ if ($action === 'sa-check' || $action === 'sa-change') {
 /* --- qui suis-je ? --- */
 if ($action === 'me') {
     if ($me) out(200, me_payload($me));
-    out(401, ['auth' => false, 'needCode' => $SIGNUP_CODE !== '', 'minPassword' => $MIN_PASSWORD,
-              'bootstrap' => !is_file($FILE) && !read_json($ACC)]);
+    out(401, ['auth' => false, 'minPassword' => $MIN_PASSWORD, 'bootstrap' => !read_json($ACC)]);
 }
 
-/* --- personnes pouvant encore créer leur accès --- */
+/* --- mise en service : les administrateurs du planning (seul cas où l'on choisit un nom, avec le mot de passe super administrateur) ---
+   En temps normal, il n'y a plus de liste de noms : un accès ne se crée qu'avec l'invitation d'un administrateur. */
 if ($action === 'signup-list') {
     flock($lock, LOCK_SH);
     $doc = read_doc($FILE);
     $acc = read_json($ACC);
     flock($lock, LOCK_UN);
-    $taken = [];
-    foreach ($acc as $a) $taken[(string)($a['userId'] ?? '')] = true;
+    $boot = !$acc;
     $users = [];
-    foreach (($doc['users'] ?? []) as $u) {
-        if (!is_array($u) || ($u['active'] ?? true) === false || isset($taken[(string)($u['id'] ?? '')])) continue;
-        $users[] = ['id' => (string)$u['id'], 'name' => user_label($u)];
+    if ($boot && $doc) {
+        foreach (($doc['users'] ?? []) as $u) {
+            if (!is_array($u) || ($u['active'] ?? true) === false) continue;
+            if (has_any($doc, (string)($u['id'] ?? ''), ['users', 'super'])) $users[] = ['id' => (string)$u['id'], 'name' => user_label($u)];
+        }
+        usort($users, function ($a, $b) { return strcasecmp($a['name'], $b['name']); });
     }
-    usort($users, function ($a, $b) { return strcasecmp($a['name'], $b['name']); });
-    out(200, ['bootstrap' => !is_file($FILE) && !$acc, 'needCode' => $SIGNUP_CODE !== '', 'minPassword' => $MIN_PASSWORD, 'users' => $users]);
+    out(200, ['bootstrap' => $boot, 'fresh' => $boot && !$doc, 'minPassword' => $MIN_PASSWORD, 'users' => $users]);
+}
+
+/* --- invitation : vérification du code (page de création d'accès) --- */
+if ($action === 'invite-check') {
+    flock($lock, LOCK_EX);
+    throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
+    $inv = invite_find($INV, (string)($_GET['code'] ?? ''));
+    if (!$inv) {
+        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+        flock($lock, LOCK_UN);
+        out(404, ['error' => 'Invitation inconnue, déjà utilisée ou expirée : demandez-en une nouvelle à un administrateur.']);
+    }
+    flock($lock, LOCK_UN);
+    out(200, ['name' => $inv['name'], 'expires' => $inv['expires'], 'minPassword' => $MIN_PASSWORD]);
 }
 
 /* --- création de son accès (identifiant + mot de passe) --- */
@@ -427,36 +462,54 @@ if ($action === 'signup') {
     $in = body_json();
     flock($lock, LOCK_EX);
     throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
-    if ($SIGNUP_CODE !== '' && !hash_equals($SIGNUP_CODE, (string)($in['code'] ?? ''))) {
-        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
-        auth_log('fail', clean_login($in['login'] ?? ''), 'code d’accès incorrect');
-        out(403, ['error' => 'Code d’accès incorrect.']);
-    }
     $login = clean_login($in['login'] ?? '');
     $pass = (string)($in['password'] ?? '');
-    $uid = (string)($in['userId'] ?? '');
+    $acc = read_json($ACC);
+    $doc = read_doc($FILE);
+    $boot = !$acc;
+    $code = (string)($in['invite'] ?? '');
+    if ($boot) {
+        // mise en service, ou remise en route quand plus aucun accès n'existe : réservée à qui connaît le mot de passe super administrateur
+        if (!password_verify((string)($in['sa'] ?? ''), superadmin_hash($DATA_DIR, $SUPERADMIN_HASH))) {
+            throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+            auth_log('fail', $login, 'mise en service : mot de passe super administrateur incorrect');
+            out(403, ['error' => 'Mot de passe super administrateur incorrect.']);
+        }
+        $uid = (string)($in['userId'] ?? '');
+        if ($doc) {
+            $u = find_user($doc, $uid);
+            if (!$u || ($u['active'] ?? true) === false || !has_any($doc, $uid, ['users', 'super'])) out(400, ['error' => 'Choisissez un administrateur dans la liste.']);
+            $name = user_label($u);
+        } else {
+            $name = cut(trim((string)($in['name'] ?? '')), 80);
+            if ($uid === '' || $name === '') out(400, ['error' => 'Choisissez votre nom dans la liste.']);
+        }
+    } else {
+        $inv = invite_find($INV, $code);
+        if (!$inv) {
+            throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+            auth_log('fail', $login, 'invitation inconnue, utilisée ou expirée');
+            out(403, ['error' => 'Invitation inconnue, déjà utilisée ou expirée : demandez-en une nouvelle à un administrateur.']);
+        }
+        $uid = (string)$inv['userId'];
+        $u = find_user($doc, $uid);
+        if (!$u || ($u['active'] ?? true) === false) out(400, ['error' => 'Votre fiche a été supprimée ou désactivée entre-temps : contactez un administrateur.']);
+        $name = user_label($u);
+    }
     if (!login_ok($login)) out(400, ['error' => 'Identifiant : 3 à 60 caractères parmi lettres, chiffres, point, tiret, @.']);
     if (strlen($pass) < $MIN_PASSWORD) out(400, ['error' => "Mot de passe trop court ($MIN_PASSWORD caractères minimum)."]);
     if (strlen($pass) > 200) out(400, ['error' => 'Mot de passe trop long.']);
     if (strtolower($pass) === $login) out(400, ['error' => 'Le mot de passe doit être différent de l’identifiant.']);
-    $acc = read_json($ACC);
-    $bootstrap = !is_file($FILE) && !$acc;   // toute première mise en service : pas encore de planning sur le serveur
-    if ($bootstrap) {
-        $name = cut(trim((string)($in['name'] ?? '')), 80);
-        if ($uid === '' || $name === '') out(400, ['error' => 'Choisissez votre nom dans la liste.']);
-    } else {
-        $u = find_user(read_doc($FILE), $uid);
-        if (!$u || ($u['active'] ?? true) === false) out(400, ['error' => 'Personne inconnue ou compte désactivé.']);
-        $name = user_label($u);
-    }
     if (isset($acc[$login])) out(409, ['error' => 'Cet identifiant est déjà pris : choisissez-en un autre.']);
     foreach ($acc as $a) if ((string)($a['userId'] ?? '') === $uid)
         out(409, ['error' => 'Cette personne a déjà un accès. Connectez-vous, ou demandez à un administrateur de le réinitialiser.']);
     $acc[$login] = ['userId' => $uid, 'name' => $name, 'hash' => password_hash($pass, PASSWORD_DEFAULT),
                     'stamp' => bin2hex(random_bytes(8)), 'created' => date('c'), 'lastLogin' => date('c')];
     if (!write_json($ACC, $acc)) out(500, ['error' => 'Écriture impossible']);
+    if (!$boot) { $all = read_json($INV); unset($all[hash('sha256', invite_norm($code))]); write_json($INV, $all); }   // usage unique
+    throttle_clear($FAILS, $ip);
     flock($lock, LOCK_UN);
-    auth_log('signup', $login, $name);
+    auth_log('signup', $login, $name . ($boot ? ' (mise en service)' : ' (invitation)'));
     out(200, me_payload(open_session($login, $acc[$login], $name)));
 }
 
@@ -538,6 +591,41 @@ if ($action === 'accounts') {
     foreach ($acc as $login => $a) $list[] = ['login' => (string)$login, 'userId' => (string)$a['userId'],
                                              'created' => $a['created'] ?? null, 'lastLogin' => $a['lastLogin'] ?? null];
     out(200, ['accounts' => $list]);
+}
+
+/* --- administrateurs : inviter une personne à créer son accès (code à usage unique), lister, annuler --- */
+if ($action === 'invite' || $action === 'invite-revoke' || $action === 'invites') {
+    flock($lock, LOCK_EX);
+    $doc = read_doc($FILE);
+    if (!has_perm($doc, $me['userId'], 'users')) { flock($lock, LOCK_UN); out(403, ['error' => 'Réservé aux gestionnaires des utilisateurs']); }
+    $now = time();
+    $all = array_filter(read_json($INV), function ($v) use ($now) { return is_array($v) && (int)($v['exp'] ?? 0) > $now; });
+    if ($action === 'invites') {
+        flock($lock, LOCK_UN);
+        $list = [];
+        foreach ($all as $v) $list[] = ['userId' => (string)$v['userId'], 'name' => (string)$v['name'], 'by' => (string)($v['by'] ?? ''),
+                                        'created' => date('c', (int)($v['t'] ?? 0)), 'expires' => date('c', (int)$v['exp'])];
+        out(200, ['invites' => $list, 'days' => $INVITE_DAYS]);
+    }
+    $in = body_json();
+    $uid = (string)($in['userId'] ?? '');
+    $u = find_user($doc, $uid);
+    if (!$u) { flock($lock, LOCK_UN); out(404, ['error' => 'Personne inconnue : enregistrez d’abord sa fiche.']); }
+    if (has_perm($doc, $uid, 'super') && !has_perm($doc, $me['userId'], 'super')) { flock($lock, LOCK_UN); out(403, ['error' => 'Seul un super administrateur peut inviter un super administrateur.']); }
+    $all = array_filter($all, function ($v) use ($uid) { return (string)$v['userId'] !== $uid; });   // une seule invitation en cours par personne
+    if ($action === 'invite-revoke') {
+        write_json($INV, $all); flock($lock, LOCK_UN);
+        auth_log('invite-revoke', $me['login'], user_label($u));
+        out(200, ['ok' => true]);
+    }
+    if (($u['active'] ?? true) === false) { flock($lock, LOCK_UN); out(400, ['error' => 'Compte désactivé : réactivez la fiche avant d’inviter.']); }
+    foreach (read_json($ACC) as $a) if ((string)($a['userId'] ?? '') === $uid) { flock($lock, LOCK_UN); out(409, ['error' => 'Cette personne a déjà un accès : réinitialisez-le d’abord si besoin.']); }
+    $code = invite_code();
+    $all[hash('sha256', invite_norm($code))] = ['userId' => $uid, 'name' => user_label($u), 'by' => $me['name'], 't' => $now, 'exp' => $now + $INVITE_DAYS * 86400];
+    if (!write_json($INV, $all)) { flock($lock, LOCK_UN); out(500, ['error' => 'Écriture impossible']); }
+    flock($lock, LOCK_UN);
+    auth_log('invite', $me['login'], user_label($u));
+    out(200, ['code' => $code, 'expires' => date('c', $now + $INVITE_DAYS * 86400), 'days' => $INVITE_DAYS, 'name' => user_label($u)]);
 }
 
 /* --- administrateurs : réinitialiser l'accès d'une personne --- */
@@ -627,15 +715,15 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
         out(200, ['ok' => true, 'name' => $name]);
     }
     $isSuper = has_perm($doc, $me['userId'], 'super');
-    if ($action === 'sec-get') out(200, ['signupCode' => $isSuper ? $SIGNUP_CODE : ($SIGNUP_CODE !== '' ? '••••••' : ''), 'sessionHours' => (int)round($SESSION_IDLE / 3600),
+    if ($action === 'sec-get') out(200, ['inviteDays' => $INVITE_DAYS, 'sessionHours' => (int)round($SESSION_IDLE / 3600),
         'minPassword' => $MIN_PASSWORD, 'maxFails' => $MAX_FAILS, 'failWindow' => $FAIL_WINDOW, 'https' => $https, 'super' => $isSuper]);
     if ($action === 'sec-set') {
         if (!$isSuper) out(403, ['error' => 'Réservé au super administrateur']);
         $in = body_json();
-        $new = ['signupCode' => cut(trim((string)($in['signupCode'] ?? '')), 64), 'sessionHours' => max(1, min(72, (int)($in['sessionHours'] ?? 12))),
+        $new = ['inviteDays' => max(1, min(30, (int)($in['inviteDays'] ?? 7))), 'sessionHours' => max(1, min(72, (int)($in['sessionHours'] ?? 12))),
                 'minPassword' => max(8, min(64, (int)($in['minPassword'] ?? 8))), 'changed' => date('c'), 'by' => $me['name']];
         if (!write_json($SECF, $new)) out(500, ['error' => 'Écriture impossible']);
-        auth_log('sec-set', $me['login'], 'session ' . $new['sessionHours'] . ' h · mot de passe ' . $new['minPassword'] . ' car. · code ' . ($new['signupCode'] !== '' ? 'oui' : 'non'));
+        auth_log('sec-set', $me['login'], 'session ' . $new['sessionHours'] . ' h · mot de passe ' . $new['minPassword'] . ' car. · invitations ' . $new['inviteDays'] . ' j');
         out(200, ['ok' => true]);
     }
 }
