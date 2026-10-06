@@ -222,3 +222,44 @@ Ces champs sont aussi dans les exports et les imports Excel/CSV des projets.
 - Deux homonymes avec des emails différents restent deux personnes.
 - Le rôle super administrateur n'est jamais retiré par un import.
 - La date de dernière utilisation de l'ancien outil est reprise : le bouton « Désactiver les comptes dormants » s'appuie dessus.
+
+## 9. Retours d'utilisation (octobre 2026)
+
+**Saisie des projets**
+- *Date demandée* : se tape au clavier (jj/mm/aaaa) ou se remplit avec un raccourci : +1 semaine, +1, +3 ou +6 mois, +1 an.
+- *Dossier multi-machines* : dès 2 DA, la case « une fiche par machine » crée un dossier numéroté (D2026-0001). Il contient une fiche par machine, numérotée 1/N, 2/N…, chacune avec ses étapes et ses dates.
+  - Pour les matricules, saisissez-en un par machine, séparés par des espaces.
+  - La fiche d'une machine liste tout le dossier ; le bouton « Ajouter une machine » renumérote les fiches.
+- *Type « Fixation »* : disponible dans les types de projet. Il apparaît dans les statistiques par type.
+- *Champs obligatoires* : seuls l'entreprise, le type et l'agence le sont. L'email n'est contrôlé que s'il est rempli.
+
+**Imports (Vega, Excel)**
+- Un champ corrigé à la main dans le planning (téléphone, contact, adresse…) n'est plus écrasé par les imports suivants. La fiche projet le signale et propose « Réautoriser les imports ».
+- Un projet existant est aussi reconnu à son matricule. Les modèles inconnus sont créés automatiquement.
+- La liste des modèles indique combien de projets utilisent chacun : un modèle à 0 peut être retiré du catalogue sans risque.
+
+**Rôles** (créés automatiquement à la première connexion d'un administrateur)
+
+| Rôle | Peut modifier | Consulte |
+|---|---|---|
+| Administrateur | tout, paramétrage et utilisateurs compris | tout |
+| Éditeur planning | projets, planning de tous les services, absences | tout |
+| Planification | création et modification des projets | plannings en lecture seule |
+| Planification agence | projets, planning et absences de **son agence** (champ « Agence » de sa fiche utilisateur) | les autres agences, en lecture seule (box grisées) |
+| Commercial | rien | plannings, projets, filtre « Bloqués » et « Avec étapes à planifier » |
+
+Le rôle Commercial n'est passé en lecture seule que s'il avait encore ses droits d'origine. Si vous l'aviez déjà modifié, il reste tel quel. Comme les droits « Projets » et « Planning », la limite par agence est appliquée par l'interface. Le serveur, lui, ne contrôle que les rôles, les utilisateurs et les opérations destructrices (voir section 7).
+
+**Planning**
+- *Durée à la souris* : étirez la poignée à droite d'une box ; chaque cran vaut une demi-journée, ou une journée pour les services planifiés à la journée. Au clavier, sélectionnez la box puis appuyez sur + ou −.
+- *Absences* : saisie par demi-journée (« dès l'après-midi », « jusqu'au matin »). Elles s'affichent en calque hachuré transparent, et les box en dessous restent visibles et cliquables. Cliquez l'étiquette de l'absence pour la modifier.
+- *Séries compactes* : plusieurs machines d'un même dossier sur le même créneau s'affichent en box fines empilées. Le bouton « Séries compactes » active ou désactive cet affichage.
+- *Anciens collaborateurs* : renseignez la « Date de départ » sur leur fiche. Ils disparaissent des plannings, sauf sur les semaines où ils ont des opérations : ces lignes restent grisées, l'historique est conservé.
+- *Recherche* : dans *Projets*, la recherche par client se combine avec une période (du… au…). Un projet ressort si sa date demandée ou une de ses étapes planifiées tombe dans la période.
+
+**Statistiques** : *Rapports › Rendement atelier*.
+- Machines terminées, ou jours réalisés, par opérateur et par mois, avec les partiels à part.
+- Comparaison avec l'année précédente « à date » : même jour de l'année précédente, pour une comparaison juste en cours d'année.
+- *Phase de chronométrage* : saisissez le « Temps réel passé » dans chaque opération terminée (informatique, PDA et magasin compris). Le rapport compare, modèle par modèle, le temps réel moyen à la durée prévue et propose une durée standard arrondie à la demi-journée. Attendez au moins 5 mesures par modèle avant de modifier les durées.
+
+**Préparation (P)** : l'étape est retirée du menu, du tableau de bord, des alertes et des box. Les données existantes sont conservées. Elle peut être réactivée dans *Paramètres › Planification*.
