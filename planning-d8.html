@@ -303,6 +303,8 @@ label.chip input{display:none}
 .pf-rows{display:flex;flex-direction:column;gap:11px}
 .pf-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pf-civ{grid-template-columns:120px 1fr;margin-bottom:6px}.pf-zip{grid-template-columns:130px 1fr}
 .pf-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pw-rules{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--text-3)}.pw-rules li{display:flex;align-items:center;gap:4px}.pw-rules li.ok{color:var(--ok)}
+.sec-sep{border-top:1px solid var(--border);padding-top:12px;margin-top:4px}details.cron{margin-top:14px;padding:10px 12px;border:1px dashed var(--border);border-radius:10px}details.cron summary{cursor:pointer;font-weight:600}
 .inv-code{font-size:26px;font-weight:700;letter-spacing:.08em;text-align:center;padding:14px;border-radius:12px;background:var(--surface-2);border:1px dashed var(--border);user-select:all}
 .tbl.atl td,.tbl.atl th{padding-left:6px;padding-right:6px}.tbl tr.tot td{border-top:2px solid var(--border);background:var(--surface-2)}
 .dq{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.dq .chip{cursor:pointer;border:1px solid var(--border);background:var(--surface-2)}.dq .chip:hover{border-color:var(--primary);color:var(--primary)}
@@ -391,7 +393,7 @@ body.kiosk .tbl{font-size:15px}
 .abs-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px 20px}
 .abs-form .in{padding:10px 12px;font-size:15px}
 .abs-form .fld>label{font-size:13.5px}
-.abs-form .full{grid-column:1/-1}
+.abs-form .full,.fgrid .fld.full{grid-column:1/-1}
 .seg2{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border-2);border-radius:8px;overflow:hidden;margin-top:8px}
 .seg2 label{position:relative;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 6px;cursor:pointer;font-weight:600;font-size:14px;color:var(--text-2);background:var(--surface)}
 .seg2 label+label{border-left:1px solid var(--border-2)}
@@ -659,6 +661,7 @@ const ICONS = {
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7',
   coffee: 'M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3',
   check: 'M20 6 9 17l-5-5',
+  dot: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   checkcircle: 'M22 11v1a10 10 0 1 1-5.9-9.1M22 4 12 14.9l-3-3',
   calx: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM10 14l4 4M14 14l-4 4',
   cal: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
@@ -1086,19 +1089,30 @@ async function fetchJSON(url, opt = {}, ms = 8000) {
    il n'y a pas de connexion : les données ne quittent pas le poste. */
 const PAGE = location.pathname.split('/').pop() || 'index.html';
 const fatalErr = msg => Object.assign(new Error(msg), { fatal: true });
+/* ---------- règles des mots de passe (fixées par le serveur, rappelées et vérifiées ici avant envoi) ---------- */
+let PWP = { min: 8, digit: true, special: true, upper: false };
+const setPolicy = p => { if (p && typeof p === 'object') PWP = Object.assign({}, PWP, p); };
+const PW_RULES = () => [[`${PWP.min} caractères minimum`, p => [...p].length >= PWP.min], PWP.digit && ['1 chiffre', p => /\d/.test(p)],
+  PWP.special && ['1 caractère spécial (! ? @ # % & * - _ …)', p => /[^\p{L}\p{N}]/u.test(p)], PWP.upper && ['1 majuscule', p => /\p{Lu}/u.test(p)]].filter(Boolean);
+const pwCheck = (p, login) => { const bad = PW_RULES().find(r => !r[1](p)); return bad ? 'Mot de passe : ' + bad[0] + ' requis.' : (login && p.toLowerCase() === String(login).toLowerCase() ? 'Le mot de passe doit être différent de l’identifiant.' : ''); };
+const pwRulesHTML = (p = '') => `<ul class="pw-rules">${PW_RULES().map(r => `<li class="${p && r[1](p) ? 'ok' : ''}">${ic(p && r[1](p) ? 'check' : 'dot', 'sm')}${esc(r[0])}</li>`).join('')}</ul>`;
+function pwLive(root, sel) {                     // coche les règles au fil de la frappe
+  const i = $(sel, root); if (!i || !i.closest('.fld').querySelector('.pw-rules')) return;
+  i.addEventListener('input', () => { const box = i.closest('.fld').querySelector('.pw-rules'); if (box) box.outerHTML = pwRulesHTML(i.value); });
+}
 const Auth = {
   user: null, build: null, newBuild: false, waiting: null, acc: null, accBusy: false, bootDB: null, bootFile: '',
   api(a, body) {
     return fetchJSON('api.php?a=' + a + '&page=' + encodeURIComponent(PAGE), body === undefined ? {} :
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 15000);
   },
-  set(u) { this.user = u; if (this.build == null && u.build != null) this.build = u.build; },
+  set(u) { this.user = u; setPolicy(u.policy); if (this.build == null && u.build != null) this.build = u.build; },
   /** affiche l'écran de connexion ; la promesse se résout une fois la personne connectée */
   prompt(info = {}) {
     if (!this.waiting) this.waiting = new Promise(res => this.show(info, u => { this.waiting = null; $('#auth').innerHTML = ''; res(u); }));
     return this.waiting;
   },
-  relogin() { return this.prompt({ expired: true }).then(u => { setSync('ok', 'Reconnecté'); return u; }); },
+  relogin() { return this.prompt({ expired: true }).then(u => { setSync('ok', 'Reconnecté'); if (u.mustChange) this.changePassword(true); return u; }); },
   brand() {
     return `<div class="auth-brand"><span class="logo">D8</span><span><b>${esc(DB ? DB.settings.appName : 'D8 Production')}</b>
       <small>${esc(DB ? DB.settings.appSub : 'Planning atelier & terrain')}</small></span></div>`;
@@ -1116,9 +1130,10 @@ const Auth = {
     // seule la mise en service (aucun accès sur le serveur) propose les administrateurs, avec le mot de passe super administrateur
     const urlInv = new URLSearchParams(location.search).get('invitation') || '';
     let tab = boot || urlInv ? 'signup' : 'login', list = null, min = info.minPassword || 8, fresh = true, inv = { code: urlInv, name: '', err: '' };
+    setPolicy(info.policy);
     const loadList = async () => {
       const r = await this.api('signup-list').catch(() => null);
-      if (r && r.ok && r.body) { fresh = r.body.fresh !== false; if (r.body.minPassword) min = r.body.minPassword; }
+      if (r && r.ok && r.body) { fresh = r.body.fresh !== false; if (r.body.minPassword) min = r.body.minPassword; setPolicy(r.body.policy); }
       if (!fresh) return ((r && r.body && r.body.users) || []).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
       this.bootDB = this.bootDB || migrate(await Sync.readLocal() || seed());   // 1re mise en service : le planning n'existe pas encore sur le serveur
       const adm = new Set(this.bootDB.roles.filter(r => (r.perms || []).some(x => x === 'users' || x === 'admin' || x === 'super')).map(r => r.id));
@@ -1129,7 +1144,7 @@ const Auth = {
       inv.name = ''; inv.err = '';
       if (c.length !== 16) return;
       const r = await fetchJSON('api.php?a=invite-check&code=' + encodeURIComponent(c), {}, 15000).catch(() => null);
-      if (r && r.ok && r.body) { inv.name = r.body.name; inv.expires = r.body.expires; if (r.body.minPassword) min = r.body.minPassword; }
+      if (r && r.ok && r.body) { inv.name = r.body.name; inv.expires = r.body.expires; if (r.body.minPassword) min = r.body.minPassword; setPolicy(r.body.policy); }
       else inv.err = (r && r.body && r.body.error) || 'Serveur injoignable.';
     };
     const draw = async () => {
@@ -1169,7 +1184,7 @@ const Auth = {
         <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false">
           <span class="help">3 caractères minimum : lettres, chiffres, point, tiret, @.</span></div>
         <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="new-password">
-          <span class="help">${min} caractères minimum.</span></div>
+          ${pwRulesHTML()}</div>
         <div class="fld"><label for="au-c">Confirmation du mot de passe</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
         <button class="btn pri" type="submit">Créer mon accès</button></form>`;
       el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b">${head}
@@ -1177,6 +1192,7 @@ const Auth = {
         <p class="auth-foot">La session reste ouverte jusqu’à la fermeture du navigateur ou une longue inactivité.${location.protocol === 'https:' ? ''
           : '<br>Connexion non chiffrée (http) : n’utilisez pas un mot de passe qui sert ailleurs.'}</p></div>`;
       const f = $(exp ? '#au-p' : tab === 'signup' ? (boot ? '#au-u' : inv.name ? '#au-l' : '#au-k') : '#au-l', el); if (f) f.focus();
+      if (tab === 'signup') pwLive(el, '#au-p');
       const k = $('#au-k', el);
       if (k) k.oninput = () => {                     // code complet saisi : on vérifie l'invitation et on affiche à qui elle est destinée
         const c = k.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1211,7 +1227,7 @@ const Auth = {
         if (boot && !v.sa) return err('Saisissez le mot de passe super administrateur.');
         if (!boot && String(v.invite || '').replace(/[^A-Za-z0-9]/g, '').length !== 16) return err('Saisissez le code d’invitation reçu (16 caractères).');
         if (!/^[a-z0-9._@-]{3,60}$/i.test(v.login)) return err('Identifiant : 3 à 60 caractères parmi lettres, chiffres, point, tiret, @.');
-        if (v.password.length < min) return err(`Mot de passe trop court (${min} caractères minimum).`);
+        const pe = pwCheck(v.password, v.login); if (pe) return err(pe);
         if (v.password !== v.confirm) return err('Les deux mots de passe ne correspondent pas.');
         delete v.confirm;
         if (boot) v.name = (list.find(u => u.id === v.userId) || {}).name || '';
@@ -1238,24 +1254,29 @@ const Auth = {
     try { await this.api('logout', {}); } catch (e) { }
     location.reload();
   },
-  changePassword() {
+  changePassword(forced) {
     closePop();
+    let done = false;
     const m = modal({
-      title: 'Changer mon mot de passe', size: 'sm',
-      body: `<form class="fgrid one" id="pwd" novalidate>
+      title: forced ? 'Nouveau mot de passe obligatoire' : 'Changer mon mot de passe', size: 'sm',
+      onClose: () => { if (forced && !done) setTimeout(() => this.changePassword(true), 60); },
+      body: `${forced ? `<div class="bnr warn" style="margin:0 0 12px">${ic('lock')}<span>Votre mot de passe ne respecte plus les règles de sécurité de l’entreprise. Choisissez-en un nouveau pour continuer.</span></div>` : ''}<form class="fgrid one" id="pwd" novalidate>
         <input type="text" name="login" value="${esc(this.user ? this.user.login : '')}" autocomplete="username" hidden>
         <div class="fld"><label>Mot de passe actuel</label><input class="in" type="password" name="current" autocomplete="current-password" autofocus></div>
-        <div class="fld"><label>Nouveau mot de passe</label><input class="in" type="password" name="next" autocomplete="new-password"></div>
+        <div class="fld"><label>Nouveau mot de passe</label><input class="in" type="password" name="next" id="pw-next" autocomplete="new-password">${pwRulesHTML()}</div>
         <div class="fld"><label>Confirmation</label><input class="in" type="password" name="confirm" autocomplete="new-password"></div>
         <p class="auth-note">Vos autres sessions ouvertes (autres postes) seront déconnectées.</p></form>`,
-      foot: `<span class="spacer"></span><button class="btn" data-close>Annuler</button><button class="btn pri" data-ok>Enregistrer</button>`
+      foot: `<span class="spacer"></span>${forced ? `<button class="btn" data-act="logout">Se déconnecter</button>` : '<button class="btn" data-close>Annuler</button>'}<button class="btn pri" data-ok>Enregistrer</button>`
     });
+    if (forced) $$('[data-close]', m.el).forEach(x => x.remove());
+    pwLive(m.el, '#pw-next');
     const save = async () => {
       const v = Object.fromEntries(new FormData($('#pwd', m.el)));
       if (!v.current || !v.next) return toast('Renseignez les deux mots de passe.', 'warn');
+      const pe = pwCheck(v.next, this.user && this.user.login); if (pe) return toast(pe, 'warn');
       if (v.next !== v.confirm) return toast('Les deux nouveaux mots de passe ne correspondent pas.', 'warn');
       const r = await this.api('password', { current: v.current, next: v.next }).catch(() => null);
-      if (r && r.ok) { m.close(); toast('Mot de passe modifié', 'ok'); }
+      if (r && r.ok) { done = true; if (this.user) this.user.mustChange = false; m.close(); toast('Mot de passe modifié', 'ok'); }
       else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
     };
     $('[data-ok]', m.el).onclick = save;
@@ -1268,6 +1289,8 @@ const Auth = {
     this.acc = r && r.ok && r.body ? Object.fromEntries(r.body.accounts.map(a => [a.userId, a])) : {};
     let iv = null; try { iv = can('users') ? await this.api('invites') : null; } catch (e) { }
     this.inv = iv && iv.ok && iv.body ? Object.fromEntries(iv.body.invites.map(a => [a.userId, a])) : {};
+    let lk = null; try { lk = await this.api('locks'); } catch (e) { }
+    this.locks = lk && lk.ok && lk.body ? Object.fromEntries(lk.body.locks.filter(x => x.locked).map(x => [x.login, x])) : {};
     this.accBusy = false;
     if (route().path === '/admin/users') render();
   },
@@ -3592,11 +3615,13 @@ function pageAdmin(kind, q) {
   if (accs && (Auth.acc === null || lastPath !== route().path)) { if (lastPath !== route().path) Auth.acc = null; Auth.loadAccounts(); }
   const invOf = x => (Auth.inv || {})[x.id];
   const accCell = x => !accs ? '' : `<td>${!Auth.acc ? '<span class="mut">…</span>' : Auth.acc[x.id]
-    ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>`
+    ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>${(Auth.locks || {})[Auth.acc[x.id].login]
+      ? ` <span class="pill nowrap" style="${cvar('#d1444a', .14, .35)}">${ic('lock', 'sm')} bloqué</span>` : ''}`
     : invOf(x) ? `<span class="pill nowrap" style="${cvar('#1487c9', .13, .35)}" title="Invitation de ${esc(invOf(x).by)}, le ${esc(D.dt(invOf(x).created))}">${ic('mail', 'sm')} invité · jusqu’au ${esc(D.short(invOf(x).expires.slice(0, 10)))}</span>`
     : x.active === false ? '<span class="mut">compte désactivé</span>' : '<span class="mut">sans accès</span>'}</td>`;
   const accBtn = x => !(accs && Auth.acc && can('users') && (can('super') || !isSuperUser(x))) ? ''
-    : Auth.acc[x.id] ? (Auth.user && Auth.user.userId === x.id ? '' : `<button class="ibtn" data-act="kick" data-id="${esc(x.id)}" title="Forcer la déconnexion">${ic('logout')}</button><button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>`)
+    : Auth.acc[x.id] ? ((Auth.locks || {})[Auth.acc[x.id].login] ? `<button class="btn sm" data-act="unlock-login" data-login="${esc(Auth.acc[x.id].login)}" title="Débloquer le compte">${ic('lock', 'sm')} Débloquer</button>` : '')
+      + (Auth.user && Auth.user.userId === x.id ? '' : `<button class="ibtn" data-act="kick" data-id="${esc(x.id)}" title="Forcer la déconnexion">${ic('logout')}</button><button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>`)
     : x.active === false ? ''
     : `<button class="btn sm${invOf(x) ? '' : ' pri'}" data-act="invite" data-id="${esc(x.id)}" title="${invOf(x) ? 'Générer un nouveau code (l’ancien ne fonctionnera plus)' : 'Créer une invitation à usage unique pour que cette personne crée son accès'}">${ic('mail', 'sm')} ${invOf(x) ? 'Renvoyer' : 'Inviter'}</button>${invOf(x) ? `<button class="ibtn" data-act="invite-revoke" data-id="${esc(x.id)}" title="Annuler l’invitation">${ic('x')}</button>` : ''}`;
   let extra = '';
@@ -5500,16 +5525,20 @@ const AUTH_EV = {
   logout: ['Déconnexion', ''], signup: ['Création d’accès', 'ok'], password: ['Mot de passe changé', ''], reset: ['Accès réinitialisé', 'warn'],
   kick: ['Déconnexion forcée', 'warn'], 'kick-all': ['Tout le monde déconnecté', 'warn'], 'sa-ok': ['Mot de passe super admin saisi', ''],
   'sa-fail': ['Mot de passe super admin erroné', 'danger'], 'sa-change': ['Mot de passe super admin changé', 'warn'], 'sec-set': ['Réglages de sécurité modifiés', 'warn'],
-  unblock: ['Adresse débloquée', ''], 'backup-now': ['Sauvegarde manuelle', 'ok'], 'backup-get': ['Sauvegarde téléchargée', '']
+  unblock: ['Adresse débloquée', ''], 'backup-now': ['Sauvegarde manuelle', 'ok'], 'backup-get': ['Sauvegarde téléchargée', ''],
+  locked: ['Compte bloqué', 'danger'], unlock: ['Compte débloqué', ''], 'backup-auto': ['Sauvegarde automatique', 'ok'],
+  invite: ['Invitation créée', ''], 'invite-revoke': ['Invitation annulée', '']
 };
 async function loadSecurity() {
   if (SEC.busy || Sync.mode !== 'server') return; SEC.busy = true;
   const b = r => r && r.ok ? r.body : null;
-  const [acc, log, fails, bk, cfg] = await Promise.all(['accounts', 'auth-log', 'fails', 'backups', 'sec-get'].map(a => Auth.api(a).catch(() => null)));
-  SEC.data = { acc: (b(acc) || {}).accounts || [], log: (b(log) || {}).events || [], fails: b(fails) || { ips: [] }, backups: b(bk) || { files: [] }, cfg: b(cfg) || {} };
+  const [acc, log, fails, bk, cfg, lk] = await Promise.all(['accounts', 'auth-log', 'fails', 'backups', 'sec-get', 'locks'].map(a => Auth.api(a).catch(() => null)));
+  SEC.data = { acc: (b(acc) || {}).accounts || [], log: (b(log) || {}).events || [], fails: b(fails) || { ips: [] }, backups: b(bk) || { files: [] }, cfg: b(cfg) || {}, locks: b(lk) || { locks: [] } };
   SEC.busy = false;
   if (route().path === '/admin/securite') render();
 }
+const cronCmd = k => `powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing '${location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, '')}api.php?a=cron&key=${k}'"`;
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-copy-cron]'); if (b) copyText(b.dataset.copyCron).then(() => toast('Commande copiée', 'ok')); });
 async function fetchBackup(name) {
   const r = await fetch('api.php?a=backup-get&f=' + encodeURIComponent(name), { cache: 'no-store' });
   if (!r.ok) throw new Error('sauvegarde introuvable');
@@ -5552,25 +5581,54 @@ function pageSecurity() {
       <td>${x.blocked ? `<span class="pill" style="${cvar('#d1444a', .14, .35)}">bloquée jusqu’à ${esc(D.dt(x.until).slice(-5))}</span>` : '<span class="mut">surveillée</span>'}</td>
       <td><button class="btn sm" data-act="unblock" data-ip="${esc(x.ip)}">Débloquer</button></td></tr>`).join('')}</tbody></table>`
     : `<p class="mut" style="margin:0">Aucune tentative ratée récente. Après ${D0.fails.max || 8} échecs, une adresse est bloquée ${Math.round((D0.fails.window || 900) / 60)} min.</p>`}</div>`;
+  const L = D0.locks || { locks: [] }, lks = L.locks || [];
+  const lockHTML = `<div class="card-b">${lks.length ? `<table class="tbl"><thead><tr><th>Identifiant</th><th>Personne</th><th>Échecs</th><th>État</th><th></th></tr></thead><tbody>
+    ${lks.map(x => `<tr><td><span class="chip">${esc(x.login)}</span></td><td>${esc(label(get('users', x.userId)) || '—')}</td><td>${x.n} / ${L.attempts}</td>
+      <td>${x.locked ? `<span class="pill" style="${cvar('#d1444a', .14, .35)}">bloqué ${x.until ? 'jusqu’à ' + esc(D.dt(x.until).slice(-5)) : 'jusqu’au déblocage'}</span>` : '<span class="mut">surveillé</span>'}</td>
+      <td>${can('users') || can('security') ? `<button class="btn sm" data-act="unlock-login" data-login="${esc(x.login)}">Débloquer</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+    : `<p class="mut" style="margin:0">Aucun compte bloqué. Après ${L.attempts || 3} mots de passe erronés, un compte est bloqué ${L.minutes ? L.minutes + ' min' : 'jusqu’au déblocage par un administrateur'}.</p>`}</div>`;
   const files = D0.backups.files || [];
-  const bkHTML = `<div class="card-b"><p class="mut" style="margin:0 0 10px">Le serveur garde une copie au plus toutes les ${Math.round((D0.backups.every || 900) / 60)} min, et les ${D0.backups.keep || 150} dernières.</p>
+  const AU = D0.backups.auto || {}, DN = ['', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+  const bkHTML = `<div class="card-b"><div class="bnr ${AU.times && AU.times.length ? 'info' : 'warn'}" style="margin:0 0 10px">${ic('clock')}<span>
+      ${AU.times && AU.times.length ? `Sauvegarde <b>complète</b> automatique à <b>${esc(AU.times.join(', '))}</b> (${(AU.days || []).length === 7 ? 'tous les jours' : esc((AU.days || []).map(d => DN[d]).join(', '))}), ${AU.keep} conservées.
+        ${AU.state && AU.state.done ? ` Dernière : ${esc(D.dt(AU.state.done))}.` : ''}${AU.next ? ` Prochaine : ${esc(D.dt(AU.next))}.` : ''}` : 'Sauvegarde automatique désactivée (aucune heure réglée).'}</span></div>
+    <p class="mut" style="margin:0 0 10px">En plus, le serveur garde une copie du planning au plus toutes les ${Math.round((D0.backups.every || 900) / 60)} min, et les ${D0.backups.keep || 150} dernières.</p>
     ${files.length ? `<div class="tbl-wrap" style="max-height:330px"><table class="tbl"><thead><tr><th>Date</th><th>Version</th><th>Taille</th><th></th></tr></thead><tbody>
-      ${files.map(f => `<tr><td>${esc(D.dt(f.date))}${/manuelle/.test(f.name) ? ' <span class="chip">manuelle</span>' : ''}</td><td class="n">v${f.version ?? '?'}</td><td>${num(f.size / 1024, 0)} Ko</td>
+      ${files.map(f => `<tr><td>${esc(D.dt(f.date))}${f.full ? ` <span class="chip" style="${cvar('#3c9f5f', .14, .35)}" title="Planning + accès + réglages de sécurité">complète</span>` : ''}${/-auto/.test(f.name) ? ' <span class="chip">auto</span>' : /manuelle/.test(f.name) ? ' <span class="chip">manuelle</span>' : ''}</td><td class="n">v${f.version ?? '?'}</td><td>${num(f.size / 1024, 0)} Ko</td>
         <td class="nowrap"><button class="btn sm" data-act="bk-get" data-f="${esc(f.name)}">${ic('download', 'sm')} Télécharger</button>
           ${can('data') ? `<button class="btn sm dgr" data-act="bk-restore" data-f="${esc(f.name)}">${ic('repeat', 'sm')} Restaurer</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : '<p class="mut" style="margin:0">Aucune copie pour l’instant.</p>'}</div>`;
-  const c = D0.cfg;
+  const c = D0.cfg, dis = iAmSuper ? '' : 'disabled';
   const cfgHTML = `<div class="card-b"><form id="sec-f" class="fgrid">
-      <div class="fld"><label>Validité des invitations (jours)</label><input class="in" type="number" min="1" max="30" name="inviteDays" value="${c.inviteDays || 7}" ${iAmSuper ? '' : 'disabled'}>
+      <div class="fld"><label>Validité des invitations (jours)</label><input class="in" type="number" min="1" max="30" name="inviteDays" value="${c.inviteDays || 7}" ${dis}>
         <span class="help">Un accès ne se crée qu’avec une invitation d’un administrateur (Utilisateurs › Inviter), à usage unique.</span></div>
       <div class="fld"><label>Déconnexion après inactivité (heures)</label><input class="in" type="number" min="1" max="72" name="sessionHours" value="${c.sessionHours || 12}" ${iAmSuper ? '' : 'disabled'}></div>
-      <div class="fld"><label>Longueur minimale des mots de passe</label><input class="in" type="number" min="8" max="64" name="minPassword" value="${c.minPassword || 8}" ${iAmSuper ? '' : 'disabled'}></div></form>
+      <div class="fld"><label>Longueur minimale des mots de passe</label><input class="in" type="number" min="8" max="64" name="minPassword" value="${c.minPassword || 8}" ${dis}></div>
+      <div class="fld full"><label>Le mot de passe doit contenir au moins</label><div class="row wrap" style="gap:16px">
+        <label class="sw"><input type="checkbox" name="pwDigit"${c.pwDigit !== false ? ' checked' : ''} ${dis}><i></i><span>1 chiffre</span></label>
+        <label class="sw"><input type="checkbox" name="pwSpecial"${c.pwSpecial !== false ? ' checked' : ''} ${dis}><i></i><span>1 caractère spécial</span></label>
+        <label class="sw"><input type="checkbox" name="pwUpper"${c.pwUpper ? ' checked' : ''} ${dis}><i></i><span>1 majuscule</span></label></div>
+        <span class="help">Les mots de passe existants qui ne respectent plus ces règles devront être changés à la prochaine connexion.</span></div>
+      <div class="fld"><label>Blocage du compte après (mots de passe erronés)</label><input class="in" type="number" min="1" max="20" name="lockAttempts" value="${c.lockAttempts || 3}" ${dis}></div>
+      <div class="fld"><label>Durée du blocage (minutes)</label><input class="in" type="number" min="0" max="1440" name="lockMinutes" value="${c.lockMinutes ?? 15}" ${dis}>
+        <span class="help">0 = bloqué jusqu’au déblocage par un administrateur.</span></div>
+      <div class="fld full sec-sep"><label>Sauvegarde complète automatique : heures</label><input class="in" name="backupTimes" value="${esc((c.backupTimes || []).join(', '))}" placeholder="12:00, 17:00" ${dis}>
+        <span class="help">Séparées par des virgules. Vide = pas de sauvegarde automatique. Fuseau du serveur : ${esc((D0.backups.auto || {}).tz || '')}.</span></div>
+      <div class="fld full"><label>Jours</label><div class="chips">${[1, 2, 3, 4, 5, 6, 7].map(d => `<label class="chip${(c.backupDays || []).includes(d) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="backupDays" value="${d}"${(c.backupDays || []).includes(d) ? ' checked' : ''} ${dis}>${['', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'][d]}</label>`).join('')}</div></div>
+      <div class="fld"><label>Sauvegardes complètes conservées</label><input class="in" type="number" min="2" max="500" name="backupKeep" value="${c.backupKeep || 60}" ${dis}>
+        <span class="help">60 = un mois à 2 sauvegardes par jour.</span></div></form>
+    ${iAmSuper && c.cronKey ? `<details class="cron"><summary>Garantir les sauvegardes même quand personne n’a l’application ouverte (tâche planifiée Windows)</summary>
+      <p class="mut">Les sauvegardes sont faites dès qu’une page de l’application est ouverte (postes, écrans d’atelier). Pour les garantir la nuit ou le week-end, créez une tâche planifiée sur le serveur, toutes les 15 min, qui exécute :</p>
+      <div class="row" style="gap:6px"><input class="in mono" readonly value="${esc(cronCmd(c.cronKey))}" style="flex:1" onclick="this.select()">
+        <button class="btn sm" data-copy-cron="${esc(cronCmd(c.cronKey))}">${ic('copy', 'sm')} Copier</button>
+        <button class="btn sm" data-act="cron-key" title="L’ancienne adresse ne fonctionnera plus">${ic('refresh', 'sm')} Nouvelle clé</button></div></details>` : ''}
     <div class="row wrap" style="margin-top:12px">${iAmSuper ? `<button class="btn pri" data-act="sec-save">${ic('check')} Enregistrer</button>` : '<span class="mut">Modifiable par un super administrateur.</span>'}
       ${c.https === false ? `<span class="pill" style="${cvar('#b4700c', .14, .35)}">${ic('warn', 'sm')} Connexion non chiffrée (http) : les mots de passe circulent en clair</span>` : ''}</div></div>`;
   return head + superCard
     + sec(`Accès des utilisateurs (${D0.acc.length})`, 'usercircle', accHTML)
     + sec('Journal des connexions', 'activity', logHTML, xpBtn('auth-log', { sm: 1 }))
-    + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr))">${sec('Adresses IP surveillées', 'warn', ipHTML)}${sec('Réglages de sécurité', 'sliders', cfgHTML)}</div>`
+    + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr))">${sec('Comptes bloqués', 'lock', lockHTML)}${sec('Adresses IP surveillées', 'warn', ipHTML)}</div>`
+    + sec('Réglages de sécurité et de sauvegarde', 'sliders', cfgHTML)
     + sec('Sauvegardes du serveur', 'database', bkHTML, `<button class="btn sm" data-act="bk-now">${ic('plus', 'sm')} Sauvegarder maintenant</button>`);
 }
 XP['auth-log'] = () => SEC.data ? { ds: { title: 'Journal des connexions', sheet: 'Connexions', cols: [{ l: 'Date', t: 'dt' }, { l: 'Événement' }, { l: 'Identifiant' }, { l: 'Adresse IP' }, { l: 'Détail' }],
@@ -5607,12 +5665,29 @@ Object.assign(ACT, {
   'bk-restore': async el => {
     if (!needs('data')) return;
     let data; try { data = JSON.parse(await fetchBackup(el.dataset.f)); } catch (e) { return toast('Sauvegarde illisible.', 'danger'); }
+    if (data && data.kind === 'd8-complet') data = data.planning;      // sauvegarde complète : on restaure le planning (les accès restent ceux du serveur)
     restoreBackup(data, el.dataset.f);
   },
   'sec-save': () => {
     if (!needs('super')) return;
     const v = formVals($('#sec-f'));
-    secCall('sec-set', { inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword }, 'Réglages de sécurité enregistrés');
+    const times = String(v.backupTimes || '').split(/[,;\s]+/).filter(Boolean);
+    const badT = times.find(t => !/^([01]?\d|2[0-3])([:hH]([0-5]\d)?)?$/.test(t));
+    if (badT) return toast(`Heure de sauvegarde invalide : « ${badT} » (format 12:00).`, 'danger');
+    if (!(v.backupDays || []).length && times.length) return toast('Cochez au moins un jour de sauvegarde.', 'danger');
+    secCall('sec-set', { inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword, pwDigit: !!v.pwDigit, pwSpecial: !!v.pwSpecial, pwUpper: !!v.pwUpper,
+      lockAttempts: +v.lockAttempts, lockMinutes: +v.lockMinutes, backupTimes: times, backupDays: (v.backupDays || []).map(Number), backupKeep: +v.backupKeep }, 'Réglages enregistrés');
+  },
+  'cron-key': async () => {
+    if (!needs('super') || !await ask('Générer une nouvelle clé ? La tâche planifiée devra être mise à jour avec la nouvelle commande.', { ok: 'Nouvelle clé' })) return;
+    secCall('sec-set', Object.assign({}, SEC.data.cfg, { newCronKey: true }), 'Nouvelle clé générée');
+  },
+  'unlock-login': async (el, e) => {
+    if (e) e.stopPropagation();
+    if (!can('users') && !can('security')) return needs('users');
+    const r = await Auth.api('unlock-login', { login: el.dataset.login }).catch(() => null);
+    if (r && r.ok) { toast('Compte débloqué', 'ok'); SEC.data = null; Auth.acc = null; if (route().path === '/admin/securite') loadSecurity(); else Auth.loadAccounts(); }
+    else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
   }
 });
 
@@ -5636,6 +5711,7 @@ Object.assign(ACT, {
   if (Sync.mode === 'server' && !me()) banner('danger', 'Votre fiche utilisateur n’existe plus dans le planning : consultation seule. Contactez un administrateur.', 'nouser');
   if (Sync.mode === 'memory') banner('danger', 'Ce navigateur bloque le stockage : les modifications seront perdues à la fermeture. Exportez régulièrement une sauvegarde.', 'nostore');
   if (!location.hash) location.hash = '#/';
+  if (Sync.mode === 'server' && Auth.user && Auth.user.mustChange) setTimeout(() => Auth.changePassword(true), 300);
   render();
   window.addEventListener('hashchange', render);
   window.addEventListener('resize', debounce(() => {   // largeur ou hauteur changée : taille du texte, Gantt et planning recalculés

@@ -50,11 +50,21 @@ $ALLOWED_NETS  = ['127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.
 $KEEP_BACKUPS  = 150;                 // nombre de copies conservées dans data/backups
 $BACKUP_EVERY  = 900;                 // une copie au maximum toutes les N secondes
 $MAX_BYTES     = 40 * 1024 * 1024;    // taille maximale acceptée pour un enregistrement
+$TIMEZONE      = 'Europe/Paris';      // fuseau des heures de sauvegarde et du journal
+/* sauvegarde complète automatique (planning + accès + réglages) : heures, jours (1 = lundi … 7 = dimanche), nombre conservé */
+$AUTO_BACKUP_TIMES = ['12:00', '17:00'];
+$AUTO_BACKUP_DAYS  = [1, 2, 3, 4, 5, 6, 7];
+$AUTO_BACKUP_KEEP  = 60;
 
 /* --- connexion --- */
 $INVITE_DAYS   = 7;                   // validité (jours) d'une invitation à créer son accès
 $SESSION_IDLE  = 12 * 3600;           // déconnexion après N secondes sans aucun échange avec le serveur
 $MIN_PASSWORD  = 8;                   // longueur minimale des mots de passe
+$PW_DIGIT      = true;                // au moins un chiffre
+$PW_SPECIAL    = true;                // au moins un caractère spécial (ni lettre ni chiffre)
+$PW_UPPER      = false;               // au moins une majuscule
+$LOCK_ATTEMPTS = 3;                   // compte bloqué après N mots de passe erronés…
+$LOCK_MINUTES  = 15;                  // …pendant N minutes (0 = jusqu'au déblocage par un administrateur)
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
 $FAIL_WINDOW   = 900;                 // …sur cette durée (s), puis blocage pendant la même durée
 
@@ -64,6 +74,7 @@ $FAIL_WINDOW   = 900;                 // …sur cette durée (s), puis blocage p
 $SUPERADMIN_HASH = '$2y$12$t95WZ/hH9x3iSbXx/h0O5u2KxUSyRUu8qsE0QFbDbbAI0eQe6EHZW';
 $SUPERADMIN_TTL  = 300;               // validité (s) d'une confirmation super administrateur
 
+if (!@date_default_timezone_set($TIMEZONE)) date_default_timezone_set('Europe/Paris');
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, max-age=0');
 header('X-Content-Type-Options: nosniff');
@@ -276,6 +287,13 @@ $INV   = "$DATA_DIR/invites.json";       // invitations en attente (empreinte du
 $SECF  = "$DATA_DIR/security.json";      // réglages de sécurité modifiés par un super administrateur (priment sur ceux ci-dessus)
 $SEC = read_json($SECF);
 if (!empty($SEC['inviteDays'])) $INVITE_DAYS = max(1, min(30, (int)$SEC['inviteDays']));
+foreach (['pwDigit' => 'PW_DIGIT', 'pwSpecial' => 'PW_SPECIAL', 'pwUpper' => 'PW_UPPER'] as $k => $v) if (isset($SEC[$k])) $$v = (bool)$SEC[$k];
+if (isset($SEC['lockAttempts'])) $LOCK_ATTEMPTS = max(1, min(20, (int)$SEC['lockAttempts']));
+if (isset($SEC['lockMinutes'])) $LOCK_MINUTES = max(0, min(1440, (int)$SEC['lockMinutes']));
+if (isset($SEC['backupTimes']) && is_array($SEC['backupTimes'])) $AUTO_BACKUP_TIMES = array_values(array_filter($SEC['backupTimes'], function ($t) { return is_string($t) && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t); }));
+if (isset($SEC['backupDays']) && is_array($SEC['backupDays'])) $AUTO_BACKUP_DAYS = array_values(array_filter(array_map('intval', $SEC['backupDays']), function ($d) { return $d >= 1 && $d <= 7; }));
+if (!empty($SEC['backupKeep'])) $AUTO_BACKUP_KEEP = max(2, min(500, (int)$SEC['backupKeep']));
+$LOCKF = "$DATA_DIR/login-locks.json";   // comptes bloqués après trop de mots de passe erronés
 if (!empty($SEC['sessionHours'])) $SESSION_IDLE = max(1, min(72, (int)$SEC['sessionHours'])) * 3600;
 if (!empty($SEC['minPassword'])) $MIN_PASSWORD = max(8, min(64, (int)$SEC['minPassword']));
 
@@ -332,6 +350,108 @@ function invite_find(string $F, string $code): ?array {
     $v = $keep[hash('sha256', $c)] ?? null;
     return $v ? ['userId' => (string)$v['userId'], 'name' => (string)$v['name'], 'expires' => date('c', (int)$v['exp'])] : null;
 }
+/* --- règles des mots de passe --- */
+function pw_policy(): array {
+    global $MIN_PASSWORD, $PW_DIGIT, $PW_SPECIAL, $PW_UPPER;
+    return ['min' => $MIN_PASSWORD, 'digit' => $PW_DIGIT, 'special' => $PW_SPECIAL, 'upper' => $PW_UPPER];
+}
+/** motif de refus d'un mot de passe, ou null s'il respecte les règles */
+function pw_problem(string $p, string $login): ?string {
+    $P = pw_policy();
+    if (mb_strlen($p, 'UTF-8') < $P['min']) return 'Mot de passe trop court (' . $P['min'] . ' caractères minimum).';
+    if (strlen($p) > 200) return 'Mot de passe trop long.';
+    if ($P['digit'] && !preg_match('/\d/u', $p)) return 'Le mot de passe doit contenir au moins un chiffre.';
+    if ($P['special'] && !preg_match('/[^\p{L}\p{N}]/u', $p)) return 'Le mot de passe doit contenir au moins un caractère spécial (! ? @ # % & * - _ …).';
+    if ($P['upper'] && !preg_match('/\p{Lu}/u', $p)) return 'Le mot de passe doit contenir au moins une majuscule.';
+    if (mb_strtolower($p, 'UTF-8') === $login) return 'Le mot de passe doit être différent de l’identifiant.';
+    return null;
+}
+
+/* --- blocage d'un compte après N mots de passe erronés (par identifiant, en plus du blocage par adresse IP) --- */
+function lock_state(string $F, string $login): ?array {
+    global $LOCK_MINUTES;
+    $e = read_json($F)[$login] ?? null;
+    if (!is_array($e)) return null;
+    $win = max(900, $LOCK_MINUTES * 60);                      // les échecs anciens sont oubliés
+    if ((int)($e['until'] ?? 0) <= time() && time() - (int)($e['t'] ?? 0) > $win) return null;
+    return $e;
+}
+function lock_msg(array $e): string {
+    $u = (int)($e['until'] ?? 0);
+    return $u >= PHP_INT_MAX - 1 ? 'Compte bloqué après ' . (int)$e['n'] . ' mots de passe erronés : un administrateur doit le débloquer.'
+        : 'Compte bloqué après ' . (int)$e['n'] . ' mots de passe erronés, jusqu’à ' . date('H:i', $u) . '. Un administrateur peut le débloquer avant.';
+}
+/** compte un échec ; renvoie l'état (bloqué ou non) */
+function lock_fail(string $F, string $login): array {
+    global $LOCK_ATTEMPTS, $LOCK_MINUTES;
+    $all = read_json($F);
+    $e = lock_state($F, $login) ?? ['n' => 0, 'until' => 0];
+    $e['n'] = (int)$e['n'] + 1; $e['t'] = time();
+    if ($e['n'] >= $LOCK_ATTEMPTS && (int)$e['until'] <= time()) {
+        $e['until'] = $LOCK_MINUTES > 0 ? time() + $LOCK_MINUTES * 60 : PHP_INT_MAX;
+        auth_log('locked', $login, $e['n'] . ' mots de passe erronés');
+    }
+    $all[$login] = $e;
+    write_json($F, $all);
+    return $e;
+}
+function lock_clear(string $F, string $login): void { $all = read_json($F); if (isset($all[$login])) { unset($all[$login]); write_json($F, $all); } }
+
+/* --- sauvegarde complète : planning + accès + réglages, dans un seul fichier JSON --- */
+function full_backup(string $why): ?string {
+    global $DATA_DIR, $FILE, $META, $ACC, $SECF, $INV, $AUTO_BACKUP_KEEP;
+    if (!is_file($FILE)) return null;
+    $raw = (string)file_get_contents($FILE);
+    if ($raw === '' || !valid_json($raw)) return null;
+    $bdir = "$DATA_DIR/backups";
+    if (!is_dir($bdir)) @mkdir($bdir, 0770, true);
+    $ver = (int)read_meta($META)['version'];
+    $sa = is_file("$DATA_DIR/superadmin.json") ? read_json("$DATA_DIR/superadmin.json") : null;
+    $head = ['kind' => 'd8-complet', 'created' => date('c'), 'reason' => $why, 'version' => $ver,
+             'accounts' => read_json($ACC), 'security' => read_json($SECF), 'invites' => read_json($INV), 'superadmin' => $sa];
+    $json = rtrim((string)json_encode($head, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), '}') . ',"planning":' . $raw . '}';
+    $name = sprintf('complet-%s-v%06d-%s.json', date('Ymd-Hi'), $ver, $why);
+    if (@file_put_contents("$bdir/$name.tmp", $json) === false || !@rename("$bdir/$name.tmp", "$bdir/$name")) return null;
+    $files = glob("$bdir/complet-*.json") ?: [];
+    if (count($files) > $AUTO_BACKUP_KEEP) { sort($files); foreach (array_slice($files, 0, count($files) - $AUTO_BACKUP_KEEP) as $old) @unlink($old); }
+    return $name;
+}
+/** dernier créneau programmé déjà passé (timestamp) et prochain créneau */
+function backup_slots(): array {
+    global $AUTO_BACKUP_TIMES, $AUTO_BACKUP_DAYS;
+    $now = time(); $last = 0; $next = 0;
+    for ($d = -8; $d <= 8; $d++) {
+        $day = strtotime(date('Y-m-d', $now) . " $d day");
+        if (!in_array((int)date('N', $day), $AUTO_BACKUP_DAYS, true)) continue;
+        foreach ($AUTO_BACKUP_TIMES as $t) {
+            $ts = strtotime(date('Y-m-d', $day) . ' ' . $t);
+            if ($ts === false) continue;
+            if ($ts <= $now) $last = max($last, $ts); elseif (!$next || $ts < $next) $next = $ts;
+        }
+    }
+    return [$last, $next];
+}
+/** sauvegarde programmée due ? Déclenchée par les pages ouvertes (toutes les 15 s) ou par la tâche planifiée (?a=cron) */
+function auto_backup_tick(): ?string {
+    global $DATA_DIR, $AUTO_BACKUP_TIMES;
+    if (!$AUTO_BACKUP_TIMES) return null;
+    $state = "$DATA_DIR/backup-state.json";
+    [$slot] = backup_slots();
+    if (!$slot || (int)(read_json($state)['slot'] ?? 0) >= $slot) return null;
+    $bl = @fopen("$DATA_DIR/backup.lock", 'c');
+    if (!$bl || !flock($bl, LOCK_EX | LOCK_NB)) return null;         // une autre requête s'en occupe déjà
+    $st = read_json($state);
+    $name = null;
+    if ((int)($st['slot'] ?? 0) < $slot) {
+        $name = full_backup('auto');
+        if ($name) {
+            write_json($state, ['slot' => $slot, 'done' => date('c'), 'file' => $name]);
+            auth_log('backup-auto', '', $name . ' (créneau de ' . date('H:i', $slot) . ')');
+        }
+    }
+    flock($bl, LOCK_UN); fclose($bl);
+    return $name;
+}
 function superadmin_hash(string $DATA_DIR, string $default): string {
     $h = read_json("$DATA_DIR/superadmin.json")['hash'] ?? '';
     return is_string($h) && $h !== '' ? $h : $default;
@@ -347,12 +467,24 @@ function read_meta(string $META): array {
     return is_array($m) ? $m + ['version' => 0, 'savedAt' => null, 'by' => null] : ['version' => 0, 'savedAt' => null, 'by' => null];
 }
 function me_payload(array $s): array {
-    return ['auth' => true, 'userId' => $s['userId'], 'login' => $s['login'], 'name' => $s['name'], 'build' => page_build()];
+    return ['auth' => true, 'userId' => $s['userId'], 'login' => $s['login'], 'name' => $s['name'], 'build' => page_build(),
+            'policy' => pw_policy(), 'mustChange' => !empty($s['weak'])];
 }
 
 $action = (string)($_GET['a'] ?? 'ping');
 $lock = fopen($LOCK, 'c');
 if ($lock === false) out(500, ['error' => 'Verrou indisponible']);
+
+/* --- sauvegardes programmées : vérifiées à chaque échange courant ; tâche planifiée Windows/cron : ?a=cron&key=… --- */
+if (in_array($action, ['ping', 'load', 'me', 'cron', 'view'], true)) auto_backup_tick();
+if ($action === 'cron') {
+    session_write_close();
+    throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
+    $k = (string)($SEC['cronKey'] ?? '');
+    if (strlen($k) < 32 || !hash_equals($k, (string)($_GET['key'] ?? ''))) { throttle_fail($FAILS, $ip, $FAIL_WINDOW); out(403, ['error' => 'Clé invalide']); }
+    [$l, $n] = backup_slots();
+    out(200, ['ok' => true, 'last' => read_json("$DATA_DIR/backup-state.json"), 'next' => $n ? date('c', $n) : null]);
+}
 
 /* --- vue écran d'atelier : accès par clé (sans compte), lecture seule, données réduites au strict nécessaire --- */
 if ($action === 'view') {
@@ -421,7 +553,7 @@ if ($action === 'sa-check' || $action === 'sa-change') {
 /* --- qui suis-je ? --- */
 if ($action === 'me') {
     if ($me) out(200, me_payload($me));
-    out(401, ['auth' => false, 'minPassword' => $MIN_PASSWORD, 'bootstrap' => !read_json($ACC)]);
+    out(401, ['auth' => false, 'minPassword' => $MIN_PASSWORD, 'policy' => pw_policy(), 'bootstrap' => !read_json($ACC)]);
 }
 
 /* --- mise en service : les administrateurs du planning (seul cas où l'on choisit un nom, avec le mot de passe super administrateur) ---
@@ -440,7 +572,7 @@ if ($action === 'signup-list') {
         }
         usort($users, function ($a, $b) { return strcasecmp($a['name'], $b['name']); });
     }
-    out(200, ['bootstrap' => $boot, 'fresh' => $boot && !$doc, 'minPassword' => $MIN_PASSWORD, 'users' => $users]);
+    out(200, ['bootstrap' => $boot, 'fresh' => $boot && !$doc, 'minPassword' => $MIN_PASSWORD, 'policy' => pw_policy(), 'users' => $users]);
 }
 
 /* --- invitation : vérification du code (page de création d'accès) --- */
@@ -454,7 +586,7 @@ if ($action === 'invite-check') {
         out(404, ['error' => 'Invitation inconnue, déjà utilisée ou expirée : demandez-en une nouvelle à un administrateur.']);
     }
     flock($lock, LOCK_UN);
-    out(200, ['name' => $inv['name'], 'expires' => $inv['expires'], 'minPassword' => $MIN_PASSWORD]);
+    out(200, ['name' => $inv['name'], 'expires' => $inv['expires'], 'minPassword' => $MIN_PASSWORD, 'policy' => pw_policy()]);
 }
 
 /* --- création de son accès (identifiant + mot de passe) --- */
@@ -497,9 +629,7 @@ if ($action === 'signup') {
         $name = user_label($u);
     }
     if (!login_ok($login)) out(400, ['error' => 'Identifiant : 3 à 60 caractères parmi lettres, chiffres, point, tiret, @.']);
-    if (strlen($pass) < $MIN_PASSWORD) out(400, ['error' => "Mot de passe trop court ($MIN_PASSWORD caractères minimum)."]);
-    if (strlen($pass) > 200) out(400, ['error' => 'Mot de passe trop long.']);
-    if (strtolower($pass) === $login) out(400, ['error' => 'Le mot de passe doit être différent de l’identifiant.']);
+    if ($why = pw_problem($pass, $login)) out(400, ['error' => $why]);
     if (isset($acc[$login])) out(409, ['error' => 'Cet identifiant est déjà pris : choisissez-en un autre.']);
     foreach ($acc as $a) if ((string)($a['userId'] ?? '') === $uid)
         out(409, ['error' => 'Cette personne a déjà un accès. Connectez-vous, ou demandez à un administrateur de le réinitialiser.']);
@@ -522,13 +652,24 @@ if ($action === 'login') {
     $pass = (string)($in['password'] ?? '');
     $acc = read_json($ACC);
     $a = $acc[$login] ?? null;
+    // compte bloqué : refusé sans même vérifier le mot de passe (même traitement que l'identifiant existe ou non)
+    $lk = $login !== '' ? lock_state($LOCKF, $login) : null;
+    if ($lk && (int)($lk['until'] ?? 0) > time()) {
+        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+        auth_log('fail', $login, 'compte bloqué');
+        out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($lk)]);
+    }
     // même coût de calcul que l'identifiant existe ou non (ne révèle pas les identifiants valides)
     $ok = password_verify($pass, is_array($a) ? (string)$a['hash'] : password_hash('x', PASSWORD_DEFAULT));
     if (!is_array($a) || !$ok) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
         auth_log('fail', $login, is_array($a) ? 'mot de passe incorrect' : 'identifiant inconnu');
-        out(401, ['auth' => false, 'error' => 'Identifiant ou mot de passe incorrect.']);
+        $e = $login !== '' ? lock_fail($LOCKF, $login) : ['n' => 0, 'until' => 0];
+        if ((int)$e['until'] > time()) out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($e)]);
+        $left = $LOCK_ATTEMPTS - (int)$e['n'];
+        out(401, ['auth' => false, 'error' => 'Identifiant ou mot de passe incorrect.' . ($left > 0 && $left < $LOCK_ATTEMPTS ? " Encore $left essai" . ($left > 1 ? 's' : '') . ' avant le blocage du compte.' : '')]);
     }
+    lock_clear($LOCKF, $login);
     $doc = read_doc($FILE);
     $name = (string)($a['name'] ?? $login);
     if ($doc !== null) {
@@ -543,7 +684,9 @@ if ($action === 'login') {
     write_json($ACC, $acc);
     flock($lock, LOCK_UN);
     auth_log('login', $login, $name);
-    out(200, me_payload(open_session($login, $acc[$login], $name)));
+    $s = open_session($login, $acc[$login], $name);
+    if (pw_problem($pass, $login)) { $_SESSION['auth']['weak'] = true; $s = $_SESSION['auth']; }   // ne respecte plus les règles : à changer
+    out(200, me_payload($s));
 }
 
 /* --- déconnexion --- */
@@ -568,14 +711,14 @@ if ($action === 'password') {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
         out(403, ['error' => 'Mot de passe actuel incorrect.']);
     }
-    if (strlen($next) < $MIN_PASSWORD) out(400, ['error' => "Mot de passe trop court ($MIN_PASSWORD caractères minimum)."]);
-    if (strlen($next) > 200) out(400, ['error' => 'Mot de passe trop long.']);
-    if (strtolower($next) === $me['login']) out(400, ['error' => 'Le mot de passe doit être différent de l’identifiant.']);
+    if ($why = pw_problem($next, $me['login'])) out(400, ['error' => $why]);
+    if (hash_equals((string)($in['current'] ?? ''), $next)) out(400, ['error' => 'Le nouveau mot de passe doit être différent de l’actuel.']);
     $acc[$me['login']]['hash'] = password_hash($next, PASSWORD_DEFAULT);
     $acc[$me['login']]['stamp'] = bin2hex(random_bytes(8));
     if (!write_json($ACC, $acc)) out(500, ['error' => 'Écriture impossible']);
     flock($lock, LOCK_UN);
     $_SESSION['auth']['stamp'] = $acc[$me['login']]['stamp'];
+    unset($_SESSION['auth']['weak']);
     auth_log('password', $me['login']);
     out(200, ['ok' => true]);
 }
@@ -668,6 +811,28 @@ if ($action === 'kick' || $action === 'kick-all') {
 }
 
 /* --- sécurité : journal des connexions, adresses bloquées, sauvegardes, réglages --- */
+/* --- comptes bloqués : liste et déblocage (gestion des utilisateurs ou sécurité) --- */
+if ($action === 'locks' || $action === 'unlock-login') {
+    $doc = read_doc($FILE);
+    if (!has_any($doc, $me['userId'], ['users', 'security'])) out(403, ['error' => 'Réservé aux gestionnaires des utilisateurs']);
+    flock($lock, LOCK_EX);
+    if ($action === 'unlock-login') {
+        $in = body_json(); $l = clean_login($in['login'] ?? '');
+        lock_clear($LOCKF, $l); flock($lock, LOCK_UN);
+        auth_log('unlock', $me['login'], $l);
+        out(200, ['ok' => true]);
+    }
+    $list = [];
+    foreach (array_keys(read_json($LOCKF)) as $l) {
+        $e = lock_state($LOCKF, (string)$l); if (!$e) continue;
+        $acc = read_json($ACC)[$l] ?? null;
+        $list[] = ['login' => (string)$l, 'userId' => is_array($acc) ? (string)$acc['userId'] : '', 'n' => (int)$e['n'], 'last' => date('c', (int)($e['t'] ?? 0)),
+                   'locked' => (int)($e['until'] ?? 0) > time(), 'until' => (int)($e['until'] ?? 0) >= PHP_INT_MAX - 1 ? null : date('c', (int)$e['until'])];
+    }
+    flock($lock, LOCK_UN);
+    out(200, ['locks' => $list, 'attempts' => $LOCK_ATTEMPTS, 'minutes' => $LOCK_MINUTES]);
+}
+
 if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 'backup-now', 'sec-get', 'sec-set'], true)) {
     $doc = read_doc($FILE);
     if (!has_perm($doc, $me['userId'], 'security')) out(403, ['error' => 'Réservé aux responsables de la sécurité']);
@@ -690,15 +855,18 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
     }
     if ($action === 'backups') {
         $files = [];
-        foreach ((is_dir($bdir) ? glob("$bdir/planning-*.json") : []) ?: [] as $f)
-            $files[] = ['name' => basename($f), 'size' => filesize($f), 'date' => date('c', filemtime($f)),
+        foreach ((is_dir($bdir) ? array_merge(glob("$bdir/planning-*.json") ?: [], glob("$bdir/complet-*.json") ?: []) : []) as $f)
+            $files[] = ['name' => basename($f), 'size' => filesize($f), 'date' => date('c', filemtime($f)), 'full' => strpos(basename($f), 'complet-') === 0,
                         'version' => preg_match('/-v(\d+)/', $f, $m) ? (int)$m[1] : null];
-        usort($files, function ($a, $b) { return strcmp($b['name'], $a['name']); });
-        out(200, ['files' => $files, 'keep' => $KEEP_BACKUPS, 'every' => $BACKUP_EVERY]);
+        usort($files, function ($a, $b) { return strcmp($b['date'], $a['date']) ?: strcmp($b['name'], $a['name']); });
+        [$l, $n] = backup_slots();
+        out(200, ['files' => $files, 'keep' => $KEEP_BACKUPS, 'every' => $BACKUP_EVERY,
+                  'auto' => ['times' => $AUTO_BACKUP_TIMES, 'days' => $AUTO_BACKUP_DAYS, 'keep' => $AUTO_BACKUP_KEEP, 'state' => read_json("$DATA_DIR/backup-state.json"),
+                             'next' => $AUTO_BACKUP_TIMES && $n ? date('c', $n) : null, 'tz' => date_default_timezone_get()]]);
     }
     if ($action === 'backup-get') {
         $name = basename((string)($_GET['f'] ?? ''));
-        if (!preg_match('/^planning-[\w-]+\.json$/', $name) || !is_file("$bdir/$name")) out(404, ['error' => 'Sauvegarde introuvable']);
+        if (!preg_match('/^(planning|complet)-[\w-]+\.json$/', $name) || !is_file("$bdir/$name")) out(404, ['error' => 'Sauvegarde introuvable']);
         auth_log('backup-get', $me['login'], $name);
         http_response_code(200); readfile("$bdir/$name"); exit;
     }
@@ -706,24 +874,39 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
         body_json();
         flock($lock, LOCK_SH);
         if (!is_file($FILE)) out(400, ['error' => 'Aucun planning à sauvegarder']);
-        if (!is_dir($bdir)) @mkdir($bdir, 0770, true);
-        $name = sprintf('planning-%s-v%06d-manuelle.json', date('Ymd-His'), (int)read_meta($META)['version']);
-        $ok = @copy($FILE, "$bdir/$name");
+        $name = full_backup('manuelle');
         flock($lock, LOCK_UN);
-        if (!$ok) out(500, ['error' => 'Copie impossible']);
+        if (!$name) out(500, ['error' => 'Copie impossible']);
         auth_log('backup-now', $me['login'], $name);
         out(200, ['ok' => true, 'name' => $name]);
     }
     $isSuper = has_perm($doc, $me['userId'], 'super');
-    if ($action === 'sec-get') out(200, ['inviteDays' => $INVITE_DAYS, 'sessionHours' => (int)round($SESSION_IDLE / 3600),
-        'minPassword' => $MIN_PASSWORD, 'maxFails' => $MAX_FAILS, 'failWindow' => $FAIL_WINDOW, 'https' => $https, 'super' => $isSuper]);
+    if ($action === 'sec-get') {
+        if ($isSuper && empty($SEC['cronKey'])) { $SEC['cronKey'] = bin2hex(random_bytes(20)); write_json($SECF, $SEC); }
+        out(200, ['inviteDays' => $INVITE_DAYS, 'sessionHours' => (int)round($SESSION_IDLE / 3600),
+            'minPassword' => $MIN_PASSWORD, 'pwDigit' => $PW_DIGIT, 'pwSpecial' => $PW_SPECIAL, 'pwUpper' => $PW_UPPER,
+            'lockAttempts' => $LOCK_ATTEMPTS, 'lockMinutes' => $LOCK_MINUTES,
+            'backupTimes' => $AUTO_BACKUP_TIMES, 'backupDays' => $AUTO_BACKUP_DAYS, 'backupKeep' => $AUTO_BACKUP_KEEP,
+            'cronKey' => $isSuper ? (string)($SEC['cronKey'] ?? '') : '',
+            'maxFails' => $MAX_FAILS, 'failWindow' => $FAIL_WINDOW, 'https' => $https, 'super' => $isSuper]);
+    }
     if ($action === 'sec-set') {
         if (!$isSuper) out(403, ['error' => 'Réservé au super administrateur']);
         $in = body_json();
-        $new = ['inviteDays' => max(1, min(30, (int)($in['inviteDays'] ?? 7))), 'sessionHours' => max(1, min(72, (int)($in['sessionHours'] ?? 12))),
-                'minPassword' => max(8, min(64, (int)($in['minPassword'] ?? 8))), 'changed' => date('c'), 'by' => $me['name']];
+        $times = [];
+        foreach ((array)($in['backupTimes'] ?? []) as $t) { $t = trim((string)$t); if (preg_match('/^(\d{1,2})[:hH](\d{2})?$/', $t, $m) && (int)$m[1] < 24 && (int)($m[2] ?? 0) < 60) $times[] = sprintf('%02d:%02d', (int)$m[1], (int)($m[2] ?? 0)); }
+        $times = array_values(array_unique($times)); sort($times);
+        $days = array_values(array_unique(array_filter(array_map('intval', (array)($in['backupDays'] ?? [])), function ($d) { return $d >= 1 && $d <= 7; }))); sort($days);
+        $new = array_merge($SEC, ['inviteDays' => max(1, min(30, (int)($in['inviteDays'] ?? 7))), 'sessionHours' => max(1, min(72, (int)($in['sessionHours'] ?? 12))),
+                'minPassword' => max(8, min(64, (int)($in['minPassword'] ?? 8))), 'pwDigit' => !empty($in['pwDigit']), 'pwSpecial' => !empty($in['pwSpecial']), 'pwUpper' => !empty($in['pwUpper']),
+                'lockAttempts' => max(1, min(20, (int)($in['lockAttempts'] ?? 3))), 'lockMinutes' => max(0, min(1440, (int)($in['lockMinutes'] ?? 15))),
+                'backupTimes' => array_slice($times, 0, 12), 'backupDays' => $days ?: [1, 2, 3, 4, 5, 6, 7], 'backupKeep' => max(2, min(500, (int)($in['backupKeep'] ?? 60))),
+                'changed' => date('c'), 'by' => $me['name']]);
+        if (!empty($in['newCronKey'])) $new['cronKey'] = bin2hex(random_bytes(20));
         if (!write_json($SECF, $new)) out(500, ['error' => 'Écriture impossible']);
-        auth_log('sec-set', $me['login'], 'session ' . $new['sessionHours'] . ' h · mot de passe ' . $new['minPassword'] . ' car. · invitations ' . $new['inviteDays'] . ' j');
+        auth_log('sec-set', $me['login'], 'mots de passe ' . $new['minPassword'] . ' car.' . ($new['pwDigit'] ? ' + chiffre' : '') . ($new['pwSpecial'] ? ' + spécial' : '') . ($new['pwUpper'] ? ' + majuscule' : '')
+            . ' · blocage après ' . $new['lockAttempts'] . ' essais (' . ($new['lockMinutes'] ?: '∞') . ' min) · sauvegardes ' . (implode(', ', $new['backupTimes']) ?: 'désactivées')
+            . ' · session ' . $new['sessionHours'] . ' h · invitations ' . $new['inviteDays'] . ' j');
         out(200, ['ok' => true]);
     }
 }
@@ -763,6 +946,7 @@ if ($action === 'save') {
     $newDoc = json_decode($body, true);
     $shape = doc_shape($newDoc);
     $sa = (int)($_SESSION['sa_until'] ?? 0) > time();
+    if (!empty($me['weak'])) out(403, ['denied' => true, 'error' => 'Votre mot de passe ne respecte plus les règles de sécurité : changez-le avant d’enregistrer.']);
 
     flock($lock, LOCK_EX);
     $m = read_meta($META);

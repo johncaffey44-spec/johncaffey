@@ -270,3 +270,26 @@ Le rôle Commercial n'est passé en lecture seule que s'il avait encore ses droi
 - *Phase de chronométrage* : saisissez le « Temps réel passé » dans chaque opération terminée (informatique, PDA et magasin compris). Le rapport compare, modèle par modèle, le temps réel moyen à la durée prévue et propose une durée standard arrondie à la demi-journée. Attendez au moins 5 mesures par modèle avant de modifier les durées.
 
 **Préparation (P)** : l'étape est retirée du menu, du tableau de bord, des alertes et des box. Les données existantes sont conservées. Elle peut être réactivée dans *Paramètres › Planification*.
+
+## 10. Sauvegardes automatiques, blocage des comptes, règles des mots de passe
+
+Tout se règle dans *Paramétrage › Sécurité & accès › Réglages de sécurité et de sauvegarde* (super administrateur).
+
+**Sauvegarde complète automatique** : par défaut à **12:00 et 17:00, tous les jours**, avec les 60 dernières conservées. Heures, jours et nombre de sauvegardes conservées sont réglables.
+- *Complète* veut dire : planning + accès (identifiants et mots de passe hachés) + réglages de sécurité, dans un seul fichier `data/backups/complet-AAAAMMJJ-HHMM-…json`. « Sauvegarder maintenant » produit le même fichier.
+- **Comment elle se déclenche.** PHP n'a pas d'horloge propre : le serveur vérifie à chaque échange avec une page ouverte (toutes les 15 s environ) si un créneau est passé sans sauvegarde, et la fait.
+  - Si personne n'a l'application ouverte à 12:00, la sauvegarde est faite à la première ouverture qui suit.
+  - Pour la garantir même quand aucun poste n'est allumé (nuit, week-end), créez une tâche planifiée Windows sur le serveur, toutes les 15 min. La commande se copie dans *Garantir les sauvegardes…*, et elle est protégée par une clé.
+- **Restaurer** une sauvegarde complète remet le planning. Les accès et les réglages restent ceux du serveur ; en cas de sinistre complet, ils se trouvent dans le fichier.
+- Ces sauvegardes sont dans le dossier `data` : **copiez aussi ce dossier ailleurs** (NAS, Iperius…). Une sauvegarde sur le même disque ne protège pas d'une panne de ce disque.
+
+**Blocage des comptes** : après **3 mots de passe erronés**, le compte est bloqué **15 minutes**.
+- Durée 0 = bloqué jusqu'à ce qu'un administrateur le débloque.
+- La personne voit combien d'essais il lui reste.
+- Un identifiant inexistant se comporte exactement comme un vrai : impossible de savoir quels comptes existent.
+- Pour débloquer : *Sécurité & accès › Comptes bloqués*, ou bouton *Débloquer* dans *Utilisateurs*.
+- Le blocage par adresse IP (8 échecs, 15 min) reste en place en plus.
+
+**Règles des mots de passe** : par défaut, **8 caractères minimum, dont au moins 1 chiffre et 1 caractère spécial**. On peut y ajouter une majuscule obligatoire.
+- Les règles s'affichent et se cochent pendant la saisie. Le serveur les vérifie aussi : impossible de les contourner.
+- **Mots de passe existants** : à la connexion, si le mot de passe ne respecte plus les règles, la personne doit en choisir un nouveau. La fenêtre ne peut pas être fermée, et le serveur refuse ses enregistrements tant que ce n'est pas fait.
