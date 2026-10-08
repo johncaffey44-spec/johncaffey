@@ -359,3 +359,33 @@ Tout se règle dans *Paramétrage › Sécurité & accès › Réglages de sécu
 - **Le changement de réglage s'applique à la prochaine connexion.** Pour l'imposer tout de suite : *Déconnecter tout le monde*.
 - **La clé secrète est conservée dans `data/accounts.json`.** Protégez et sauvegardez ce dossier, comme le reste.
 - **Sans https, la double authentification ne protège pas tout** : elle évite qu'un mot de passe volé suffise, mais les échanges restent lisibles sur le réseau.
+
+## 13. Utilisation sur smartphone et tablette
+
+Rien à installer : la même adresse s'ouvre dans le navigateur du téléphone (Safari, Chrome…), l'affichage s'adapte tout seul.
+
+**Ce qui change sur un téléphone** (écran de moins de 640 px de large, en position portrait) :
+- **Barre du haut compacte** : titre de la page, recherche, état de l'enregistrement (point vert), thème, menu utilisateur. Si l'enregistrement échoue, le message reste affiché.
+- **Menu** : le bouton ☰ ouvre le menu par-dessus la page. On le referme en touchant à côté.
+- **Fenêtres en plein écran** : le titre et les boutons Enregistrer / Annuler restent visibles, le contenu défile entre les deux.
+- **Champs à 16 px** : l'iPhone ne zoome plus à chaque saisie.
+- **Boutons plus grands au doigt** : 40 px minimum, interrupteurs agrandis.
+- **Planning : un jour à la fois**, avec le matin et l'après-midi côte à côte.
+  - Le bandeau des jours (lun. → ven.) permet de choisir le jour. Les flèches changent de semaine.
+  - Glisser le doigt vers la gauche ou la droite passe au jour suivant ou précédent.
+  - Toucher une carte ouvre l'opération (ressource, date, durée, statut). Toucher une case vide propose les opérations à planifier.
+  - En **paysage** ou sur **tablette**, la semaine complète revient.
+- **Projets en cours / archivés** : une carte par projet (client, n°, type, ville, date demandée, agence, prochaine étape) au lieu d'un tableau à faire défiler de côté.
+- **Autres tableaux** (utilisateurs, journal, rapports…) : ils défilent de côté à l'intérieur de leur cadre, la page elle-même ne bouge pas.
+- **Double authentification depuis le téléphone** : on ne peut pas scanner son propre écran. Utilisez le bouton **Ouvrir l'application**, ou **Copier la clé** puis collez-la dans l'application (« Saisir une clé de configuration »).
+
+**Sur ordinateur, rien ne change.** Les tablettes tactiles reçoivent seulement les champs à 16 px et les boutons agrandis.
+
+**Ajouter à l'écran d'accueil** (facultatif) : l'outil s'ouvre alors comme une application, sans la barre d'adresse.
+- iPhone : Safari › Partager › *Sur l'écran d'accueil*.
+- Android : Chrome › ⋮ › *Ajouter à l'écran d'accueil*.
+
+**Limites à connaître** :
+- **Le glisser-déposer des cartes est réservé à la souris.** Sur téléphone, on déplace une opération en changeant sa date ou sa ressource dans sa fenêtre. La poignée de durée (bord droit d'une carte) reste utilisable au doigt.
+- **Hors du réseau de l'entreprise, l'outil n'est accessible que si le serveur est publié** (VPN ou accès externe en https). C'est un choix d'infrastructure, à valider avant d'ouvrir l'accès : sans https, les mots de passe circulent en clair sur Internet.
+- **Le mode écran (affichage atelier)** reste prévu pour un grand écran.
