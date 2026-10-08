@@ -260,8 +260,49 @@ function db(): PDO
     if ($premierLancement) {
         init_schema($pdo);
     }
+    if ((int) $pdo->query('PRAGMA user_version')->fetchColumn() < 1) {
+        migrer_acces($pdo);
+    }
 
     return $pdo;
+}
+
+/**
+ * Version 1 de la base : accès sur invitation.
+ *  - invitations : on ne garde que l'empreinte SHA-256 du lien, jamais le
+ *    lien lui-même (une copie de la base ne permet donc pas de s'en servir) ;
+ *  - users.must_change : mot de passe provisoire, à changer à la connexion ;
+ *  - users.acces_gen : augmente à chaque changement ou réinitialisation du
+ *    mot de passe, ce qui déconnecte les sessions ouvertes avec l'ancien.
+ * Rejouable : chaque étape vérifie ce qui existe déjà.
+ */
+function migrer_acces(PDO $pdo): void
+{
+    $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        if ((int) $pdo->query('PRAGMA user_version')->fetchColumn() < 1) {
+            $colonnes = array_column($pdo->query('PRAGMA table_info(users)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+            if (!in_array('must_change', $colonnes, true)) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0');
+            }
+            if (!in_array('acces_gen', $colonnes, true)) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN acces_gen INTEGER NOT NULL DEFAULT 0');
+            }
+            $pdo->exec("CREATE TABLE IF NOT EXISTS invitations (
+                token_hash TEXT PRIMARY KEY,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kind       TEXT NOT NULL DEFAULT 'invitation' CHECK (kind IN ('invitation','reinitialisation')),
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_by INTEGER)");
+            $pdo->exec('CREATE INDEX IF NOT EXISTS idx_invitations_user ON invitations(user_id)');
+            $pdo->exec('PRAGMA user_version = 1');
+        }
+        $pdo->exec('COMMIT');
+    } catch (Throwable $e) {
+        $pdo->exec('ROLLBACK');
+        throw $e;
+    }
 }
 
 /**
@@ -543,6 +584,243 @@ function setting_save_list(string $key, array $values): void
                    ON CONFLICT("key") DO UPDATE SET value = excluded.value')
         ->execute([$key, json_encode(array_values($values), JSON_UNESCAPED_UNICODE)]);
     unset($GLOBALS['__settings']);
+}
+
+/* ======================= Sécurité des accès ======================= */
+
+/** Longueur minimale des mots de passe (Paramètres › Sécurité des accès). */
+function mdp_min(): int
+{
+    return min(64, max(8, (int) setting_get('password_min', '10')));
+}
+
+/** Contrôle d'un nouveau mot de passe : message d'erreur, ou null s'il convient. */
+function mdp_refus(string $pass, string $nom, string $email): ?string
+{
+    if (len($pass) < mdp_min()) {
+        return 'Le mot de passe doit contenir au moins ' . mdp_min() . ' caractères.';
+    }
+    if (len($pass) > 200) {
+        return 'Le mot de passe est trop long (200 caractères maximum).';
+    }
+    return mot_de_passe_faible($pass, $nom, $email);
+}
+
+/** « invitation » : chacun choisit son mot de passe. « mixte » : l'administrateur peut aussi en donner un provisoire. */
+function acces_mode(): string
+{
+    return setting_get('acces_mode', 'invitation') === 'mixte' ? 'mixte' : 'invitation';
+}
+
+/** Adresse de l'outil pour les liens envoyés : réglage « Adresse de l'outil », sinon celle utilisée par l'administrateur. */
+function url_application(): string
+{
+    $base = trim(setting_get('base_url'));
+    if ($base !== '') {
+        return rtrim($base, '/') . '/';
+    }
+    $https = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+             || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $hote = preg_replace('/[^A-Za-z0-9.:\[\]-]/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    return ($https ? 'https' : 'http') . '://' . $hote . chemin_application();
+}
+
+/** Tentatives de connexion : nombre d'échecs tolérés par poste, et durée du blocage. */
+function limite_echecs(): array
+{
+    return [min(100, max(3, (int) setting_get('login_max_fails', '10'))),
+            min(1440, max(1, (int) setting_get('login_lock_minutes', '5')))];
+}
+
+/** Message de blocage si ce poste a trop échoué récemment, sinon null. */
+function poste_bloque(string $ip): ?string
+{
+    if ($ip === '') {
+        return null;
+    }
+    [$max, $minutes] = limite_echecs();
+    $st = db()->prepare('SELECT COUNT(*) FROM logins WHERE ip = ? AND success = 0 AND created_at > ?');
+    $st->execute([$ip, date('Y-m-d H:i:s', time() - $minutes * 60)]);
+    return (int) $st->fetchColumn() >= $max
+        ? 'Trop de tentatives depuis ce poste. Patientez ' . $minutes . ' minute' . ($minutes > 1 ? 's' : '') . ' puis réessayez.'
+        : null;
+}
+
+/**
+ * Crée (ou recrée) le lien d'accès d'une personne. Une seule invitation
+ * valable par personne : la nouvelle annule les précédentes.
+ * $reinitialiser : retire d'abord le mot de passe actuel (mot de passe
+ * oublié, départ d'un poste partagé…) ; ses sessions ouvertes sont coupées.
+ */
+function creer_invitation(int $id, array $me, bool $reinitialiser, bool $envoyer): array
+{
+    $pdo = db();
+    $st = $pdo->prepare('SELECT id, name, email, auth, active, password FROM users WHERE id = ?');
+    $st->execute([$id]);
+    $u = $st->fetch();
+    $refus = static fn(string $d, int $code = 400) => ['ok' => false, 'id' => $id, 'name' => $u['name'] ?? '', 'detail' => $d, 'code' => $code];
+    if (!$u) {
+        return $refus('compte introuvable', 404);
+    }
+    if ($u['auth'] === 'annuaire') {
+        return $refus('compte Windows : il se connecte avec le mot de passe de sa session, il n\'y a rien à inviter');
+    }
+    if (!(int) $u['active']) {
+        return $refus('compte désactivé : réactivez-le avant de l\'inviter');
+    }
+    if ($u['email'] === '') {
+        return $refus('aucune adresse email : elle sert d\'identifiant de connexion');
+    }
+    $aUnAcces = $u['password'] !== '';
+    if ($aUnAcces && !$reinitialiser) {
+        return $refus('a déjà un accès ; utilisez « Réinitialiser l\'accès » s\'il a perdu son mot de passe', 409);
+    }
+    if ($reinitialiser && $id === (int) $me['id']) {
+        return $refus('c\'est votre propre compte : utilisez « Changer mon mot de passe »');
+    }
+
+    $token  = bin2hex(random_bytes(20));
+    $expire = date('Y-m-d H:i:s', time() + min(30, max(1, (int) setting_get('invite_days', '7'))) * 86400);
+    $kind   = $aUnAcces ? 'reinitialisation' : 'invitation';
+    $pdo->beginTransaction();
+    try {
+        if ($aUnAcces) {
+            $pdo->prepare("UPDATE users SET password = '', must_change = 0, acces_gen = acces_gen + 1 WHERE id = ?")->execute([$id]);
+        }
+        $pdo->prepare('DELETE FROM invitations WHERE user_id = ?')->execute([$id]);
+        $pdo->prepare('INSERT INTO invitations (token_hash, user_id, kind, created_at, expires_at, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+            ->execute([hash('sha256', $token), $id, $kind, now(), $expire, (int) $me['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+
+    $lien = url_application() . '#/invitation/' . $token;
+    $r = ['ok' => true, 'id' => $id, 'name' => $u['name'], 'email' => $u['email'],
+          'resultat' => $aUnAcces ? 'Réinitialisé' : 'Invité', 'detail' => '',
+          'lien' => $lien, 'expires' => $expire, 'envoye' => false, 'erreur_envoi' => ''];
+    if ($envoyer) {
+        if (setting_get('mail_enabled') !== '1') {
+            $r['erreur_envoi'] = 'la messagerie n\'est pas activée dans Paramètres';
+        } else {
+            $app = setting_get('app_name', 'D8 Support');
+            $quand = date('d/m/Y à H:i', strtotime($expire));
+            $corps = 'Bonjour ' . $u['name'] . ",\n\n"
+                . ($aUnAcces
+                    ? 'Votre accès à ' . $app . ' a été réinitialisé par ' . $me['name'] . ".\n\n"
+                    : $me['name'] . ' vous a ouvert un accès à ' . $app . ", l'outil de demandes au service informatique.\n\n")
+                . 'Votre identifiant : ' . $u['email'] . "\n\n"
+                . "Pour choisir votre mot de passe, ouvrez ce lien (valable jusqu'au " . $quand . ", utilisable une seule fois) :\n"
+                . $lien . "\n\n"
+                . "Ce lien est personnel : ne le transférez à personne. Si vous n'attendiez pas ce message, ignorez-le "
+                . "et prévenez le service informatique.\n\n--\nMessage automatique envoyé par " . $app . '.';
+            $envoi = smtp_envoyer(mail_config(), $u['email'], 'Votre accès à ' . $app, $corps);
+            $r['envoye'] = $envoi['ok'];
+            $r['erreur_envoi'] = $envoi['ok'] ? '' : $envoi['error'];
+            if (!$envoi['ok']) {
+                journal_erreur('Invitation non envoyée à ' . $u['email'] . ' : ' . $envoi['error']);
+            }
+        }
+    }
+    return $r;
+}
+
+/** Invitation valable correspondant à un lien, ou null. */
+function invitation_trouver($token): ?array
+{
+    if (!is_string($token) || !preg_match('/^[a-f0-9]{40}$/', $token)) {
+        return null;
+    }
+    $st = db()->prepare("SELECT i.kind, i.expires_at, u.id, u.name, u.email, u.acces_gen
+                         FROM invitations i JOIN users u ON u.id = i.user_id
+                         WHERE i.token_hash = ? AND i.expires_at > ? AND u.active = 1 AND u.auth = 'local'");
+    $st->execute([hash('sha256', $token), now()]);
+    $i = $st->fetch();
+    return $i ?: null;
+}
+
+/* ---- Réseaux autorisés : l'outil ne répond qu'aux postes de ces plages ---- */
+
+function ip_normaliser(string $ip): string
+{
+    $ip = trim($ip);
+    if (stripos($ip, '::ffff:') === 0 && filter_var(substr($ip, 7), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $ip = substr($ip, 7);
+    }
+    return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '';
+}
+
+function reseau_valide(string $n): bool
+{
+    [$ip, $bits] = array_pad(explode('/', $n, 2), 2, null);
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+    if ($bits === null) {
+        return true;
+    }
+    $max = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? 32 : 128;
+    return ctype_digit($bits) && (int) $bits <= $max;
+}
+
+function ip_dans_reseau(string $ip, string $reseau): bool
+{
+    [$net, $bits] = array_pad(explode('/', $reseau, 2), 2, null);
+    $a = @inet_pton($ip);
+    $b = @inet_pton((string) $net);
+    if ($a === false || $b === false || strlen($a) !== strlen($b)) {
+        return false;
+    }
+    $max  = strlen($a) * 8;
+    $bits = $bits === null ? $max : (int) $bits;
+    $octets = intdiv($bits, 8);
+    $reste  = $bits % 8;
+    if ($octets > 0 && strncmp($a, $b, $octets) !== 0) {
+        return false;
+    }
+    if ($reste === 0) {
+        return true;
+    }
+    $masque = chr((0xFF << (8 - $reste)) & 0xFF);
+    return ($a[$octets] & $masque) === ($b[$octets] & $masque);
+}
+
+/** Lit la liste saisie (une adresse ou un réseau par ligne, « # » pour commenter). */
+function reseaux_lire(string $texte): array
+{
+    $ok = [];
+    $erreurs = [];
+    foreach (preg_split('/\r\n|\r|\n|,|;/', $texte) ?: [] as $l) {
+        $l = trim((string) preg_replace('/#.*/', '', $l));
+        if ($l === '') {
+            continue;
+        }
+        if (reseau_valide($l)) {
+            $ok[] = $l;
+        } else {
+            $erreurs[] = $l;
+        }
+    }
+    return ['reseaux' => array_values(array_unique($ok)), 'erreurs' => $erreurs];
+}
+
+/** Le poste est-il autorisé ? La console du serveur (127.0.0.1) l'est toujours : c'est le recours si la liste est fausse. */
+function ip_autorisee(string $ip, array $reseaux): bool
+{
+    if (!$reseaux) {
+        return true;
+    }
+    $ip = ip_normaliser($ip);
+    if ($ip === '') {
+        return false;
+    }
+    foreach (array_merge(['127.0.0.0/8', '::1/128'], $reseaux) as $n) {
+        if (ip_dans_reseau($ip, $n)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -1888,6 +2166,30 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .barre-lot .input { flex: 1 1 170px; min-width: 0; min-height: 42px; }
 .barre-lot .btn-ghost { color: #BFD0D6; }
 .barre-lot .btn-ghost:hover { background: var(--chrome-2); }
+.auth-titre { font-size: 1.25rem; margin: 0 0 .6rem; }
+.mdp-regles { list-style: none; margin: -.2rem 0 .6rem; padding: 0; font-size: .93rem; color: var(--muted); }
+.mdp-regles li { position: relative; padding-left: 1.5rem; margin: .15rem 0; }
+.mdp-regles li::before { content: ''; position: absolute; left: .2rem; top: .45em; width: .7rem; height: .7rem;
+  border: 2px solid #B8C0C8; border-radius: 50%; box-sizing: border-box; }
+.mdp-regles li.ok { color: #13654A; }
+.mdp-regles li.ok::before { border-color: #13654A; background: #13654A; }
+.mdp-voir { font-weight: 400; margin-bottom: .6rem; }
+.lbl-champ { display: block; font-weight: 600; margin-bottom: .35rem; }
+.acces-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; }
+#zone-u td[data-l="Compte"] .chip { white-space: nowrap; }
+.u-inviter { display: block; margin-top: .25rem; font-size: .9rem; }
+.acc-expire { background: #FDF4E7; color: #96490A; border-color: #F0CB9C; }
+/* Le nom peut passer à la ligne entre deux mots, jamais lettre par lettre. */
+@media (min-width: 921px) {
+  #zone-u tbody td:nth-child(2) { min-width: 8.5rem; }
+  #zone-u .tbl td { padding-left: .6rem; padding-right: .6rem; }
+  #zone-u td[data-l="Compte"] .t-sub { font-size: .82rem; }
+}
+.inv-liste { list-style: none; margin: .8rem 0; padding: 0; display: grid; gap: .8rem; max-height: 46vh; overflow: auto; }
+.inv-ligne { border: 1px solid var(--ligne); border-radius: var(--r-carte); padding: .7rem .8rem; background: var(--surface-2); }
+.inv-qui { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; margin-bottom: .45rem; }
+.inv-lien { display: flex; gap: .5rem; flex-wrap: wrap; }
+.inv-lien .input { flex: 1 1 16rem; min-width: 0; font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 .le-legende { margin: 0 0 .7rem; color: var(--muted); font-size: .93rem; }
 .le-lignes { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
 .le-ligne { display: flex; align-items: center; gap: .6rem; }
@@ -2486,6 +2788,9 @@ async function api(action, data, files, options) {
         S.filtres = null;
         showAuth('login');
         toast('Votre session a pris fin. Reconnectez-vous.', true);
+      } else if (!silencieux) {
+        // Écran de connexion : sans ce message, un mot de passe erroné ne produisait rien du tout.
+        toast(j.error || 'Email ou mot de passe incorrect.', true);
       }
     } else if (!silencieux) {
       toast(j.error || 'Une erreur est survenue.', true);
@@ -2498,12 +2803,17 @@ async function api(action, data, files, options) {
 /* ------------------------------------------------ démarrage */
 
 async function boot() {
+  // Un lien d'invitation collé dans un onglet déjà ouvert ne recharge pas la page.
+  window.addEventListener('hashchange', () => { const t = jetonInvitation(); if (t) showInvitation(t); });
   try {
     const d = await api('boot');
     appliquerBoot(d);
     if (d.need_setup) { showAuth('setup'); return; }
+    S.user = d.user || null;
+    const jeton = jetonInvitation();
+    if (jeton) { showInvitation(jeton); return; }
     if (!d.user) { showAuth('login'); return; }
-    S.user = d.user;
+    if (d.user.must_change) { showMdpObligatoire(); return; }
     enterApp();
   } catch (e) { /* le toast a déjà été affiché */ }
 }
@@ -2522,24 +2832,147 @@ function appliquerBoot(d) {
   S.canChangePassword = !!d.can_change_password;
   S.codeFichier = d.code_fichier || '';
   S.annuaire = !!d.annuaire_actif;
+  S.passwordMin = Number(d.password_min) || 10;
+  S.accesMode = d.acces_mode || 'invitation';
+  S.mailActif = !!d.mail_actif;
   S.chemin = d.chemin || S.chemin || '';
   document.title = S.appName + ' — Tickets informatiques';
 }
 
 /* ------------------------------------------------ écrans de connexion */
 
-function showAuth(mode) {
+/* Écran d'accueil (connexion, invitation, mot de passe imposé) : la page de l'application est masquée. */
+function ecranAuth() {
   $('#app').classList.add('hidden');
   const tu = $('#topbar-user');
   if (tu) tu.innerHTML = '';
   arreterVeille();
   const root = $('#screen-auth');
   root.classList.remove('hidden');
-
   const marque =
     '<div class="auth-brand">' + marqueHTML(S.appName, 'brand-mark brand-mark-grand') +
     '<div><div class="brand-name">' + esc(S.appName) + '</div>' +
     '<div class="brand-sub">Assistance informatique</div></div></div>';
+  return { root, marque };
+}
+
+/* Lien d'accès : …/#/invitation/<jeton>. Le jeton reste dans la partie « # » de
+   l'adresse, que le navigateur n'envoie jamais au serveur (ni aux journaux d'IIS). */
+function jetonInvitation() {
+  const m = (location.hash || '').match(/^#\/invitation\/([a-f0-9]{40})$/);
+  return m ? m[1] : '';
+}
+function oublierJeton() {
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; }
+}
+
+/* Règles affichées sous les champs de mot de passe, cochées au fil de la frappe. */
+function reglesMdp(zone, champ, confirme) {
+  const ul = zone.querySelector('.mdp-regles');
+  const maj = () => {
+    ul.querySelector('[data-r="long"]').classList.toggle('ok', champ.value.length >= S.passwordMin);
+    ul.querySelector('[data-r="pareil"]').classList.toggle('ok', champ.value !== '' && champ.value === confirme.value);
+  };
+  champ.addEventListener('input', maj); confirme.addEventListener('input', maj);
+  const voir = zone.querySelector('.mdp-voir input');
+  if (voir) voir.addEventListener('change', () => { champ.type = confirme.type = voir.checked ? 'text' : 'password'; });
+  return () => {
+    if (champ.value.length < S.passwordMin) { toast('Le mot de passe doit contenir au moins ' + S.passwordMin + ' caractères.', true); champ.focus(); return false; }
+    if (champ.value !== confirme.value) { toast('Les deux saisies ne sont pas identiques.', true); confirme.focus(); return false; }
+    return true;
+  };
+}
+const htmlRegles = () =>
+  '<ul class="mdp-regles" aria-live="polite"><li data-r="long">Au moins ' + S.passwordMin + ' caractères</li>' +
+  '<li data-r="pareil">Les deux saisies sont identiques</li></ul>' +
+  '<label class="check mdp-voir"><input type="checkbox"> Afficher le mot de passe</label>';
+
+async function showInvitation(token) {
+  const { root, marque } = ecranAuth();
+  root.innerHTML = '<div class="auth-card">' + marque + chargement() + '</div>';
+  let i;
+  try {
+    i = await api('invitation_info', { token }, null, { silencieux: true });
+  } catch (e) {
+    root.innerHTML = '<div class="auth-card">' + marque + '<h2 class="auth-titre">Lien non valable</h2>' +
+      '<p>' + esc(e.message) + '</p><button type="button" class="btn btn-primary" id="inv-retour">Aller à l\'écran de connexion</button></div>';
+    $('#inv-retour').addEventListener('click', () => { oublierJeton(); if (S.user) enterApp(); else showAuth('login'); });
+    return;
+  }
+  S.passwordMin = Number(i.password_min) || S.passwordMin;
+  root.innerHTML =
+    '<div class="auth-card">' + marque +
+    '<h2 class="auth-titre">' + (i.reinitialisation ? 'Nouveau mot de passe' : 'Créez votre accès') + '</h2>' +
+    '<p>Bonjour <b>' + esc(i.name) + '</b>. ' + (i.reinitialisation
+      ? 'Votre accès a été réinitialisé : choisissez un nouveau mot de passe.'
+      : 'Choisissez le mot de passe qui vous servira à vous connecter. Personne d\'autre ne le connaîtra, pas même le service informatique.') + '</p>' +
+    (S.user ? '<div class="encart-code">Ce navigateur est connecté au compte de <b>' + esc(S.user.name) + '</b> : en continuant, ' +
+      'c\'est la session de ' + esc(i.name) + ' qui s\'ouvrira à la place.</div>' : '') +
+    '<form id="f-inv" novalidate>' +
+    '<div class="field"><label for="inv-id">Votre identifiant</label>' +
+    '<input id="inv-id" class="input" type="text" autocomplete="username" readonly value="' + esc(i.email) + '">' +
+    '<div class="aide">C\'est lui que vous taperez à chaque connexion.</div></div>' +
+    '<div class="field"><label for="inv-mdp">Mot de passe</label><input id="inv-mdp" class="input" type="password" autocomplete="new-password"></div>' +
+    '<div class="field"><label for="inv-mdp2">Confirmez le mot de passe</label><input id="inv-mdp2" class="input" type="password" autocomplete="new-password"></div>' +
+    htmlRegles() +
+    '<button class="btn btn-primary" type="submit">' + (i.reinitialisation ? 'Enregistrer mon mot de passe' : 'Créer mon accès') + '</button>' +
+    '</form><p class="auth-note">Lien personnel, valable jusqu\'au ' + esc(fmtDate(i.expires)) + ' et utilisable une seule fois.</p></div>';
+  const verifier = reglesMdp(root, $('#inv-mdp'), $('#inv-mdp2'));
+  $('#inv-mdp').focus();
+  $('#f-inv').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!verifier()) return;
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const d = await api('invitation_accept', { token, password: $('#inv-mdp').value });
+      oublierJeton();
+      S.user = d.user; S.csrf = d.csrf;
+      appliquerBoot(await api('boot'));
+      Son.init();
+      toast(i.reinitialisation ? 'Mot de passe enregistré.' : 'Votre accès est prêt. Bienvenue !');
+      enterApp();
+    } catch (err) { btn.disabled = false; }
+  });
+}
+
+/* Mot de passe provisoire donné par l'administrateur : à remplacer avant tout le reste. */
+function showMdpObligatoire() {
+  const { root, marque } = ecranAuth();
+  root.innerHTML =
+    '<div class="auth-card">' + marque +
+    '<h2 class="auth-titre">Choisissez votre mot de passe</h2>' +
+    '<p>Bonjour <b>' + esc(S.user.name) + '</b>. Le mot de passe qu\'on vous a donné est <b>provisoire</b> : ' +
+    'remplacez-le par un mot de passe que personne d\'autre ne connaît.</p>' +
+    '<form id="f-mo" novalidate>' +
+    '<div class="field"><label for="mo-actuel">Mot de passe provisoire</label><input id="mo-actuel" class="input" type="password" autocomplete="current-password"></div>' +
+    '<div class="field"><label for="mo-mdp">Nouveau mot de passe</label><input id="mo-mdp" class="input" type="password" autocomplete="new-password"></div>' +
+    '<div class="field"><label for="mo-mdp2">Confirmez le nouveau mot de passe</label><input id="mo-mdp2" class="input" type="password" autocomplete="new-password"></div>' +
+    htmlRegles() +
+    '<button class="btn btn-primary" type="submit">Enregistrer et continuer</button></form>' +
+    '<p class="auth-note"><button type="button" class="btn-lien" id="mo-sortir">Se déconnecter</button></p></div>';
+  const verifier = reglesMdp(root, $('#mo-mdp'), $('#mo-mdp2'));
+  $('#mo-actuel').focus();
+  $('#mo-sortir').addEventListener('click', async () => {
+    try { await api('logout'); } catch (e) {}
+    S.user = null; showAuth('login');
+  });
+  $('#f-mo').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!verifier()) return;
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const d = await api('password_change', { current: $('#mo-actuel').value, new: $('#mo-mdp').value });
+      S.user = d.user;
+      toast('Mot de passe enregistré.');
+      enterApp();
+    } catch (err) { btn.disabled = false; }
+  });
+}
+
+function showAuth(mode) {
+  const { root, marque } = ecranAuth();
 
   if (mode === 'setup') {
     root.innerHTML =
@@ -2555,7 +2988,7 @@ function showAuth(mode) {
       'style="text-transform:uppercase;letter-spacing:.25em;font-weight:700"></div>' +
       '<div class="field"><label for="s-nom">Votre nom complet</label><input id="s-nom" class="input" type="text" autocomplete="name"></div>' +
       '<div class="field"><label for="s-email">Adresse email</label><input id="s-email" class="input" type="email" autocomplete="username"></div>' +
-      '<div class="field"><label for="s-mdp">Mot de passe (8 caractères minimum)</label><input id="s-mdp" class="input" type="password" autocomplete="new-password"></div>' +
+      '<div class="field"><label for="s-mdp">Mot de passe (' + S.passwordMin + ' caractères minimum)</label><input id="s-mdp" class="input" type="password" autocomplete="new-password"></div>' +
       '<div class="field"><label for="s-mdp2">Confirmez le mot de passe</label><input id="s-mdp2" class="input" type="password" autocomplete="new-password"></div>' +
       '<button class="btn btn-primary" type="submit">Créer le compte administrateur</button>' +
       '</form></div>';
@@ -2591,7 +3024,7 @@ function showAuth(mode) {
     '</form>' +
     '<p class="auth-note">' + (S.annuaire
       ? 'Utilisez les mêmes identifiants que pour ouvrir votre session sur votre poste.'
-      : 'Mot de passe oublié ? Adressez-vous au service informatique.') + '</p></div>';
+      : 'Mot de passe oublié ? Le service informatique vous enverra un nouveau lien pour en choisir un.') + '</p></div>';
 
   $('#l-email').focus();
   $('#f-login').addEventListener('submit', async (e) => {
@@ -2603,6 +3036,7 @@ function showAuth(mode) {
       S.user = d.user; S.csrf = d.csrf;
       appliquerBoot(await api('boot'));
       Son.init(); // le clic de connexion autorise l'audio pour la suite
+      if (S.user.must_change) { showMdpObligatoire(); return; }
       enterApp();
     } catch (err) {
       btn.disabled = false; btn.textContent = 'Se connecter';
@@ -3043,7 +3477,7 @@ async function veille() {
 /* ------------------------------------------------ routage (#/vue/argument) */
 
 function route() {
-  if (!S.user) return;
+  if (!S.user || jetonInvitation()) return;
   nouveauToken();
   ouvrirMenu(false);
   const h = (location.hash || '').replace(/^#\/?/, '');
@@ -3997,10 +4431,15 @@ function minutesImport(v, enHeures) {
 }
 function motDePasseProvisoire() {
   const alpha = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ', chiffres = '23456789';
-  const r = new Uint32Array(12); crypto.getRandomValues(r);
+  // Groupes de 4 séparés par des tirets, assez nombreux pour la longueur minimale réglée.
+  const groupes = Math.max(3, Math.ceil(((S.passwordMin || 10) + 1) / 5));
+  const r = new Uint32Array(groupes * 4); crypto.getRandomValues(r);
   let s = '';
-  for (let i = 0; i < 12; i++) s += (i === 4 || i === 9 ? chiffres : alpha + chiffres)[r[i] % (i === 4 || i === 9 ? chiffres.length : alpha.length + chiffres.length)];
-  return s.slice(0, 4) + '-' + s.slice(4, 8) + '-' + s.slice(8);
+  for (let i = 0; i < r.length; i++) {
+    const jeu = i % 4 === 0 && i > 0 ? chiffres : alpha + chiffres;
+    s += (i && i % 4 === 0 ? '-' : '') + jeu[r[i] % jeu.length];
+  }
+  return s;
 }
 
 /* ---------------------------------------------------- fenêtre d'import */
@@ -4212,10 +4651,13 @@ function confImportUtilisateurs(existants, termine) {
     if (u.login) parLogin[String(u.login).toLowerCase()] = u;
   });
   return {
-    titre: 'Importer des utilisateurs', cleLbl: 'Compte', rapportExtra: 'Mot de passe provisoire',
+    titre: 'Importer des utilisateurs', cleLbl: 'Compte',
+    rapportExtra: S.accesMode === 'mixte' ? 'Mot de passe provisoire' : 'Lien d\'invitation',
     intro: '<p class="sous-titre">Crée les comptes absents et, si vous le souhaitez, met à jour ceux qui existent déjà ' +
-      '(reconnus par leur adresse email ou leur identifiant). Chaque compte créé reçoit un mot de passe provisoire, ' +
-      'sauf si le fichier en fournit un. Exemples de sources : export Excel de l\'annuaire, liste du personnel, export de cet outil.</p>',
+      '(reconnus par leur adresse email ou leur identifiant). ' + (S.accesMode === 'mixte'
+        ? 'Chaque compte créé reçoit un mot de passe provisoire (celui du fichier, sinon généré), à changer à la première connexion. '
+        : 'Chaque compte créé reçoit un lien d\'invitation pour choisir son mot de passe ; une colonne « Mot de passe » est ignorée. ') +
+      'Exemples de sources : export Excel de l\'annuaire, liste du personnel, export de cet outil.</p>',
     champs: [
       { cle: 'name', lbl: 'Nom complet', req: true, syn: ['nom', 'name', 'nom complet', 'utilisateur', 'displayname', 'nom affiche', 'collaborateur', 'salarie', 'nom et prenom', 'prenom nom', 'nom prenom'] },
       { cle: 'prenom', lbl: 'Prénom', syn: ['prenom', 'firstname', 'givenname', 'first name'], aide: 'ajouté devant le nom' },
@@ -4224,12 +4666,15 @@ function confImportUtilisateurs(existants, termine) {
       { cle: 'phone', lbl: 'Téléphone', syn: ['telephone', 'tel', 'poste', 'phone', 'mobile', 'portable', 'telephonenumber', 'numero de telephone'] },
       { cle: 'role', lbl: 'Rôle', syn: ['role', 'profil', 'droits', 'type de compte outil'], aide: 'Employé ou Administrateur' },
       { cle: 'active', lbl: 'Compte actif', syn: ['compte', 'compte actif', 'actif', 'active', 'enabled', 'etat'], aide: 'oui / non' },
-      { cle: 'password', lbl: 'Mot de passe', syn: ['mot de passe', 'mdp', 'password', 'pass'], aide: 'sinon généré' },
+      { cle: 'password', lbl: 'Mot de passe', syn: ['mot de passe', 'mdp', 'password', 'pass'],
+        aide: S.accesMode === 'mixte' ? 'provisoire ; sinon généré' : 'ignoré : invitation à la place' },
     ],
     exemple: ['Martin Dupont', '', 'm.dupont@d8.fr', '', '01 23 45 67 89', 'Employé', 'oui', ''],
-    optionsDefaut: { maj: true },
+    optionsDefaut: { maj: true, envoyer: S.mailActif },
     options: (o) => '<label class="check"><input type="checkbox" data-opt="maj"' + (o.maj ? ' checked' : '') +
-      '> Mettre à jour les comptes qui existent déjà (nom, téléphone, rôle, compte actif)</label>',
+      '> Mettre à jour les comptes qui existent déjà (nom, téléphone, rôle, compte actif)</label>' +
+      (S.accesMode !== 'mixte' && S.mailActif ? '<label class="check"><input type="checkbox" data-opt="envoyer"' + (o.envoyer ? ' checked' : '') +
+        '> Envoyer les invitations par email aux comptes créés</label>' : ''),
     preparer(o, ctx) {
       let nom = txt(o.name);
       const prenom = txt(o.prenom), email = txt(o.email).toLowerCase(), login = txt(o.login).toLowerCase();
@@ -4253,26 +4698,38 @@ function confImportUtilisateurs(existants, termine) {
         actif = ouiNon(o.active);
         if (actif === undefined) return { erreur: 'compte actif : « ' + txt(o.active) + ' » non compris (oui / non)', cle };
       }
-      const pass = String(o.password == null ? '' : o.password);
-      if (pass && pass.length < 8) return { erreur: 'mot de passe trop court (8 caractères minimum)', cle };
+      const pass = S.accesMode === 'mixte' ? String(o.password == null ? '' : o.password) : '';
+      if (pass && pass.length < S.passwordMin) return { erreur: 'mot de passe trop court (' + S.passwordMin + ' caractères minimum)', cle };
       if (ex) {
         if (!ctx.options.maj) return { action: 'Ignorer', detail: 'compte déjà existant', cle };
-        return { action: 'Mettre à jour', cle, avertissements: pass ? ['mot de passe remplacé'] : [], valeurs: {
+        return { action: 'Mettre à jour', cle, avertissements: pass ? ['mot de passe provisoire remplacé'] : [], valeurs: {
           id: Number(ex.id), name: nom, email: ex.email || email, phone: o.phone !== undefined ? txt(o.phone) : (ex.phone || ''),
           role: role || ex.role, active: actif == null ? Number(ex.active) === 1 : actif, password: pass } };
       }
       return { action: 'Créer', cle, avertissements: role === 'admin' ? ['aura les droits administrateur'] : [], valeurs: {
         name: nom, email, phone: txt(o.phone), role: role || 'employe', active: actif == null ? true : actif, password: pass } };
     },
-    envoyer: (lignes, prog) => envoyerUnParUn(lignes, prog, async (p) => {
+    envoyer: (lignes, prog, ctx) => envoyerUnParUn(lignes, prog, async (p) => {
       const v = Object.assign({}, p.valeurs);
-      let genere = '';
-      if (!v.id && !v.password) v.password = genere = motDePasseProvisoire();
-      await apiImport('user_save', v);
-      return { resultat: v.id ? 'Mis à jour' : 'Créé', detail: '', extra: genere };
+      if (S.accesMode === 'mixte') {
+        let genere = '';
+        if (!v.id && !v.password) v.password = genere = motDePasseProvisoire();
+        await apiImport('user_save', v);
+        return { resultat: v.id ? 'Mis à jour' : 'Créé', detail: v.password ? 'mot de passe provisoire, à changer à la connexion' : '', extra: genere || (v.password ? '(celui du fichier)' : '') };
+      }
+      const d = await apiImport('user_save', v);
+      if (v.id || !v.active) return { resultat: v.id ? 'Mis à jour' : 'Créé', detail: v.id ? '' : 'compte désactivé : pas d\'invitation', extra: '' };
+      let r;
+      try { r = await apiImport('user_invite', { id: d.id, envoyer: !!(ctx && ctx.options && ctx.options.envoyer) }); }
+      catch (e) { return { resultat: 'Créé', detail: 'invitation non créée : ' + e.message, extra: '' }; }
+      return { resultat: 'Créé', detail: r.envoye ? 'invitation envoyée par email' : (r.erreur_envoi ? 'email non envoyé : ' + r.erreur_envoi : ''),
+               extra: r.lien };
     }),
-    avertissementExtra: 'Le rapport contient les <b>mots de passe provisoires</b> des comptes créés : transmettez-les individuellement, ' +
-      'puis supprimez le fichier. Pour que chacun puisse choisir le sien, cochez « Autoriser les employés à changer leur mot de passe » dans Paramètres.',
+    avertissementExtra: S.accesMode === 'mixte'
+      ? 'Le rapport contient les <b>mots de passe provisoires</b> des comptes créés : transmettez-les individuellement, ' +
+        'puis supprimez le fichier. Chacun devra le remplacer à sa première connexion.'
+      : 'Le rapport contient les <b>liens d\'invitation</b> : chacun vaut un accès jusqu\'à son utilisation. Transmettez-les individuellement, ' +
+        'puis supprimez le fichier.',
     termine,
   };
 }
@@ -5455,6 +5912,103 @@ function surligner(texte, termes) {
   return html + (ouvert ? '</mark>' : '');
 }
 
+/* ---- Accès sur invitation ---- */
+function etatAcces(u) {
+  if (u.auth === 'annuaire') return { cle: 'windows', lbl: 'Compte Windows', cls: 'st-ferme', sub: 'mot de passe de session' };
+  if (Number(u.a_acces)) return Number(u.must_change)
+    ? { cle: 'provisoire', lbl: 'Mot de passe provisoire', cls: 'st-en_attente', sub: 'à changer à la connexion' }
+    : { cle: 'cree', lbl: 'Accès créé', cls: 'st-resolu' };
+  if (u.invite_expires) {
+    return new Date(String(u.invite_expires).replace(' ', 'T')) > new Date()
+      ? { cle: 'invite', lbl: 'Invitation en attente', cls: 'st-nouveau', sub: 'jusqu\'au ' + fmtDate(u.invite_expires) }
+      : { cle: 'expire', lbl: 'Invitation expirée', cls: 'acc-expire', sub: 'à renouveler' };
+  }
+  return { cle: 'aucun', lbl: 'Pas encore invité', cls: 'st-ferme' };
+}
+const invitable = (u) => u.auth !== 'annuaire' && Number(u.active) && !Number(u.a_acces) && !!u.email;
+
+/* Copie : l'API moderne n'existe qu'en HTTPS ; sur http://serveur/ on passe par l'ancienne méthode. */
+async function copierTexte(texte) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(texte); return true; } } catch (e) {}
+  const ta = document.createElement('textarea');
+  ta.value = texte; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  ta.remove();
+  return ok;
+}
+
+/* Email préparé dans la messagerie de l'administrateur (Outlook…), quand l'outil n'envoie pas lui-même. */
+function mailtoInvitation(r) {
+  const corps = 'Bonjour ' + r.name + ',\n\n' +
+    (r.resultat === 'Réinitialisé' ? 'Votre accès à ' + S.appName + ' a été réinitialisé.'
+      : 'Voici votre accès à ' + S.appName + ', l\'outil de demandes au service informatique.') +
+    '\n\nVotre identifiant : ' + r.email +
+    '\n\nPour choisir votre mot de passe, ouvrez ce lien (valable jusqu\'au ' + fmtDate(r.expires) + ', utilisable une seule fois) :\n' +
+    r.lien + '\n\nCe lien est personnel : ne le transférez à personne.\n\n' + S.user.name;
+  return 'mailto:' + encodeURIComponent(r.email) + '?subject=' + encodeURIComponent('Votre accès à ' + S.appName) +
+    '&body=' + encodeURIComponent(corps);
+}
+
+/* Liens obtenus : à copier ou à envoyer. Ils ne sont plus jamais affichés ensuite (seule leur empreinte est gardée). */
+function modaleLiens(resultats) {
+  const ok = resultats.filter(r => r.lien), ko = resultats.filter(r => !r.lien);
+  const envoyes = ok.filter(r => r.envoye).length;
+  const ligne = (r, i) => '<li class="inv-ligne"><div class="inv-qui"><b>' + esc(r.name) + '</b> <span class="aide">' + esc(r.email) + '</span> ' +
+    (r.envoye ? '<span class="chip st-resolu">Envoyé par email</span>'
+      : r.erreur_envoi ? '<span class="chip acc-expire" title="' + esc(r.erreur_envoi) + '">Email non envoyé</span>' : '') +
+    (r.resultat === 'Réinitialisé' ? ' <span class="chip st-en_attente">Accès réinitialisé</span>' : '') + '</div>' +
+    '<div class="inv-lien"><input class="input" type="text" readonly value="' + esc(r.lien) + '" aria-label="Lien pour ' + esc(r.name) + '">' +
+    '<button type="button" class="btn" data-copier="' + i + '">Copier</button>' +
+    '<a class="btn" href="' + esc(mailtoInvitation(r)) + '">Préparer un email</a></div></li>';
+  const m = modale(
+    '<h2>' + (ok.length > 1 ? ok.length + ' liens d\'accès' : ok.length ? 'Lien d\'accès' : 'Aucun lien créé') + '</h2>' +
+    (ok.length ? '<div class="encart-code">Chaque lien est <b>personnel</b> et vaut un accès : ne le transmettez qu\'à la personne concernée ' +
+      '(email, messagerie interne), jamais sur un affichage. Il sert <b>une seule fois</b> et expire le ' + esc(fmtDate(ok[0].expires)) + '. ' +
+      'Il ne sera plus affiché après cette fenêtre : en cas de perte, créez-en un nouveau (l\'ancien est alors annulé).</div>' : '') +
+    (envoyes ? '<p>' + envoyes + ' lien(s) envoyé(s) directement par email.</p>' : '') +
+    (ok.length ? '<ul class="inv-liste">' + ok.map(ligne).join('') + '</ul>' : '') +
+    (ko.length ? '<p><b>Non traité(s) :</b></p><ul class="liste-resultats">' +
+      ko.map(r => '<li><b>' + esc(r.name || ('#' + r.id)) + '</b> — ' + esc(r.detail) + '</li>').join('') + '</ul>' : '') +
+    '<div class="modal-actions">' + (ok.length > 1 ? '<button type="button" class="btn" data-a="tout">Copier tous les liens</button>' : '') +
+    '<button type="button" class="btn btn-primary" data-a="ok">Fermer</button></div>');
+  const copie = async (texte) => toast(await copierTexte(texte) ? 'Copié dans le presse-papiers.' : 'Copie impossible : sélectionnez le lien puis Ctrl+C.', false);
+  m.el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-copier]');
+    if (b) copie(ok[Number(b.dataset.copier)].lien);
+  });
+  m.el.addEventListener('focusin', (e) => { if (e.target.matches('.inv-lien input')) e.target.select(); });
+  const tout = $('[data-a="tout"]', m.el);
+  if (tout) tout.addEventListener('click', () => copie(ok.map(r => r.name + ' <' + r.email + '> : ' + r.lien).join('\n')));
+  $('[data-a="ok"]', m.el).addEventListener('click', m.close);
+}
+
+/* Inviter (ou réinitialiser) une ou plusieurs personnes, puis montrer les liens. */
+async function lancerInvitations(op, personnes) {
+  const reinit = op === 'reinitialiser';
+  const m = modale('<h2>' + (reinit ? 'Réinitialiser l\'accès' : 'Inviter') + ' — ' + personnes.length + ' personne(s)</h2>' +
+    (reinit ? '<div class="imp-erreur imp-attention">Le mot de passe actuel de ces personnes est <b>supprimé immédiatement</b> et leurs sessions ' +
+      'ouvertes sont fermées. Elles ne pourront plus se connecter avant d\'avoir ouvert leur nouveau lien.</div>'
+      : '<p>Chaque personne reçoit un lien personnel pour choisir son mot de passe.</p>') +
+    '<ul class="liste-noms">' + personnes.map(u => '<li>' + esc(u.name) + ' <span class="aide">' + esc(u.email) + '</span></li>').join('') + '</ul>' +
+    (S.mailActif ? '<label class="check"><input type="checkbox" id="inv-envoyer" checked> Envoyer le lien par email depuis l\'outil</label>'
+      : '<p class="aide">L\'envoi d\'emails n\'est pas activé (Paramètres › Notifications) : vous copierez les liens, ou les enverrez depuis votre messagerie.</p>') +
+    '<div class="modal-actions"><button type="button" class="btn" data-a="non">Annuler</button>' +
+    '<button type="button" class="btn ' + (reinit ? 'btn-danger' : 'btn-primary') + '" data-a="oui">' + (reinit ? 'Réinitialiser' : 'Créer les liens') + '</button></div>');
+  $('[data-a="non"]', m.el).addEventListener('click', m.close);
+  $('[data-a="oui"]', m.el).addEventListener('click', async (e) => {
+    const envoyer = !!($('#inv-envoyer', m.el) && $('#inv-envoyer', m.el).checked);
+    e.target.disabled = true; e.target.textContent = envoyer ? 'Envoi en cours…' : 'Création…';
+    let r;
+    try { r = await api('users_bulk', { op, ids: personnes.map(u => Number(u.id)), envoyer }); }
+    catch (err) { e.target.disabled = false; e.target.textContent = reinit ? 'Réinitialiser' : 'Créer les liens'; return; }
+    m.close();
+    if (location.hash === '#/utilisateurs') await vueUtilisateurs();
+    modaleLiens(r.resultats);
+  });
+}
+
 async function vueUtilisateurs() {
   const token = S.vueToken;
   const main = $('#main');
@@ -5478,10 +6032,10 @@ async function vueUtilisateurs() {
   brancherExport('exp-users', () => ({
     base: 'utilisateurs', titre: 'Utilisateurs', sousTitre: rows.length + ' compte(s)', paysage: true,
     feuilles: [{ nom: 'Utilisateurs', colonnes: ['Nom', 'Identifiant', 'Email', 'Téléphone', 'Rôle', 'Type de compte',
-      'Tickets créés', 'Dernière connexion', 'Créé le', 'Compte'],
+      'Tickets créés', 'Dernière connexion', 'Créé le', 'Compte', 'Accès'],
       lignes: rows.map(u => [u.name, u.login || '', u.email || '', u.phone || '', ROLES[u.role] || u.role,
         u.auth === 'annuaire' ? 'Annuaire (Windows)' : 'Local', Number(u.ticket_count), u.last_login || 'jamais',
-        u.created_at || '', Number(u.active) ? 'Actif' : 'Désactivé']) }],
+        u.created_at || '', Number(u.active) ? 'Actif' : 'Désactivé', etatAcces(u).lbl]) }],
   }));
 
   const moi = Number(S.user.id);
@@ -5498,13 +6052,18 @@ async function vueUtilisateurs() {
     '<td data-l="Rôle">' + esc(ROLES[u.role] || u.role) + '</td>' +
     '<td data-l="Tickets">' + u.ticket_count + '</td>' +
     '<td data-l="Dernière connexion">' + (u.last_login ? fmtDate(u.last_login) : '<span class="role-tag">jamais</span>') + '</td>' +
-    '<td data-l="Compte">' + (Number(u.active) ? '<span class="chip st-resolu">Actif</span>' : '<span class="chip st-ferme">Désactivé</span>') + '</td>' +
+    // Une seule colonne : un compte désactivé n'a plus d'accès, quel que soit son état d'invitation.
+    (e => '<td data-l="Compte">' + (Number(u.active)
+      ? '<span class="chip ' + e.cls + '">' + esc(e.lbl) + '</span>' + (e.sub ? '<span class="t-sub">' + esc(e.sub) + '</span>' : '') +
+        (invitable(u) ? '<button type="button" class="btn-lien u-inviter" data-inviter="' + u.id + '">' +
+          (u.invite_expires ? 'Créer un nouveau lien' : 'Inviter') + '</button>' : '')
+      : '<span class="chip st-ferme">Désactivé</span>') + '</td>')(etatAcces(u)) +
     '<td class="sans-label"><button type="button" class="btn" data-id="' + u.id + '">Modifier</button></td>' +
     '</tr>'
   ).join('');
 
   const autres = rows.filter(u => Number(u.id) !== moi);
-  const jamais = autres.filter(u => !u.last_login), inactifs = autres.filter(u => !Number(u.active));
+  const jamais = autres.filter(u => !u.last_login), inactifs = autres.filter(u => !Number(u.active)), sansAcces = autres.filter(invitable);
   $('#zone-u').innerHTML =
     '<div class="recherche-u">' + ico('loupe') +
     '<input type="search" id="u-recherche" class="input" autocomplete="off" spellcheck="false" ' +
@@ -5512,7 +6071,8 @@ async function vueUtilisateurs() {
     '<span class="recherche-nb" id="u-recherche-nb" aria-live="polite"></span></div>' +
     '<p class="selection-rapide">Sélectionner : ' +
     '<button type="button" class="btn-lien" data-rapide="jamais">les comptes jamais connectés (' + jamais.length + ')</button> · ' +
-    '<button type="button" class="btn-lien" data-rapide="inactifs">les comptes désactivés (' + inactifs.length + ')</button></p>' +
+    '<button type="button" class="btn-lien" data-rapide="inactifs">les comptes désactivés (' + inactifs.length + ')</button> · ' +
+    '<button type="button" class="btn-lien" data-rapide="sansacces">les comptes sans accès (' + sansAcces.length + ')</button></p>' +
     '<div class="barre-lot hidden" id="barre-lot-u"></div>' +
     '<div class="tbl-wrap"><table class="tbl">' +
     '<thead><tr><th class="col-choix"><input type="checkbox" id="u-tout" aria-label="Tout sélectionner"></th>' +
@@ -5523,6 +6083,9 @@ async function vueUtilisateurs() {
 
   document.querySelectorAll('#zone-u button[data-id]').forEach(btn => {
     btn.addEventListener('click', () => modaleUtilisateur(rows.find(x => Number(x.id) === Number(btn.dataset.id))));
+  });
+  document.querySelectorAll('#zone-u button[data-inviter]').forEach(btn => {
+    btn.addEventListener('click', () => lancerInvitations('inviter', [rows.find(x => Number(x.id) === Number(btn.dataset.inviter))]));
   });
 
   /* ---- Sélection multiple : supprimer, désactiver, réactiver ---- */
@@ -5542,7 +6105,10 @@ async function vueUtilisateurs() {
     barre.classList.toggle('hidden', n === 0);
     if (!n) return;
     const nbActifs = sel.filter(u => Number(u.active)).length;
+    const nbInvit = sel.filter(invitable).length, nbReinit = sel.filter(u => u.auth !== 'annuaire' && Number(u.active) && Number(u.a_acces)).length;
     barre.innerHTML = '<span class="lot-nb">' + n + (n > 1 ? ' comptes sélectionnés' : ' compte sélectionné') + '</span>' +
+      (nbInvit ? '<button type="button" class="btn" data-op="inviter">Inviter' + (nbInvit < n ? ' (' + nbInvit + ')' : '') + '</button>' : '') +
+      (nbReinit ? '<button type="button" class="btn" data-op="reinitialiser">Réinitialiser l\'accès' + (nbReinit < n ? ' (' + nbReinit + ')' : '') + '</button>' : '') +
       (nbActifs ? '<button type="button" class="btn" data-op="desactiver">Désactiver</button>' : '') +
       (nbActifs < n ? '<button type="button" class="btn" data-op="reactiver">Réactiver</button>' : '') +
       '<button type="button" class="btn btn-danger" data-op="supprimer">' + ico('poubelle') + 'Supprimer</button>' +
@@ -5551,8 +6117,9 @@ async function vueUtilisateurs() {
   const selectionner = (filtre) => { cases().forEach(c => { c.checked = filtre(rows.find(u => Number(u.id) === Number(c.dataset.id))); }); majBarre(); };
   $('#u-tout').addEventListener('change', () => selectionner(() => $('#u-tout').checked));
   cases().forEach(c => c.addEventListener('change', majBarre));
+  const filtresRapides = { jamais: u => !u.last_login, inactifs: u => !Number(u.active), sansacces: invitable };
   document.querySelectorAll('#zone-u [data-rapide]').forEach(b => b.addEventListener('click', () =>
-    selectionner(b.dataset.rapide === 'jamais' ? (u => !u.last_login) : (u => !Number(u.active)))));
+    selectionner(filtresRapides[b.dataset.rapide])));
 
   /* ---- Recherche instantanée (filtre à chaque lettre, sans appel au serveur) ---- */
   const champ = $('#u-recherche');
@@ -5565,7 +6132,7 @@ async function vueUtilisateurs() {
     document.querySelectorAll('#zone-u tbody tr[data-uid]').forEach(tr => {
       const u = parId.get(tr.dataset.uid);
       // Uniquement des champs affichés : un mot caché (« actif »…) ferait apparaître des comptes sans raison visible.
-      const foin = rechercheNorm([u.name, u.login, u.email, u.phone, ROLES[u.role] || u.role].join(' '));
+      const foin = rechercheNorm([u.name, u.login, u.email, u.phone, ROLES[u.role] || u.role, etatAcces(u).lbl].join(' '));
       const ok = termes.every(t => foin.includes(t));
       tr.hidden = !ok;
       if (ok) n++;
@@ -5607,6 +6174,8 @@ async function vueUtilisateurs() {
     if (!b) return;
     const op = b.dataset.op, sel = choisis();
     if (op === 'annuler') { selectionner(() => false); return; }
+    if (op === 'inviter') { lancerInvitations(op, sel.filter(invitable)); return; }
+    if (op === 'reinitialiser') { lancerInvitations(op, sel.filter(u => u.auth !== 'annuaire' && Number(u.active) && Number(u.a_acces))); return; }
     const noms = (l) => '<ul class="liste-noms">' + l.map(u => '<li>' + esc(u.name) + '</li>').join('') + '</ul>';
     if (op === 'reactiver' || op === 'desactiver') {
       const cibles = sel.filter(u => op === 'reactiver' ? !Number(u.active) : Number(u.active));
@@ -5637,29 +6206,53 @@ async function vueUtilisateurs() {
 
 function modaleUtilisateur(u) {
   const creation = !u;
+  const windows = !!u && u.auth === 'annuaire';
+  const moi = !!u && Number(u.id) === Number(S.user.id);
+  const mixte = S.accesMode === 'mixte';
   const optRoles = Object.keys(ROLES).map(k =>
     '<option value="' + k + '"' + (u && u.role === k ? ' selected' : '') + '>' + esc(ROLES[k]) + '</option>'
   ).join('');
 
+  // Bloc « Accès » : où en est la personne, et ce qu'on peut faire pour elle.
+  let blocAcces = '';
+  if (creation) {
+    blocAcces = '<div class="encart-code">Pas de mot de passe à inventer : à la création, vous obtenez un <b>lien personnel</b> ' +
+      'à transmettre à la personne ; elle y choisit elle-même son mot de passe, que personne d\'autre ne connaîtra.' +
+      (mixte ? ' Vous pouvez aussi lui donner un mot de passe provisoire ci-dessous : il devra être changé à la première connexion.' : '') + '</div>' +
+      (S.mailActif ? '<div class="field"><label class="check"><input type="checkbox" id="mu-envoyer" checked> Envoyer l\'invitation par email dès la création</label></div>' : '');
+  } else if (!windows) {
+    const e = etatAcces(u);
+    blocAcces = '<div class="field"><span class="lbl-champ">Accès</span><div class="acces-ligne">' +
+      '<span class="chip ' + e.cls + '">' + esc(e.lbl) + '</span>' + (e.sub ? '<span class="aide">' + esc(e.sub) + '</span>' : '') +
+      (!moi && invitable(u) ? '<button type="button" class="btn" data-acces="inviter">' + (u.invite_expires ? 'Créer un nouveau lien' : 'Inviter') + '</button>' : '') +
+      (!moi && u.invite_expires && !Number(u.a_acces) ? '<button type="button" class="btn btn-ghost" data-acces="retirer">Annuler l\'invitation</button>' : '') +
+      (!moi && Number(u.a_acces) && Number(u.active) ? '<button type="button" class="btn" data-acces="reinitialiser">Réinitialiser l\'accès</button>' : '') +
+      '</div><div class="aide">' + (moi
+        ? 'Votre propre mot de passe se change par « Changer mon mot de passe », en haut à droite.'
+        : 'Mot de passe oublié : « Réinitialiser l\'accès » supprime l\'ancien mot de passe et crée un lien pour en choisir un nouveau.') +
+      '</div></div>';
+  }
+
   const m = modale(
     '<h2>' + (creation ? 'Ajouter un utilisateur' : 'Modifier ' + esc(u.name)) + '</h2>' +
     '<div class="field"><label for="mu-nom">Nom complet</label><input id="mu-nom" class="input" type="text" value="' + (u ? esc(u.name) : '') + '"></div>' +
-    (u && u.auth === 'annuaire'
+    (windows
       ? '<div class="encart-code">Ce compte vient de l\'annuaire : identifiant <b>' + esc(u.login) + '</b>. ' +
         'Son mot de passe est celui de sa session Windows et se gère dans Active Directory. ' +
         'Vous pouvez ici changer son rôle ou désactiver son accès à l\'outil.</div>'
       : '') +
-    '<div class="field"><label for="mu-email">Adresse email</label><input id="mu-email" class="input" type="email" value="' + (u ? esc(u.email) : '') + '"></div>' +
+    '<div class="field"><label for="mu-email">Adresse email</label><input id="mu-email" class="input" type="email" value="' + (u ? esc(u.email) : '') + '">' +
+    (windows ? '' : '<div class="aide">Sert aussi d\'identifiant de connexion.</div>') + '</div>' +
     '<div class="field"><label for="mu-tel">Téléphone ou poste (facultatif)</label><input id="mu-tel" class="input" type="text" value="' + (u ? esc(u.phone || '') : '') + '">' +
     '<div class="aide">Affiché sur ses tickets : permet de rappeler la personne sans chercher.</div></div>' +
     '<div class="field"><label for="mu-role">Rôle</label><select id="mu-role" class="input">' + optRoles + '</select>' +
     '<div class="aide">Employé : crée et suit ses propres demandes. Administrateur : voit et traite tous les tickets, gère les comptes et les réglages.</div></div>' +
-    (u && u.auth === 'annuaire' ? '' :
-    '<div class="field"><label for="mu-mdp">' + (creation ? 'Mot de passe (8 caractères minimum)' : 'Nouveau mot de passe') + '</label>' +
+    blocAcces +
+    (mixte && !windows && !moi ?
+    '<div class="field"><label for="mu-mdp">' + (creation ? 'Mot de passe provisoire (facultatif)' : 'Nouveau mot de passe provisoire (facultatif)') + '</label>' +
     '<div class="mdp-ligne"><input id="mu-mdp" class="input" type="text" autocomplete="new-password">' +
     '<button type="button" class="btn" id="mu-gen">Générer</button></div>' +
-    (creation ? '<div class="aide">Notez-le : il devra être communiqué à la personne.</div>'
-              : '<div class="aide">Laissez vide pour ne pas le changer. Les employés ne pouvant pas le modifier eux-mêmes, c\'est ici que vous le réinitialisez.</div>') + '</div>') +
+    '<div class="aide">À changer par la personne dès sa première connexion. Laissez vide pour ' + (creation ? 'passer par une invitation.' : 'ne rien changer.') + '</div></div>' : '') +
     '<div class="field"><label class="check"><input type="checkbox" id="mu-actif"' + (creation || Number(u.active) ? ' checked' : '') + '> Compte actif</label>' +
     "<div class=\"aide\">Décochez pour bloquer l'accès (départ d'un salarié) sans perdre l'historique.</div></div>" +
     '<div class="modal-actions">' +
@@ -5667,33 +6260,50 @@ function modaleUtilisateur(u) {
     '<button type="button" class="btn btn-primary" data-a="ok">' + (creation ? 'Créer le compte' : 'Enregistrer') + '</button></div>'
   );
 
-  // Mot de passe lisible et facile à dicter : deux mots + deux chiffres.
+  // Mot de passe lisible et facile à dicter, sans caractères ambigus (0/O, 1/l).
   const gen = m.el.querySelector('#mu-gen');
-  if (gen) gen.addEventListener('click', () => {
-    const mots = ['cafe', 'tasse', 'moulin', 'grain', 'arome', 'filtre', 'vapeur', 'sucre',
-                  'tempo', 'orage', 'sable', 'pivoine', 'ruche', 'lampe', 'saison', 'velours'];
-    const p = mots[Math.floor(Math.random() * mots.length)] + '-' +
-              mots[Math.floor(Math.random() * mots.length)] + '-' +
-              String(Math.floor(Math.random() * 90) + 10);
-    m.el.querySelector('#mu-mdp').value = p;
-  });
+  if (gen) gen.addEventListener('click', () => { m.el.querySelector('#mu-mdp').value = motDePasseProvisoire(); });
+
+  m.el.querySelectorAll('[data-acces]').forEach(b => b.addEventListener('click', async () => {
+    m.close();
+    if (b.dataset.acces === 'retirer') {
+      try { await api('user_invite_revoke', { id: u.id }); toast('Invitation annulée : le lien ne fonctionne plus.'); } catch (e) {}
+      vueUtilisateurs();
+      return;
+    }
+    lancerInvitations(b.dataset.acces, [u]);
+  }));
 
   m.el.querySelector('[data-a="annuler"]').addEventListener('click', m.close);
   m.el.querySelector('[data-a="ok"]').addEventListener('click', async () => {
+    const mdp = m.el.querySelector('#mu-mdp') ? m.el.querySelector('#mu-mdp').value : '';
+    const actif = m.el.querySelector('#mu-actif').checked;
+    let d;
     try {
-      await api('user_save', {
+      d = await api('user_save', {
         id: u ? u.id : 0,
         name: m.el.querySelector('#mu-nom').value.trim(),
         email: m.el.querySelector('#mu-email').value.trim(),
         phone: m.el.querySelector('#mu-tel').value.trim(),
         role: m.el.querySelector('#mu-role').value,
-        active: m.el.querySelector('#mu-actif').checked ? 1 : '',
-        password: m.el.querySelector('#mu-mdp') ? m.el.querySelector('#mu-mdp').value : '',
+        active: actif ? 1 : '',
+        password: mdp,
       });
-      m.close();
-      toast(creation ? 'Compte créé.' : 'Compte enregistré.');
-      vueUtilisateurs();
-    } catch (e) {}
+    } catch (e) { return; }
+    const envoyer = !!(m.el.querySelector('#mu-envoyer') && m.el.querySelector('#mu-envoyer').checked);
+    m.close();
+    if (creation && !mdp && actif) {
+      // Compte créé sans mot de passe : on enchaîne directement sur son lien d'accès.
+      let r = null;
+      try { r = await api('user_invite', { id: d.id, envoyer }); } catch (e) {}
+      await vueUtilisateurs();
+      if (r) modaleLiens([r]);
+      return;
+    }
+    toast(creation ? (mdp ? 'Compte créé avec un mot de passe provisoire, à changer à la première connexion.'
+                          : 'Compte créé. Invitez la personne une fois le compte activé.')
+                   : (mdp ? 'Mot de passe provisoire enregistré : ses sessions ouvertes sont fermées.' : 'Compte enregistré.'));
+    vueUtilisateurs();
   });
 }
 
@@ -5731,7 +6341,7 @@ async function vueParametres() {
 
   main.innerHTML =
     '<div class="page-head"><div><h1>Paramètres</h1>' +
-    "<p class=\"sous-titre\">Identité, fonctionnement, messagerie et annuaire</p></div>" +
+    "<p class=\"sous-titre\">Identité, fonctionnement, sécurité des accès, messagerie et annuaire</p></div>" +
     '<div class="page-actions">' +
     '<a class="btn" href="' + D8_APP + '?page=verification">Vérifier l\'installation</a>' +
     '<a class="btn" href="' + D8_APP + '?action=backup">' + ico('save') +
@@ -5756,20 +6366,52 @@ async function vueParametres() {
     '<div class="field"><label for="rg-autoclose">Fermer un ticket résolu après (jours)</label>' +
     '<input id="rg-autoclose" class="input" type="number" min="0" max="90" value="' + esc(c.auto_close_days) + '">' +
     '<div class="aide">0 = ne jamais fermer automatiquement.</div></div>' +
-    '<div class="field"><label for="rg-idle">Déconnexion après inactivité (minutes)</label>' +
-    '<input id="rg-idle" class="input" type="number" min="0" max="480" value="' + esc(c.idle_minutes) + '">' +
-    '<div class="aide">0 = jamais. Utile si des postes partagés (atelier, quai) restent ouverts ' +
-    'sans surveillance ; inutilement pénible sur des postes individuels.</div></div>' +
     '<div class="field"><label for="rg-purge">Supprimer les tickets fermés après (mois)</label>' +
     '<input id="rg-purge" class="input" type="number" min="0" max="120" value="' + esc(c.purge_months) + '">' +
     '<div class="aide"><b>0 = ne jamais supprimer.</b> Au-delà de zéro, les tickets fermés depuis ' +
     'plus longtemps sont effacés définitivement, avec leurs messages et leurs pièces jointes. ' +
     'Utile pour ne pas conserver indéfiniment des noms, des adresses et des captures d\'écran. ' +
     'La suppression est irréversible : gardez une sauvegarde.</div></div>' +
+    '</div></div>' +
+
+    '<div class="card" id="carte-securite"><h2>Sécurité des accès</h2>' +
+    '<p class="sous-titre">Comme pour le planning : personne ne crée son accès sans invitation, chacun choisit son mot de passe, ' +
+    'et l\'outil peut être réservé aux postes de l\'entreprise.</p>' +
+    '<div class="field"><label for="rg-mode">Création des accès</label><select id="rg-mode" class="input">' +
+    '<option value="invitation"' + (c.acces_mode !== 'mixte' ? ' selected' : '') + '>Sur invitation uniquement (recommandé)</option>' +
+    '<option value="mixte"' + (c.acces_mode === 'mixte' ? ' selected' : '') + '>Invitation, ou mot de passe provisoire donné par l\'administrateur</option>' +
+    '</select><div class="aide">Invitation : l\'administrateur crée la fiche et transmet un lien personnel ; la personne y choisit son mot de passe, ' +
+    'que personne d\'autre ne connaît. Le mot de passe provisoire dépanne une personne sans adresse email consultable ; il doit être changé à la première connexion.</div></div>' +
+    '<div class="deux-col">' +
+    '<div class="field"><label for="rg-invj">Validité d\'un lien d\'invitation (jours)</label>' +
+    '<input id="rg-invj" class="input" type="number" min="1" max="30" value="' + esc(c.invite_days) + '">' +
+    '<div class="aide">De 1 à 30. Un lien ne sert qu\'une fois ; en créer un nouveau annule le précédent.</div></div>' +
+    '<div class="field"><label for="rg-mdpmin">Longueur minimale des mots de passe</label>' +
+    '<input id="rg-mdpmin" class="input" type="number" min="8" max="64" value="' + esc(c.password_min) + '">' +
+    '<div class="aide">De 8 à 64. 12 est un bon niveau ; une phrase de plusieurs mots est plus facile à retenir qu\'un mot compliqué. ' +
+    'S\'applique aux prochains mots de passe choisis, pas aux actuels.</div></div>' +
+    '<div class="field"><label for="rg-echecs">Échecs de connexion tolérés par poste</label>' +
+    '<input id="rg-echecs" class="input" type="number" min="3" max="100" value="' + esc(c.login_max_fails) + '">' +
+    '<div class="aide">Au-delà, le poste est bloqué. Attention aux postes qui partagent une même adresse (serveur de bureau à distance, ' +
+    'Wi-Fi derrière une passerelle) : les erreurs de tous s\'additionnent.</div></div>' +
+    '<div class="field"><label for="rg-blocage">Durée du blocage (minutes)</label>' +
+    '<input id="rg-blocage" class="input" type="number" min="1" max="1440" value="' + esc(c.login_lock_minutes) + '"></div>' +
+    '<div class="field"><label for="rg-idle">Déconnexion après inactivité (minutes)</label>' +
+    '<input id="rg-idle" class="input" type="number" min="0" max="480" value="' + esc(c.idle_minutes) + '">' +
+    '<div class="aide">0 = jamais. Utile si des postes partagés (atelier, quai) restent ouverts ' +
+    'sans surveillance ; inutilement pénible sur des postes individuels.</div></div>' +
     '</div>' +
     '<div class="field"><label class="check"><input type="checkbox" id="rg-mdp"' + (c.allow_user_password === '1' ? ' checked' : '') + '> ' +
     'Autoriser les employés à changer leur mot de passe</label>' +
-    "<div class=\"aide\">Décoché : seul l'administrateur réinitialise les mots de passe depuis l'écran Utilisateurs.</div></div></div>" +
+    "<div class=\"aide\">Décoché : un employé qui veut en changer passe par le service informatique (« Réinitialiser l'accès »). " +
+    'Un mot de passe provisoire se change toujours, quel que soit ce réglage.</div></div>' +
+    '<div class="field"><label for="rg-nets">Réseaux autorisés</label>' +
+    '<textarea id="rg-nets" class="input" rows="4" spellcheck="false" placeholder="Vide : tous les postes qui joignent le serveur">' + esc(c.allowed_nets) + '</textarea>' +
+    '<div class="aide">Une adresse ou un réseau par ligne (192.168.1.0/24, 10.0.0.0/8, 192.168.1.50). Hors de ces plages, l\'outil ne répond pas, ' +
+    'même l\'écran de connexion. Votre poste : <b>' + esc(c.mon_ip || 'inconnu') + '</b> — l\'enregistrement est refusé s\'il n\'est pas dans la liste. ' +
+    'La console du serveur (127.0.0.1) reste toujours autorisée : c\'est le recours en cas d\'erreur.</div>' +
+    '<button type="button" class="btn" id="rg-nets-prives">Proposer les réseaux privés (10.x, 172.16-31.x, 192.168.x)</button></div>' +
+    '</div>' +
 
     '<div class="card"><h2>Connexion par l\'annuaire de l\'entreprise</h2>' +
     (c.ldap_disponible
@@ -5837,6 +6479,13 @@ async function vueParametres() {
     '<button class="btn btn-primary" type="submit">Enregistrer les réglages</button>' +
     '</form>';
 
+  $('#rg-nets-prives').addEventListener('click', () => {
+    const z = $('#rg-nets'), deja = z.value.split('\n').map(x => x.trim());
+    const ajout = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'].filter(n => !deja.includes(n));
+    z.value = (z.value.trim() ? z.value.trim() + '\n' : '') + ajout.join('\n');
+    z.focus();
+  });
+
   const btnLdap = $('#rg-ltest');
   if (btnLdap) btnLdap.addEventListener('click', async () => {
     const zone = $('#rg-ltrace');
@@ -5878,6 +6527,12 @@ async function vueParametres() {
         idle_minutes: $('#rg-idle').value,
         purge_months: $('#rg-purge').value,
         allow_user_password: $('#rg-mdp').checked ? '1' : '0',
+        acces_mode: $('#rg-mode').value,
+        invite_days: $('#rg-invj').value,
+        password_min: $('#rg-mdpmin').value,
+        login_max_fails: $('#rg-echecs').value,
+        login_lock_minutes: $('#rg-blocage').value,
+        allowed_nets: $('#rg-nets').value,
         mail_enabled: $('#rg-mail').checked ? '1' : '0',
         mail_host: $('#rg-host').value.trim(),
         mail_port: $('#rg-port').value,
@@ -6416,7 +7071,7 @@ function modaleMotDePasse() {
   const m = modale(
     '<h2>Changer mon mot de passe</h2>' +
     '<div class="field"><label for="mp-actuel">Mot de passe actuel</label><input id="mp-actuel" class="input" type="password" autocomplete="current-password"></div>' +
-    '<div class="field"><label for="mp-nouveau">Nouveau mot de passe (8 caractères minimum)</label><input id="mp-nouveau" class="input" type="password" autocomplete="new-password"></div>' +
+    '<div class="field"><label for="mp-nouveau">Nouveau mot de passe (' + S.passwordMin + ' caractères minimum)</label><input id="mp-nouveau" class="input" type="password" autocomplete="new-password"></div>' +
     '<div class="field"><label for="mp-confirme">Confirmez le nouveau mot de passe</label><input id="mp-confirme" class="input" type="password" autocomplete="new-password"></div>' +
     '<div class="modal-actions">' +
     '<button type="button" class="btn" data-a="annuler">Annuler</button>' +
@@ -6425,12 +7080,12 @@ function modaleMotDePasse() {
   m.el.querySelector('[data-a="annuler"]').addEventListener('click', m.close);
   m.el.querySelector('[data-a="ok"]').addEventListener('click', async () => {
     const nouveau = m.el.querySelector('#mp-nouveau').value;
-    if (nouveau.length < 8) { toast('Le nouveau mot de passe doit contenir au moins 8 caractères.', true); return; }
+    if (nouveau.length < S.passwordMin) { toast('Le nouveau mot de passe doit contenir au moins ' + S.passwordMin + ' caractères.', true); return; }
     if (nouveau !== m.el.querySelector('#mp-confirme').value) { toast('Les deux nouveaux mots de passe ne sont pas identiques.', true); return; }
     try {
       await api('password_change', { current: m.el.querySelector('#mp-actuel').value, new: nouveau });
       m.close();
-      toast('Mot de passe modifié.');
+      toast('Mot de passe modifié. Vos autres sessions ouvertes (autres postes) sont fermées.');
     } catch (e) {}
   });
 }
@@ -6547,6 +7202,24 @@ $__selfH = htmlspecialchars($__self, ENT_QUOTES, 'UTF-8');
 // navigateur les garde en cache, mais dès qu'index.php est remplacé l'adresse
 // change et la nouvelle version est chargée aussitôt (sans Ctrl+F5).
 $__ver = substr(md5(__FILE__ . '|' . (string) @filemtime(__FILE__) . '|' . (string) @filesize(__FILE__)), 0, 10);
+
+// Réseaux autorisés (Paramètres › Sécurité des accès) : hors de ces plages,
+// l'outil ne répond pas, même l'écran de connexion.
+if (!ip_autorisee((string) ($_SERVER['REMOTE_ADDR'] ?? ''), reseaux_lire(setting_get('allowed_nets'))['reseaux'])) {
+    http_response_code(403);
+    $__msg = 'Accès refusé depuis ce poste (adresse ' . ip_normaliser((string) ($_SERVER['REMOTE_ADDR'] ?? '')) . ') : '
+           . "l'outil n'est ouvert qu'aux postes du réseau de l'entreprise. Si c'est une erreur, prévenez le service informatique.";
+    if ($__action !== '') {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => $__msg], JSON_UNESCAPED_UNICODE);
+    } else {
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!doctype html><meta charset="utf-8"><title>Accès refusé</title>'
+           . '<p style="font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem">'
+           . htmlspecialchars($__msg, ENT_QUOTES, 'UTF-8') . '</p>';
+    }
+    exit;
+}
 
 // Ressources statiques servies par le fichier lui-même (CSP « self » conservée,
 // et mises en cache par le navigateur).
@@ -7119,13 +7792,22 @@ function current_user(): ?array
     if (!$estPing) {
         $_SESSION['last_seen'] = time();
     }
-    $st = db()->prepare('SELECT id, name, login, email, role, phone, auth, active FROM users WHERE id = ?');
+    $st = db()->prepare('SELECT id, name, login, email, role, phone, auth, active, must_change, acces_gen FROM users WHERE id = ?');
     $st->execute([(int) $_SESSION['uid']]);
     $u = $st->fetch();
     if (!$u || !(int) $u['active']) {
         unset($_SESSION['uid']);
         return null;
     }
+    // Mot de passe changé ou accès réinitialisé depuis l'ouverture de cette
+    // session : elle ne vaut plus rien (poste oublié ouvert, mot de passe volé).
+    if ((int) ($_SESSION['gen'] ?? 0) !== (int) $u['acces_gen']) {
+        $_SESSION = [];
+        session_destroy();
+        return null;
+    }
+    unset($u['acces_gen']);
+    $u['must_change'] = (int) $u['must_change'];
     return $u;
 }
 function require_auth(): array
@@ -7133,6 +7815,10 @@ function require_auth(): array
     $u = current_user();
     if (!$u) {
         fail('Vous devez être connecté.', 401);
+    }
+    // Mot de passe provisoire : rien d'autre n'est possible tant qu'il n'est pas remplacé.
+    if ($u['must_change'] && !in_array((string) ($GLOBALS['action'] ?? ''), ['password_change'], true)) {
+        fail('Choisissez d\'abord votre mot de passe : le mot de passe provisoire ne sert qu\'à la première connexion.', 403);
     }
     return $u;
 }
@@ -7696,6 +8382,7 @@ const ACTIONS_MODIFIANTES = [
     'ticket_close_own', 'ticket_reopen_own', 'comment_add',
     'user_save', 'settings_save', 'mail_test', 'ldap_test',
     'procedure_save', 'procedure_delete', 'tickets_bulk', 'db_optimize', 'tickets_import', 'users_bulk',
+    'user_invite', 'user_invite_revoke', 'invitation_info', 'invitation_accept',
 ];
 if (in_array($action, ACTIONS_MODIFIANTES, true) && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Allow: POST');
@@ -7734,6 +8421,9 @@ case 'boot': {
         'can_change_password' => $u ? ($u['auth'] !== 'annuaire'
                                         && (is_staff($u) || setting_get('allow_user_password') === '1')) : false,
         'annuaire_actif' => setting_get('ldap_enabled') === '1',
+        'password_min'   => mdp_min(),
+        'acces_mode'     => $u && is_staff($u) ? acces_mode() : '',
+        'mail_actif'     => $u && is_staff($u) && setting_get('mail_enabled') === '1',
     ]);
 }
 
@@ -7760,10 +8450,7 @@ case 'setup': {
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         fail('Adresse email invalide.');
     }
-    if (len($pass) < 8) {
-        fail('Le mot de passe doit contenir au moins 8 caractères.');
-    }
-    if ($raison = mot_de_passe_faible($pass, $name, $email)) {
+    if ($raison = mdp_refus($pass, $name, $email)) {
         fail($raison);
     }
 
@@ -7775,6 +8462,7 @@ case 'setup': {
 
     session_regenerate_id(true);
     $_SESSION['uid']  = (int) db()->lastInsertId();
+    $_SESSION['gen']  = 0;
     $_SESSION['csrf'] = bin2hex(random_bytes(16));
     ok(['user' => current_user(), 'csrf' => csrf_token()]);
 }
@@ -7789,15 +8477,12 @@ case 'login': {
     // s'appuie donc sur le journal, qui compte les échecs par poste.
     $fails = (int) ($_SESSION['login_fails'] ?? 0);
     $last  = (int) ($_SESSION['login_last'] ?? 0);
-    if ($fails >= 8 && (time() - $last) < 300) {
-        fail('Trop de tentatives. Patientez 5 minutes puis réessayez.', 429);
+    [$maxEchecs, $minutesBlocage] = limite_echecs();
+    if ($fails >= $maxEchecs && (time() - $last) < $minutesBlocage * 60) {
+        fail('Trop de tentatives. Patientez ' . $minutesBlocage . ' minute' . ($minutesBlocage > 1 ? 's' : '') . ' puis réessayez.', 429);
     }
-    if ($ip !== '') {
-        $st = db()->prepare('SELECT COUNT(*) FROM logins WHERE ip = ? AND success = 0 AND created_at > ?');
-        $st->execute([$ip, date('Y-m-d H:i:s', time() - 300)]);
-        if ((int) $st->fetchColumn() >= 10) {
-            fail('Trop de tentatives depuis ce poste. Patientez 5 minutes puis réessayez.', 429);
-        }
+    if ($bloque = poste_bloque($ip)) {
+        fail($bloque, 429);
     }
 
     // On accepte l'identifiant de connexion comme l'adresse email : selon la
@@ -7851,6 +8536,7 @@ case 'login': {
             unset($_SESSION['login_fails'], $_SESSION['login_last']);
             session_regenerate_id(true);
             $_SESSION['uid']  = (int) $u['id'];
+            $_SESSION['gen']  = (int) ($u['acces_gen'] ?? 0);
             $_SESSION['csrf'] = bin2hex(random_bytes(16));
             ok(['user' => current_user(), 'csrf' => csrf_token(), 'site_annuaire' => $r['site']]);
         }
@@ -7892,6 +8578,7 @@ case 'login': {
     unset($_SESSION['login_fails'], $_SESSION['login_last']);
     session_regenerate_id(true);
     $_SESSION['uid']  = (int) $u['id'];
+    $_SESSION['gen']  = (int) $u['acces_gen'];
     $_SESSION['csrf'] = bin2hex(random_bytes(16));
     ok(['user' => current_user(), 'csrf' => csrf_token()]);
 }
@@ -7912,7 +8599,8 @@ case 'password_change': {
         fail('Votre mot de passe est celui de votre session Windows : il se change '
              . 'directement sur votre poste, pas ici.', 403);
     }
-    if (!is_staff($me) && setting_get('allow_user_password') !== '1') {
+    // Un mot de passe provisoire se remplace toujours, quel que soit le réglage.
+    if (!$me['must_change'] && !is_staff($me) && setting_get('allow_user_password') !== '1') {
         fail("Le changement de mot de passe est réservé au service informatique. Contactez-le pour en obtenir un nouveau.", 403);
     }
     $b       = body();
@@ -7924,17 +8612,22 @@ case 'password_change': {
     $hash = (string) $st->fetchColumn();
 
     if (!password_verify($current, $hash)) {
-        fail('Le mot de passe actuel est incorrect.');
+        fail($me['must_change'] ? 'Le mot de passe provisoire est incorrect.' : 'Le mot de passe actuel est incorrect.');
     }
-    if (len($new) < 8) {
-        fail('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+    if (hash_equals($current, $new)) {
+        fail('Choisissez un mot de passe différent de l\'actuel.');
     }
-    if ($raison = mot_de_passe_faible($new, $me['name'], $me['email'])) {
+    if ($raison = mdp_refus($new, $me['name'], $me['email'])) {
         fail($raison);
     }
-    db()->prepare('UPDATE users SET password = ? WHERE id = ?')
+    // Les autres sessions de la personne (autre poste, poste partagé) sont
+    // coupées ; celle-ci reste ouverte.
+    db()->prepare('UPDATE users SET password = ?, must_change = 0, acces_gen = acces_gen + 1 WHERE id = ?')
         ->execute([password_hash($new, PASSWORD_DEFAULT), (int) $me['id']]);
-    ok();
+    $st = db()->prepare('SELECT acces_gen FROM users WHERE id = ?');
+    $st->execute([(int) $me['id']]);
+    $_SESSION['gen'] = (int) $st->fetchColumn();
+    ok(['user' => current_user()]);
 }
 
 /* ===================== Interrogation périodique ========================= */
@@ -8826,7 +9519,9 @@ case 'users_list': {
                 (SELECT COUNT(*) FROM comments c WHERE c.user_id = u.id) AS comment_count,
                 (SELECT COUNT(*) FROM attachments a WHERE a.uploaded_by = u.id) AS attachment_count,
                 (SELECT COUNT(*) FROM tickets t WHERE t.assigned_to = u.id) AS assigned_count,
-                (SELECT MAX(created_at) FROM logins l WHERE l.user_id = u.id AND l.success = 1) AS last_login
+                (SELECT MAX(created_at) FROM logins l WHERE l.user_id = u.id AND l.success = 1) AS last_login,
+                (u.password != \'\') AS a_acces, u.must_change,
+                (SELECT MAX(expires_at) FROM invitations i WHERE i.user_id = u.id) AS invite_expires
          FROM users u ORDER BY u.active DESC, u.name COLLATE NOCASE'
     )->fetchAll();
     ok($rows);
@@ -8896,20 +9591,34 @@ case 'user_save': {
         }
     }
 
+    // Mot de passe saisi par l'administrateur : seulement en mode « mixte »,
+    // et toujours provisoire (à changer à la première connexion).
+    if ($pass !== '') {
+        if (acces_mode() === 'invitation') {
+            fail('Les mots de passe ne se saisissent pas ici : chacun choisit le sien grâce à une invitation. '
+                 . '(Réglage « Création des accès » dans Paramètres.)');
+        }
+        if ($id > 0 && $id === (int) $me['id']) {
+            fail('Pour votre propre mot de passe, utilisez « Changer mon mot de passe ».');
+        }
+        if ($raison = mdp_refus($pass, $name, $email)) {
+            fail($raison);
+        }
+    }
+    if (!$active && $id > 0) {
+        db()->prepare('DELETE FROM invitations WHERE user_id = ?')->execute([$id]);
+    }
+
     if ($id > 0) {
         if ($pass !== '') {
-            if (len($pass) < 8) {
-                fail('Le mot de passe doit contenir au moins 8 caractères.');
-            }
-            if ($raison = mot_de_passe_faible($pass, $name, $email)) {
-                fail($raison);
-            }
             if ($venuDeLAnnuaire) {
                 fail('Ce compte se connecte avec le mot de passe de la session Windows : '
                      . 'il se change dans Active Directory, pas ici.');
             }
-            db()->prepare('UPDATE users SET name=?, email=?, login=?, phone=?, role=?, active=?, password=? WHERE id=?')
+            db()->prepare('UPDATE users SET name=?, email=?, login=?, phone=?, role=?, active=?, password=?,
+                                            must_change = 1, acces_gen = acces_gen + 1 WHERE id=?')
                 ->execute([$name, $email, $email, $phone, $role, $active, password_hash($pass, PASSWORD_DEFAULT), $id]);
+            db()->prepare('DELETE FROM invitations WHERE user_id = ?')->execute([$id]);
         } elseif ($venuDeLAnnuaire) {
             // On ne touche ni au login ni au mode d'authentification.
             db()->prepare('UPDATE users SET name=?, email=?, phone=?, role=?, active=? WHERE id=?')
@@ -8921,16 +9630,97 @@ case 'user_save': {
         ok(['id' => $id]);
     }
 
-    if (len($pass) < 8) {
-        fail('Le mot de passe doit contenir au moins 8 caractères.');
+    // Sans mot de passe, le compte existe mais personne ne peut s'en servir
+    // tant que l'invitation n'a pas été acceptée.
+    db()->prepare('INSERT INTO users (name, login, email, password, phone, role, active, created_at, must_change)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$name, $email, $email, $pass === '' ? '' : password_hash($pass, PASSWORD_DEFAULT),
+                   $phone, $role, $active, now(), $pass === '' ? 0 : 1]);
+    ok(['id' => (int) db()->lastInsertId(), 'a_acces' => $pass !== '']);
+}
+
+/* ------------------------------------------------ accès sur invitation */
+
+case 'user_invite': {
+    $me = require_auth();
+    require_role($me, ['admin']);
+    check_csrf();
+    $b = body();
+    if (!empty($b['envoyer'])) {
+        session_write_close();   // l'envoi peut prendre quelques secondes
     }
-    if ($raison = mot_de_passe_faible($pass, $name, $email)) {
+    $r = creer_invitation((int) ($b['id'] ?? 0), $me, !empty($b['reinitialiser']), !empty($b['envoyer']));
+    if (!$r['ok']) {
+        fail(ucfirst($r['name'] !== '' ? $r['name'] . ' : ' . $r['detail'] : $r['detail']) . '.', $r['code']);
+    }
+    ok($r);
+}
+
+case 'user_invite_revoke': {
+    $me = require_auth();
+    require_role($me, ['admin']);
+    check_csrf();
+    $st = db()->prepare('DELETE FROM invitations WHERE user_id = ?');
+    $st->execute([(int) (body()['id'] ?? 0)]);
+    ok(['retirees' => $st->rowCount()]);
+}
+
+/* Lien d'invitation : pour qui est-il ? Envoyé en POST pour que le lien
+   n'apparaisse jamais dans les journaux du serveur web. */
+case 'invitation_info': {
+    $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($bloque = poste_bloque($ip)) {
+        fail($bloque, 429);
+    }
+    $i = invitation_trouver(body()['token'] ?? '');
+    if (!$i) {
+        db()->prepare('INSERT INTO logins (user_id, email, success, ip, created_at) VALUES (NULL, ?, 0, ?, ?)')
+            ->execute(['(lien d\'invitation non valable)', $ip, now()]);
+        usleep(300000);
+        fail("Ce lien n'est plus valable : il a déjà servi, a été remplacé par un plus récent ou a expiré. "
+             . 'Demandez-en un nouveau au service informatique.', 404);
+    }
+    ok(['name' => $i['name'], 'email' => $i['email'], 'expires' => $i['expires_at'],
+        'reinitialisation' => $i['kind'] === 'reinitialisation', 'password_min' => mdp_min()]);
+}
+
+case 'invitation_accept': {
+    $b  = body();
+    $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($bloque = poste_bloque($ip)) {
+        fail($bloque, 429);
+    }
+    $i = invitation_trouver($b['token'] ?? '');
+    if (!$i) {
+        db()->prepare('INSERT INTO logins (user_id, email, success, ip, created_at) VALUES (NULL, ?, 0, ?, ?)')
+            ->execute(['(lien d\'invitation non valable)', $ip, now()]);
+        usleep(300000);
+        fail("Ce lien n'est plus valable : il a déjà servi, a été remplacé par un plus récent ou a expiré. "
+             . 'Demandez-en un nouveau au service informatique.', 404);
+    }
+    $pass = (string) ($b['password'] ?? '');
+    if ($raison = mdp_refus($pass, $i['name'], $i['email'])) {
         fail($raison);
     }
-    db()->prepare('INSERT INTO users (name, login, email, password, phone, role, active, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$name, $email, $email, password_hash($pass, PASSWORD_DEFAULT), $phone, $role, $active, now()]);
-    ok(['id' => (int) db()->lastInsertId()]);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE users SET password = ?, must_change = 0, acces_gen = acces_gen + 1 WHERE id = ?')
+            ->execute([password_hash($pass, PASSWORD_DEFAULT), (int) $i['id']]);
+        $pdo->prepare('DELETE FROM invitations WHERE user_id = ?')->execute([(int) $i['id']]);   // le lien ne sert qu'une fois
+        $pdo->prepare('INSERT INTO logins (user_id, email, success, ip, created_at) VALUES (?, ?, 1, ?, ?)')
+            ->execute([(int) $i['id'], $i['email'], $ip, now()]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    session_regenerate_id(true);
+    $_SESSION = [];
+    $_SESSION['uid']  = (int) $i['id'];
+    $_SESSION['gen']  = (int) $i['acces_gen'] + 1;
+    $_SESSION['csrf'] = bin2hex(random_bytes(16));
+    ok(['user' => current_user(), 'csrf' => csrf_token()]);
 }
 
 /*
@@ -8948,8 +9738,25 @@ case 'users_bulk': {
     $b   = body();
     $op  = (string) ($b['op'] ?? '');
     $ids = array_values(array_unique(array_map('intval', is_array($b['ids'] ?? null) ? $b['ids'] : [])));
-    if (!in_array($op, ['supprimer', 'desactiver', 'reactiver'], true) || !$ids || count($ids) > 1000) {
+    if (!in_array($op, ['supprimer', 'desactiver', 'reactiver', 'inviter', 'reinitialiser'], true) || !$ids || count($ids) > 1000) {
         fail('Demande invalide.');
+    }
+    // Invitations groupées : un lien par personne, envoyé par email si demandé.
+    if ($op === 'inviter' || $op === 'reinitialiser') {
+        $envoyer = !empty($b['envoyer']);
+        if ($envoyer) {
+            session_write_close();
+        }
+        $resultats = [];
+        foreach ($ids as $id) {
+            $r = creer_invitation($id, $me, $op === 'reinitialiser', $envoyer);
+            if (!$r['ok']) {
+                $r['resultat'] = $r['code'] === 409 ? 'Inchangé' : 'Refusé';
+            }
+            unset($r['ok'], $r['code']);
+            $resultats[] = $r;
+        }
+        ok(['resultats' => $resultats]);
     }
     $pdo = db();
     $adminsActifs = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1")->fetchColumn();
@@ -9002,6 +9809,7 @@ case 'users_bulk': {
                     continue;
                 }
                 $pdo->prepare('UPDATE users SET active = 0 WHERE id = ?')->execute([$id]);
+                $pdo->prepare('DELETE FROM invitations WHERE user_id = ?')->execute([$id]);
                 if ($adminActif) { $adminsActifs--; }
                 $resultats[] = $r + ['resultat' => 'Désactivé', 'detail' => $raison];
                 continue;
@@ -9048,6 +9856,13 @@ case 'settings_get': {
         'stale_days'          => setting_get('stale_days', '3'),
         'auto_close_days'     => setting_get('auto_close_days', '7'),
         'idle_minutes'        => setting_get('idle_minutes', '0'),
+        'acces_mode'          => acces_mode(),
+        'invite_days'         => setting_get('invite_days', '7'),
+        'password_min'        => (string) mdp_min(),
+        'login_max_fails'     => (string) limite_echecs()[0],
+        'login_lock_minutes'  => (string) limite_echecs()[1],
+        'allowed_nets'        => setting_get('allowed_nets'),
+        'mon_ip'              => ip_normaliser((string) ($_SERVER['REMOTE_ADDR'] ?? '')),
         'ldap_disponible'     => annuaire_disponible(),
         'ldap_enabled'        => setting_get('ldap_enabled', '0'),
         'ldap_host'           => setting_get('ldap_host'),
@@ -9122,6 +9937,30 @@ case 'settings_save': {
             fail('La liste « ' . ($key === 'categories' ? 'catégories' : 'sites') . ' » ne peut pas être vide.');
         }
         setting_save_list($key, $clean);
+    }
+
+    // Réseaux autorisés : refusés si la liste couperait l'accès au poste de l'administrateur.
+    if (array_key_exists('allowed_nets', $b)) {
+        $l = reseaux_lire((string) $b['allowed_nets']);
+        if ($l['erreurs']) {
+            fail('Adresse ou réseau non compris : « ' . mb_substr($l['erreurs'][0], 0, 60) . ' ». '
+                 . 'Exemples valables : 192.168.1.0/24, 10.0.0.0/8, 192.168.1.50.');
+        }
+        $monIp = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        if (!ip_autorisee($monIp, $l['reseaux'])) {
+            fail('Votre poste (' . ip_normaliser($monIp) . ') ne fait pas partie de cette liste : en enregistrant, '
+                 . 'vous vous couperiez l\'accès. Ajoutez son adresse ou son réseau.');
+        }
+        setting_set('allowed_nets', implode("\n", $l['reseaux']));
+    }
+    if (array_key_exists('acces_mode', $b)) {
+        setting_set('acces_mode', $b['acces_mode'] === 'mixte' ? 'mixte' : 'invitation');
+    }
+    foreach (['invite_days' => [1, 30], 'password_min' => [8, 64], 'login_max_fails' => [3, 100],
+              'login_lock_minutes' => [1, 1440]] as $key => [$mini, $maxi]) {
+        if (array_key_exists($key, $b)) {
+            setting_set($key, (string) min($maxi, max($mini, (int) $b[$key])));
+        }
     }
 
     $simples = ['app_name', 'ref_prefix', 'stale_days', 'auto_close_days', 'allow_user_password', 'idle_minutes', 'purge_months',

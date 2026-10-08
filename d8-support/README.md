@@ -68,8 +68,46 @@ du script.
 - **Tickets importés :** nouvelle référence (l'ancienne est notée dans la
   description), aucun courriel envoyé, doublons ignorés si l'on relance le
   même fichier.
-- **Comptes importés :** mot de passe provisoire listé dans le rapport, à
-  transmettre individuellement puis à supprimer.
+- **Comptes importés :** le rapport donne le lien d'invitation de chaque
+  compte créé (ou son mot de passe provisoire en mode « mixte ») : à
+  transmettre individuellement, puis supprimer le fichier.
+
+## D8 Support : accès sécurisés
+
+Même principe que le planning : personne ne crée son accès sans invitation.
+
+- **Premier administrateur** : à l'installation, avec le code à 6 caractères
+  (voir plus haut).
+- **Tous les autres** : *Administration › Utilisateurs › Ajouter un
+  utilisateur*. L'administrateur ne saisit aucun mot de passe : il obtient un
+  **lien personnel**, à usage unique, valable 7 jours par défaut. Il peut le
+  copier, l'ouvrir dans sa messagerie (« Préparer un email ») ou le faire
+  envoyer par l'outil si la messagerie est configurée. En l'ouvrant, la
+  personne choisit son mot de passe ; personne d'autre ne le connaît.
+- **Mot de passe oublié** : fiche de la personne › « Réinitialiser l'accès ».
+  L'ancien mot de passe est supprimé, ses sessions ouvertes sont fermées, et
+  un nouveau lien est créé. Un nouveau lien annule toujours le précédent.
+- **Plusieurs personnes d'un coup** : cocher les comptes (ou « les comptes
+  sans accès »), puis **Inviter**.
+- Seule l'empreinte (SHA-256) de chaque lien est gardée en base : une copie
+  de la base ou d'une sauvegarde ne permet pas de s'en servir. Le lien est
+  placé après le `#` de l'adresse : il n'apparaît pas dans les journaux d'IIS.
+
+Réglages dans *Paramètres › Sécurité des accès* :
+
+| Réglage | Défaut | Rôle |
+|---|---|---|
+| Création des accès | Sur invitation uniquement | « Mixte » permet aussi de donner un mot de passe provisoire (personne sans email consultable) ; il doit être changé à la première connexion. |
+| Validité d'un lien | 7 jours | De 1 à 30. |
+| Longueur minimale | 10 caractères | De 8 à 64. Ne s'applique qu'aux prochains mots de passe. |
+| Échecs tolérés par poste / blocage | 10 / 5 min | Attention aux postes qui partagent une adresse (bureau à distance) : leurs erreurs s'additionnent. |
+| Déconnexion après inactivité | jamais | Pour les postes partagés. |
+| Réseaux autorisés | vide (tous) | Une plage par ligne (`192.168.1.0/24`). Hors liste, l'outil ne répond pas. L'enregistrement est refusé si votre propre poste n'y figure pas ; la console du serveur (`127.0.0.1`) reste toujours autorisée, c'est le recours en cas d'erreur. |
+
+À la mise à jour, les comptes existants gardent leur mot de passe et
+personne n'est déconnecté. Leurs mots de passe ayant été choisis par un
+administrateur, vous pouvez les faire renouveler : cocher les comptes, puis
+« Réinitialiser l'accès ».
 
 ## Mettre à jour
 
