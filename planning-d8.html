@@ -5734,6 +5734,9 @@ function pageSecurity() {
       <div class="fld full sec-sep"><label>Envoi des e-mails (lien « mot de passe oublié » et alertes des super administrateurs)</label>
         <span class="help">Paramètres du serveur de messagerie de l’entreprise (Microsoft 365 : smtp.office365.com, port 587, STARTTLS, compte et mot de passe d’une boîte d’envoi).
           Serveur laissé vide : la fonction mail() de PHP est utilisée.</span></div>
+      ${iAmSuper ? `<div class="fld full"><div class="row wrap" style="gap:6px"><span class="mut" style="font-size:12.5px">Remplir pour :</span>
+        <button class="btn sm" type="button" data-act="smtp-preset" data-p="m365" title="smtp.office365.com, STARTTLS, port 587 : il faut le compte et le mot de passe d’une boîte d’envoi">Microsoft 365 (avec compte)</button>
+        <button class="btn sm" type="button" data-act="smtp-preset" data-p="direct" title="Envoi direct au serveur Microsoft de votre domaine, sans compte : destinataires de votre domaine uniquement">Relais Microsoft 365 (sans compte)</button></div></div>` : ''}
       <div class="fld"><label>Serveur SMTP</label><input class="in" name="smtpHost" value="${esc(c.smtpHost || '')}" placeholder="smtp.office365.com" autocomplete="off" ${dis}></div>
       <div class="fld"><label>Chiffrement</label><select class="in" name="smtpSecure" ${dis}>${[['tls', 'STARTTLS (port 587)'], ['ssl', 'SSL/TLS (port 465)'], ['none', 'Aucun (relais interne, port 25)']].map(([k, l]) => `<option value="${k}"${(c.smtpSecure || 'tls') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="fld"><label>Port</label><input class="in" type="number" min="0" max="65535" name="smtpPort" value="${c.smtpPort || ''}" placeholder="selon le chiffrement" ${dis}></div>
@@ -5749,6 +5752,7 @@ function pageSecurity() {
     <div class="row wrap" style="gap:8px;margin-top:10px">
       <span class="pill" style="${cvar(c.mailReady ? '#3c9f5f' : '#b4700c', .14, .35)}">${ic(c.mailReady ? 'check' : 'warn', 'sm')} ${c.mailReady ? 'Envoi des e-mails configuré' : 'Envoi des e-mails non configuré : « Mot de passe oublié » et alertes inactifs'}</span>
       ${iAmSuper ? `<button class="btn sm" data-act="mail-test">${ic('mail', 'sm')} Envoyer un e-mail de test (à moi)</button>` : ''}
+      ${SEC.mail ? `<div class="bnr ${SEC.mail.ok ? 'info' : 'danger'}" style="margin:6px 0 0;width:100%;white-space:pre-line">${ic(SEC.mail.ok ? 'check' : 'warn')}<span>${esc(SEC.mail.ok || SEC.mail.err)}</span></div>` : ''}
       ${iAmSuper && !/@/.test((me() || {}).email || '') ? `<span class="pill" style="${cvar('#d1444a', .14, .35)}">${ic('warn', 'sm')} Votre fiche utilisateur n’a pas d’adresse e-mail : vous ne pourrez pas recevoir le lien</span>` : ''}</div>
     ${iAmSuper && c.cronKey ? `<details class="cron"><summary>Garantir les sauvegardes même quand personne n’a l’application ouverte (tâche planifiée Windows)</summary>
       <p class="mut">Les sauvegardes sont faites dès qu’une page de l’application est ouverte (postes, écrans d’atelier). Pour les garantir la nuit ou le week-end, créez une tâche planifiée sur le serveur, toutes les 15 min, qui exécute :</p>
@@ -5815,14 +5819,29 @@ Object.assign(ACT, {
       inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword, pwDigit: !!v.pwDigit, pwSpecial: !!v.pwSpecial, pwUpper: !!v.pwUpper,
       lockAttempts: +v.lockAttempts, lockMinutes: +v.lockMinutes, superLockAttempts: +v.superLockAttempts || 0, superLockMinutes: +v.superLockMinutes || 0,
       superLockMail: !!v.superLockMail, resetMinutes: +v.resetMinutes || 30, backupTimes: times, backupDays: (v.backupDays || []).map(Number), backupKeep: +v.backupKeep }, 'Réglages enregistrés')
-      .then(ok => { if (ok) { clearDraft('sec'); dirtyBar($('#sec-f'), false); } });
+      .then(ok => { if (ok) { clearDraft('sec'); SEC.mail = null; dirtyBar($('#sec-f'), false); } });
+  },
+  'smtp-preset': el => {
+    const f = $('#sec-f'); if (!f) return;
+    const set = (n, v) => { const i = f.querySelector(`[name=${n}]`); if (i) { i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); } };
+    if (el.dataset.p === 'm365') {
+      set('smtpHost', 'smtp.office365.com'); set('smtpSecure', 'tls'); set('smtpPort', '587');
+      const u = f.querySelector('[name=smtpUser]'); if (u && !u.value) set('smtpUser', f.querySelector('[name=mailFrom]').value || '');
+      toast('Renseignez le mot de passe de la boîte d’envoi (« Compte SMTP ») puis Enregistrer. L’adresse d’expédition doit être la même boîte.', 'info');
+    } else {
+      const dom = String(f.querySelector('[name=mailFrom]').value || '').split('@')[1];
+      if (!dom) return toast('Renseignez d’abord l’adresse d’expédition (ex. planning@d8.fr).', 'warn');
+      set('smtpHost', dom.replace(/\./g, '-') + '.mail.protection.outlook.com'); set('smtpSecure', 'tls'); set('smtpPort', '25'); set('smtpUser', '');
+      toast('Relais sans compte : destinataires @' + dom + ' uniquement, et le port 25 sortant doit être ouvert. Enregistrez puis faites le test.', 'info');
+    }
   },
   'app-url-here': () => { const i = $('#sec-f [name=appUrl]'); if (i) { i.value = appBase(); i.dispatchEvent(new Event('input', { bubbles: true })); } },
   'mail-test': async el => {
     if (!needs('super')) return;
     if (FORM_DRAFT.sec) return toast('Enregistrez d’abord les réglages modifiés, puis envoyez le test.', 'warn');
     el.disabled = true; const r = await Auth.api('mail-test', {}).catch(() => null); el.disabled = false;
-    toast(r && r.ok ? 'E-mail de test envoyé à ' + r.body.to + ' : vérifiez votre boîte de réception.' : (r && r.body && r.body.error) || 'Serveur injoignable.', r && r.ok ? 'ok' : 'danger');
+    SEC.mail = r && r.ok ? { ok: 'E-mail de test envoyé à ' + r.body.to + ' : vérifiez la boîte de réception (et les courriers indésirables).' } : { err: (r && r.body && r.body.error) || 'Serveur injoignable.' };
+    toast(SEC.mail.ok || 'Échec de l’envoi : le détail est affiché sous le bouton de test.', SEC.mail.ok ? 'ok' : 'danger');
     SEC.data = null; loadSecurity();
   },
   'cron-key': async () => {

@@ -491,7 +491,7 @@ function send_mail(string $to, string $subject, string $body): ?string {
     $port = $c['port'] ?: ($c['secure'] === 'ssl' ? 465 : ($c['secure'] === 'tls' ? 587 : 25));
     $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true, 'peer_name' => $c['host']]]);
     $fp = @stream_socket_client(($c['secure'] === 'ssl' ? 'ssl://' : 'tcp://') . $c['host'] . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
-    if (!$fp) return "Connexion impossible au serveur {$c['host']}:$port ($errstr).";
+    if (!$fp) return "Connexion impossible au serveur {$c['host']}:$port ($errstr)." . ($port === 25 ? ' Le port 25 sortant est souvent bloqué (pare-feu, fournisseur d’accès) : essayez STARTTLS sur le port 587.' : ' Vérifiez le nom du serveur, le port et le pare-feu.');
     stream_set_timeout($fp, 20);
     $read = function () use ($fp): string { $r = ''; while (($l = fgets($fp, 1024)) !== false) { $r .= $l; if (strlen($l) < 4 || $l[3] === ' ') break; } return $r; };
     $cmd = function (?string $line, array $ok) use ($fp, $read): string {
@@ -503,16 +503,24 @@ function send_mail(string $to, string $subject, string $body): ?string {
     try {
         $cmd(null, [220]);
         $ehlo = 'EHLO ' . preg_replace('/[^A-Za-z0-9.-]/', '', (string)(gethostname() ?: 'planning'));
-        $cmd($ehlo, [250]);
-        if ($c['secure'] === 'tls') {
+        $caps = $cmd($ehlo, [250]);
+        // STARTTLS : exigé en mode « STARTTLS » ; en mode « aucun », utilisé quand même si le serveur le propose
+        // (chiffrement sans vérification du certificat, comme entre serveurs de messagerie : mieux que du texte en clair)
+        $opportunistic = $c['secure'] === 'none' && stripos($caps, 'STARTTLS') !== false;
+        if ($c['secure'] === 'tls' || $opportunistic) {
+            if ($c['secure'] === 'tls' && stripos($caps, 'STARTTLS') === false) throw new RuntimeException('le serveur ne propose pas STARTTLS (essayez « SSL/TLS » port 465, ou « Aucun » pour un relais interne)');
             $cmd('STARTTLS', [220]);
+            if ($opportunistic) { stream_context_set_option($fp, 'ssl', 'verify_peer', false); stream_context_set_option($fp, 'ssl', 'verify_peer_name', false); }
             $m = STREAM_CRYPTO_METHOD_TLS_CLIENT;
             if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) $m |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
             if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) $m |= STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
-            if (!@stream_socket_enable_crypto($fp, true, $m)) throw new RuntimeException('chiffrement STARTTLS refusé (certificat ?)');
-            $cmd($ehlo, [250]);
+            if (!@stream_socket_enable_crypto($fp, true, $m)) throw new RuntimeException('chiffrement STARTTLS refusé (certificat du serveur non reconnu par PHP ?)');
+            $caps = $cmd($ehlo, [250]);
         }
-        if ($c['user'] !== '') { $cmd('AUTH LOGIN', [334]); $cmd(base64_encode($c['user']), [334]); $cmd(base64_encode($c['pass']), [235]); }
+        if ($c['user'] !== '') {
+            if (!preg_match('/^250[ -]AUTH[ =]/mi', $caps)) throw new RuntimeException('le serveur ne propose pas d’authentification sur cette connexion (choisissez STARTTLS, ou videz « Compte SMTP » pour un relais sans compte)');
+            $cmd('AUTH LOGIN', [334]); $cmd(base64_encode($c['user']), [334]); $cmd(base64_encode($c['pass']), [235]);
+        }
         $cmd('MAIL FROM:<' . $c['from'] . '>', [250]);
         $cmd('RCPT TO:<' . $to . '>', [250, 251]);
         $cmd('DATA', [354]);
@@ -522,8 +530,21 @@ function send_mail(string $to, string $subject, string $body): ?string {
         return null;
     } catch (Throwable $e) {
         @fclose($fp);
-        return 'Serveur de messagerie : ' . $e->getMessage();
+        $hint = smtp_hint($e->getMessage(), $c);
+        return 'Serveur de messagerie : ' . $e->getMessage() . ($hint ? "\n→ " . $hint : '');
     }
+}
+/** explication en français des refus courants (Microsoft 365, Exchange, relais) */
+function smtp_hint(string $r, array $c): string {
+    $m365 = stripos($c['host'], 'office365') !== false || stripos($c['host'], 'outlook') !== false;
+    if (preg_match('/STARTTLS is required|must issue a STARTTLS|5\.7\.0 must issue/i', $r)) return 'Ce serveur exige le chiffrement : choisissez « STARTTLS (port 587) »' . ($m365 ? ' et renseignez le compte et le mot de passe de la boîte d’envoi (bouton « Microsoft 365 »).' : '.');
+    if (preg_match('/5\.7\.139|SmtpClientAuthentication is disabled|basic authentication is disabled/i', $r)) return 'L’envoi par compte (« SMTP authentifié ») est désactivé pour cette boîte ou pour l’entreprise : l’administrateur Microsoft 365 doit l’activer (Centre d’administration › Utilisateurs › la boîte d’envoi › Courrier › Gérer les applications de messagerie › SMTP authentifié), ou utilisez le relais sans compte (bouton « Relais Microsoft 365 »).';
+    if (preg_match('/5\.7\.57|not authenticated|authentication required/i', $r)) return 'Ce serveur exige un compte : renseignez « Compte SMTP » et « Mot de passe SMTP » (la boîte d’envoi)' . ($m365 ? ', ou utilisez le relais sans compte (bouton « Relais Microsoft 365 »).' : '.');
+    if (preg_match('/^535|5\.7\.3 Authentication unsuccessful|authentication (unsuccessful|failed)/mi', $r)) return 'Compte ou mot de passe SMTP refusé. Si la boîte est protégée par l’authentification multifacteur, utilisez un mot de passe d’application, ou le relais sans compte.';
+    if (preg_match('/5\.7\.60|SendAsDenied|not allowed to send as/i', $r)) return 'L’adresse d’expédition doit être celle du compte SMTP (ou ce compte doit avoir le droit « Envoyer en tant que » sur l’adresse d’expédition).';
+    if (preg_match('/unable to relay|relay (access )?denied|5\.7\.64|TenantAttribution|5\.7\.606/i', $r)) return 'Relais refusé : sans compte, Microsoft 365 n’accepte que des destinataires de votre domaine, et l’adresse IP publique du serveur doit être autorisée (enregistrement SPF ou connecteur).';
+    if (preg_match('/certifica/i', $r)) return 'Le certificat du serveur n’est pas reconnu par PHP : vérifiez le nom du serveur, ou installez le magasin de certificats (openssl.cafile dans php.ini).';
+    return '';
 }
 /** fiche et adresse d'un super administrateur à partir de son identifiant, ou null */
 function super_target(?array $doc, array $acc, string $login): ?array {

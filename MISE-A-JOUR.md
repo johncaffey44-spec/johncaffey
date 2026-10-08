@@ -316,7 +316,17 @@ Tout se règle dans *Paramétrage › Sécurité & accès › Réglages de sécu
 - Les autres utilisateurs continuent de demander à un administrateur (réinitialisation, puis nouvelle invitation).
 
 **À régler une fois** (*Sécurité & accès › Réglages*, rubrique « Envoi des e-mails »), puis bouton **Envoyer un e-mail de test** :
-- **Serveur SMTP** : Microsoft 365 = `smtp.office365.com`, STARTTLS, port 587, avec le compte et le mot de passe d'une boîte d'envoi (ex. `planning@d8.fr`). La boîte doit avoir l'« authentification SMTP » autorisée dans l'administration Microsoft 365. Avec un relais interne : port 25, sans chiffrement ni compte.
+- **Serveur SMTP** : deux boutons remplissent les réglages pour Microsoft 365.
+  - **Microsoft 365 (avec compte)** : `smtp.office365.com`, STARTTLS, port 587, avec le compte et le mot de passe d'une boîte d'envoi.
+    - L'adresse d'expédition doit être cette même boîte.
+    - Le « SMTP authentifié » de la boîte doit être activé : *Centre d'administration Microsoft 365 › Utilisateurs › la boîte › Courrier › Gérer les applications de messagerie*.
+    - Si la boîte a l'authentification multifacteur, il faut un mot de passe d'application. Microsoft réduit progressivement ce mode « compte + mot de passe » : s'il est refusé, utilisez le relais.
+  - **Relais Microsoft 365 (sans compte)** : `<domaine>.mail.protection.outlook.com` (ex. `d8-fr.mail.protection.outlook.com`), STARTTLS, port 25.
+    - Destinataires de votre domaine uniquement, ce qui suffit pour les super administrateurs.
+    - Le port 25 sortant doit être ouvert sur le pare-feu.
+    - L'adresse IP publique de l'entreprise doit figurer dans l'enregistrement SPF du domaine, sinon le message risque d'arriver dans les indésirables.
+  - **Chiffrement** : « Aucun » n'est utile que pour un relais interne. Même dans ce mode, si le serveur propose le chiffrement, il est utilisé automatiquement.
+  - **En cas d'échec** du test, le message du serveur et l'explication en français restent affichés sous le bouton.
 - **Adresse d'expédition** : la boîte d'envoi.
 - **Adresse de l'application** : bouton « Adresse actuelle ». Les liens envoyés pointent **uniquement** vers cette adresse, jamais vers celle déduite de la demande : un attaquant ne peut pas faire envoyer un lien piégé.
 - Le mot de passe SMTP est conservé dans `data/security.json` (protégé comme le reste du dossier `data`) et n'est jamais renvoyé à la page.
