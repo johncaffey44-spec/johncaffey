@@ -65,7 +65,9 @@ $PW_SPECIAL    = true;                // au moins un caractère spécial (ni let
 $PW_UPPER      = false;               // au moins une majuscule
 $LOCK_ATTEMPTS = 3;                   // compte bloqué après N mots de passe erronés…
 $LOCK_MINUTES  = 15;                  // …pendant N minutes (0 = jusqu'au déblocage par un administrateur)
-                                      //   les super administrateurs ne sont jamais bloqués : alerte par e-mail à la place
+$SUPER_LOCK_ATTEMPTS = 3;             // super administrateurs : bloqués après N erreurs (0 = jamais, alerte e-mail à la place)…
+$SUPER_LOCK_MINUTES  = 0;             // …pendant N minutes (0 = jusqu'à la réinitialisation par e-mail ou le déblocage par un administrateur)
+$SUPER_LOCK_MAIL     = true;          // e-mail au super administrateur bloqué, avec un lien pour choisir un nouveau mot de passe
 $RESET_MINUTES = 30;                  // validité du lien « mot de passe oublié » envoyé aux super administrateurs
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
 $FAIL_WINDOW   = 900;                 // …sur cette durée (s), puis blocage pendant la même durée
@@ -292,6 +294,10 @@ if (!empty($SEC['inviteDays'])) $INVITE_DAYS = max(1, min(30, (int)$SEC['inviteD
 foreach (['pwDigit' => 'PW_DIGIT', 'pwSpecial' => 'PW_SPECIAL', 'pwUpper' => 'PW_UPPER'] as $k => $v) if (isset($SEC[$k])) $$v = (bool)$SEC[$k];
 if (isset($SEC['lockAttempts'])) $LOCK_ATTEMPTS = max(1, min(20, (int)$SEC['lockAttempts']));
 if (isset($SEC['lockMinutes'])) $LOCK_MINUTES = max(0, min(1440, (int)$SEC['lockMinutes']));
+if (isset($SEC['superLockAttempts'])) $SUPER_LOCK_ATTEMPTS = max(0, min(20, (int)$SEC['superLockAttempts']));
+if (isset($SEC['superLockMinutes'])) $SUPER_LOCK_MINUTES = max(0, min(1440, (int)$SEC['superLockMinutes']));
+if (isset($SEC['superLockMail'])) $SUPER_LOCK_MAIL = (bool)$SEC['superLockMail'];
+if (isset($SEC['resetMinutes'])) $RESET_MINUTES = max(5, min(1440, (int)$SEC['resetMinutes']));
 if (isset($SEC['backupTimes']) && is_array($SEC['backupTimes'])) $AUTO_BACKUP_TIMES = array_values(array_filter($SEC['backupTimes'], function ($t) { return is_string($t) && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t); }));
 if (isset($SEC['backupDays']) && is_array($SEC['backupDays'])) $AUTO_BACKUP_DAYS = array_values(array_filter(array_map('intval', $SEC['backupDays']), function ($d) { return $d >= 1 && $d <= 7; }));
 if (!empty($SEC['backupKeep'])) $AUTO_BACKUP_KEEP = max(2, min(500, (int)$SEC['backupKeep']));
@@ -372,28 +378,30 @@ function pw_problem(string $p, string $login): ?string {
 }
 
 /* --- blocage d'un compte après N mots de passe erronés (par identifiant, en plus du blocage par adresse IP) --- */
-function lock_state(string $F, string $login): ?array {
+function lock_state(string $F, string $login, ?int $min = null): ?array {
     global $LOCK_MINUTES;
     $e = read_json($F)[$login] ?? null;
     if (!is_array($e)) return null;
-    $win = max(900, $LOCK_MINUTES * 60);                      // les échecs anciens sont oubliés
+    $win = max(900, ($min ?? $LOCK_MINUTES) * 60);            // les échecs anciens sont oubliés
     if ((int)($e['until'] ?? 0) <= time() && time() - (int)($e['t'] ?? 0) > $win) return null;
     return $e;
 }
-function lock_msg(array $e): string {
-    $u = (int)($e['until'] ?? 0);
-    return $u >= PHP_INT_MAX - 1 ? 'Compte bloqué après ' . (int)$e['n'] . ' mots de passe erronés : un administrateur doit le débloquer.'
-        : 'Compte bloqué après ' . (int)$e['n'] . ' mots de passe erronés, jusqu’à ' . date('H:i', $u) . '. Un administrateur peut le débloquer avant.';
+function lock_msg(array $e, bool $super = false): string {
+    $u = (int)($e['until'] ?? 0); $n = 'Compte bloqué après ' . (int)$e['n'] . ' mots de passe erronés';
+    if ($super && !mail_ready()) $super = false;         // pas d'envoi d'e-mails configuré : seul un administrateur peut débloquer
+    if ($super) return $n . ($u >= PHP_INT_MAX - 1 ? '.' : ', jusqu’à ' . date('H:i', $u) . '.')
+        . ' Pour le débloquer, cliquez sur « Mot de passe oublié ? » : un lien pour choisir un nouveau mot de passe est envoyé à votre adresse e-mail.';
+    return $u >= PHP_INT_MAX - 1 ? $n . ' : un administrateur doit le débloquer.'
+        : $n . ', jusqu’à ' . date('H:i', $u) . '. Un administrateur peut le débloquer avant.';
 }
 /** compte un échec ; renvoie l'état (bloqué ou non) */
-function lock_fail(string $F, string $login, bool $exempt = false): array {
-    global $LOCK_ATTEMPTS, $LOCK_MINUTES;
+function lock_fail(string $F, string $login, int $att, int $min): array {
     $all = read_json($F);
-    $e = lock_state($F, $login) ?? ['n' => 0, 'until' => 0];
+    $e = lock_state($F, $login, $min) ?? ['n' => 0, 'until' => 0];
+    if ((int)$e['until'] > 0 && (int)$e['until'] <= time()) $e = ['n' => 0, 'until' => 0];   // blocage échu : on repart de zéro
     $e['n'] = (int)$e['n'] + 1; $e['t'] = time();
-    if ($exempt) $e['until'] = 0;                               // super administrateur : jamais bloqué
-    elseif ($e['n'] >= $LOCK_ATTEMPTS && (int)$e['until'] <= time()) {
-        $e['until'] = $LOCK_MINUTES > 0 ? time() + $LOCK_MINUTES * 60 : PHP_INT_MAX;
+    if ($att > 0 && $e['n'] >= $att && (int)$e['until'] <= time()) {          // $att = 0 : jamais bloqué
+        $e['until'] = $min > 0 ? time() + $min * 60 : PHP_INT_MAX;
         auth_log('locked', $login, $e['n'] . ' mots de passe erronés');
     }
     $all[$login] = $e;
@@ -525,6 +533,18 @@ function super_target(?array $doc, array $acc, string $login): ?array {
     $u = find_user($doc, $uid);
     if (!$u || ($u['active'] ?? true) === false || !has_perm($doc, $uid, 'super')) return null;
     return ['userId' => $uid, 'name' => user_label($u), 'email' => trim((string)($u['email'] ?? ''))];
+}
+/** crée un lien de réinitialisation (3 par heure et par compte au plus) ; renvoie le jeton, ou null si la limite est atteinte */
+function reset_issue(string $login, array $tg): ?string {
+    global $RESETS, $RESET_MINUTES, $ip;
+    reset_find($RESETS, '');                          // purge
+    $all = read_json($RESETS);
+    $recent = count(array_filter($all, function ($v) use ($login) { return is_array($v) && ($v['login'] ?? '') === $login && (int)($v['t'] ?? 0) > time() - 3600; }));
+    if ($recent >= 3) return null;
+    $tok = bin2hex(random_bytes(32));
+    $all[hash('sha256', $tok)] = ['login' => $login, 'userId' => $tg['userId'], 't' => time(), 'exp' => time() + $RESET_MINUTES * 60, 'ip' => $ip];
+    write_json($RESETS, $all);
+    return $tok;
 }
 function app_link(string $param, string $token): string { $u = mail_cfg()['appUrl']; return $u . (strpos($u, '?') === false ? '?' : '&') . $param . '=' . $token; }
 /** demande de réinitialisation valide pour ce lien, ou null (les demandes expirées sont purgées) */
@@ -737,44 +757,44 @@ if ($action === 'login') {
     $acc = read_json($ACC);
     $a = $acc[$login] ?? null;
     $doc = read_doc($FILE);
-    $sup = $login !== '' ? super_target($doc, $acc, $login) : null;   // super administrateur : pas de blocage du compte
+    $sup = $login !== '' ? super_target($doc, $acc, $login) : null;   // super administrateur : règles de blocage propres
+    [$att, $min] = $sup ? [$SUPER_LOCK_ATTEMPTS, $SUPER_LOCK_MINUTES] : [$LOCK_ATTEMPTS, $LOCK_MINUTES];
     // compte bloqué : refusé sans même vérifier le mot de passe (même traitement que l'identifiant existe ou non)
-    $lk = $login !== '' && !$sup ? lock_state($LOCKF, $login) : null;
+    $lk = $login !== '' ? lock_state($LOCKF, $login, $min) : null;
     if ($lk && (int)($lk['until'] ?? 0) > time()) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
         auth_log('fail', $login, 'compte bloqué');
-        out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($lk)]);
+        out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($lk, (bool)$sup)]);
     }
     // même coût de calcul que l'identifiant existe ou non (ne révèle pas les identifiants valides)
     $ok = password_verify($pass, is_array($a) ? (string)$a['hash'] : password_hash('x', PASSWORD_DEFAULT));
     if (!is_array($a) || !$ok) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
         auth_log('fail', $login, is_array($a) ? ($sup ? 'mot de passe incorrect (super administrateur)' : 'mot de passe incorrect') : 'identifiant inconnu');
-        $e = $login !== '' ? lock_fail($LOCKF, $login, (bool)$sup) : ['n' => 0, 'until' => 0];
-        if ((int)$e['until'] > time()) out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($e)]);
+        $e = $login !== '' ? lock_fail($LOCKF, $login, $att, $min) : ['n' => 0, 'until' => 0];
+        $locked = (int)$e['until'] > time();
         if ($sup) {
+            // e-mail au titulaire : au moment du blocage, avec un lien pour choisir un nouveau mot de passe ;
+            // si le blocage est désactivé (0 essai), une alerte toutes les N erreurs
+            $notify = $locked ? (int)$e['n'] === $att : ($att === 0 && (int)$e['n'] % max(1, $LOCK_ATTEMPTS) === 0);
+            $tok = $notify && $locked && $SUPER_LOCK_MAIL && mail_ready() && filter_var($sup['email'], FILTER_VALIDATE_EMAIL) ? reset_issue($login, $sup) : null;
             flock($lock, LOCK_UN);
-            usleep(800000);                            // ralentit les essais en série sur un compte qui ne se bloque pas
-            // alerte par e-mail toutes les N erreurs : le titulaire sait qu'on essaie son mot de passe
-            if ((int)$e['n'] % $LOCK_ATTEMPTS === 0 && mail_ready() && filter_var($sup['email'], FILTER_VALIDATE_EMAIL)) {
-                $err = send_mail($sup['email'], 'Alerte : mots de passe erronés sur votre compte – planning',
-                    "Bonjour {$sup['name']},
-
-" . (int)$e['n'] . " mots de passe erronés ont été saisis sur votre compte super administrateur (identifiant « $login »), le dernier depuis l'adresse $ip, le " . date('d/m/Y à H:i') . ".
-
-"
-                    . "Si c'était vous, rien à faire. Sinon, changez votre mot de passe dès maintenant (menu en haut à droite › Changer mon mot de passe) ou utilisez « Mot de passe oublié ? » sur l'écran de connexion :
-" . mail_cfg()['appUrl'] . "
-
-"
-                    . "Votre compte n'est pas bloqué (super administrateur), mais l'adresse IP qui se trompe l'est après $MAX_FAILS essais.
-");
-                auth_log($err ? 'mail-fail' : 'super-alert', $login, $err ?: 'alerte envoyée à ' . $sup['email']);
+            if ($att === 0) usleep(800000);            // jamais bloqué : on ralentit les essais en série
+            if ($notify && $SUPER_LOCK_MAIL && mail_ready() && filter_var($sup['email'], FILTER_VALIDATE_EMAIL)) {
+                $when = date('d/m/Y à H:i');
+                $body = "Bonjour {$sup['name']},\n\n" . (int)$e['n'] . " mots de passe erronés ont été saisis sur votre compte super administrateur (identifiant « $login »), le dernier depuis l'adresse $ip, le $when.\n\n";
+                if ($locked) $body .= "Votre compte est maintenant bloqué" . ($min > 0 ? " jusqu'à " . date('H:i', (int)$e['until']) : '') . ".\n\n"
+                    . ($tok ? "Pour le débloquer, choisissez un nouveau mot de passe avec ce lien (valable $RESET_MINUTES minutes, une seule fois) :\n" . app_link('reinit', $tok) . "\n\n"
+                            : "Pour le débloquer, utilisez « Mot de passe oublié ? » sur l'écran de connexion : " . mail_cfg()['appUrl'] . "\n\n")
+                    . "Si ce n'était pas vous, quelqu'un essaie votre mot de passe : changez-le et prévenez le service informatique.\n";
+                else $body .= "Si ce n'était pas vous, changez votre mot de passe dès maintenant (menu en haut à droite › Changer mon mot de passe) ou utilisez « Mot de passe oublié ? » : " . mail_cfg()['appUrl'] . "\n";
+                $err = send_mail($sup['email'], $locked ? 'Compte bloqué : mots de passe erronés – planning' : 'Alerte : mots de passe erronés sur votre compte – planning', $body);
+                auth_log($err ? 'mail-fail' : 'super-alert', $login, $err ?: ($locked ? 'compte bloqué, lien de déblocage envoyé à ' : 'alerte envoyée à ') . $sup['email']);
             }
-            out(401, ['auth' => false, 'error' => 'Identifiant ou mot de passe incorrect.']);
         }
-        $left = $LOCK_ATTEMPTS - (int)$e['n'];
-        out(401, ['auth' => false, 'error' => 'Identifiant ou mot de passe incorrect.' . ($left > 0 && $left < $LOCK_ATTEMPTS ? " Encore $left essai" . ($left > 1 ? 's' : '') . ' avant le blocage du compte.' : '')]);
+        if ($locked) out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($e, (bool)$sup)]);
+        $left = $att - (int)$e['n'];
+        out(401, ['auth' => false, 'error' => 'Identifiant ou mot de passe incorrect.' . ($att > 0 && $left > 0 && $left < $att ? " Encore $left essai" . ($left > 1 ? 's' : '') . ' avant le blocage du compte.' : '')]);
     }
     lock_clear($LOCKF, $login);
     $name = (string)($a['name'] ?? $login);
@@ -805,17 +825,7 @@ if ($action === 'forgot') {
     flock($lock, LOCK_EX);
     $tg = $login !== '' ? super_target(read_doc($FILE), read_json($ACC), $login) : null;
     $send = null;
-    if ($tg && filter_var($tg['email'], FILTER_VALIDATE_EMAIL) && mail_ready()) {
-        reset_find($RESETS, '');                      // purge
-        $all = read_json($RESETS);
-        $recent = count(array_filter($all, function ($v) use ($login) { return is_array($v) && ($v['login'] ?? '') === $login && (int)($v['t'] ?? 0) > time() - 3600; }));
-        if ($recent < 3) {                            // 3 e-mails par heure et par compte au plus
-            $tok = bin2hex(random_bytes(32));
-            $all[hash('sha256', $tok)] = ['login' => $login, 'userId' => $tg['userId'], 't' => time(), 'exp' => time() + $RESET_MINUTES * 60, 'ip' => $ip];
-            write_json($RESETS, $all);
-            $send = $tok;
-        }
-    }
+    if ($tg && filter_var($tg['email'], FILTER_VALIDATE_EMAIL) && mail_ready()) $send = reset_issue($login, $tg);   // 3 e-mails par heure et par compte au plus
     flock($lock, LOCK_UN);
     if ($send) {
         $err = send_mail($tg['email'], 'Réinitialisation de votre mot de passe – planning',
@@ -1074,6 +1084,7 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
             'smtpUser' => $isSuper ? (string)($SEC['smtpUser'] ?? '') : '', 'smtpPassSet' => ($SEC['smtpPass'] ?? '') !== '',
             'mailFrom' => (string)($SEC['mailFrom'] ?? ''), 'mailFromName' => (string)($SEC['mailFromName'] ?? 'Planning D8'), 'appUrl' => (string)($SEC['appUrl'] ?? ''),
             'mailReady' => mail_ready(), 'resetMinutes' => $RESET_MINUTES,
+            'superLockAttempts' => $SUPER_LOCK_ATTEMPTS, 'superLockMinutes' => $SUPER_LOCK_MINUTES, 'superLockMail' => $SUPER_LOCK_MAIL,
             'maxFails' => $MAX_FAILS, 'failWindow' => $FAIL_WINDOW, 'https' => $https, 'super' => $isSuper]);
     }
     if ($action === 'sec-set') {
@@ -1086,6 +1097,8 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
         $new = array_merge($SEC, ['inviteDays' => max(1, min(30, (int)($in['inviteDays'] ?? 7))), 'sessionHours' => max(1, min(72, (int)($in['sessionHours'] ?? 12))),
                 'minPassword' => max(8, min(64, (int)($in['minPassword'] ?? 8))), 'pwDigit' => !empty($in['pwDigit']), 'pwSpecial' => !empty($in['pwSpecial']), 'pwUpper' => !empty($in['pwUpper']),
                 'lockAttempts' => max(1, min(20, (int)($in['lockAttempts'] ?? 3))), 'lockMinutes' => max(0, min(1440, (int)($in['lockMinutes'] ?? 15))),
+                'superLockAttempts' => max(0, min(20, (int)($in['superLockAttempts'] ?? 3))), 'superLockMinutes' => max(0, min(1440, (int)($in['superLockMinutes'] ?? 0))),
+                'superLockMail' => !array_key_exists('superLockMail', $in) || !empty($in['superLockMail']), 'resetMinutes' => max(5, min(1440, (int)($in['resetMinutes'] ?? 30))),
                 'backupTimes' => array_slice($times, 0, 12), 'backupDays' => $days ?: [1, 2, 3, 4, 5, 6, 7], 'backupKeep' => max(2, min(500, (int)($in['backupKeep'] ?? 60))),
                 'changed' => date('c'), 'by' => $me['name']]);
         if (!empty($in['newCronKey'])) $new['cronKey'] = bin2hex(random_bytes(20));
@@ -1108,7 +1121,7 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
         }
         if (!write_json($SECF, $new)) out(500, ['error' => 'Écriture impossible']);
         auth_log('sec-set', $me['login'], 'mots de passe ' . $new['minPassword'] . ' car.' . ($new['pwDigit'] ? ' + chiffre' : '') . ($new['pwSpecial'] ? ' + spécial' : '') . ($new['pwUpper'] ? ' + majuscule' : '')
-            . ' · blocage après ' . $new['lockAttempts'] . ' essais (' . ($new['lockMinutes'] ?: '∞') . ' min) · sauvegardes ' . (implode(', ', $new['backupTimes']) ?: 'désactivées')
+            . ' · blocage après ' . $new['lockAttempts'] . ' essais (' . ($new['lockMinutes'] ?: '∞') . ' min), super admin ' . ($new['superLockAttempts'] ?: 'jamais') . ' (' . ($new['superLockMinutes'] ?: 'jusqu’au lien e-mail') . ') · sauvegardes ' . (implode(', ', $new['backupTimes']) ?: 'désactivées')
             . ' · session ' . $new['sessionHours'] . ' h · invitations ' . $new['inviteDays'] . ' j');
         out(200, ['ok' => true]);
     }

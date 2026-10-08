@@ -296,10 +296,17 @@ Tout se règle dans *Paramétrage › Sécurité & accès › Réglages de sécu
 
 ## 11. Super administrateurs : jamais bloqués, mot de passe oublié par e-mail
 
-**Pas de blocage du compte.** Un super administrateur n'est jamais bloqué après N mots de passe erronés, pour qu'on ne puisse pas lui interdire l'accès en se trompant exprès. Trois protections compensent :
-- **Le blocage par adresse IP reste en place** : 8 échecs, puis 15 min d'attente pour ce poste. Deviner le mot de passe reste donc très lent.
-- **Chaque essai raté est ralenti** (0,8 s) et noté dans le journal des connexions.
-- **Une alerte par e-mail** est envoyée au super administrateur toutes les 3 erreurs sur son compte, avec l'adresse IP d'origine.
+**Blocage des comptes super administrateur** (réglable dans *Sécurité & accès › Réglages*, rubrique « Comptes super administrateur ») :
+- **Par défaut** : bloqué après **3** mots de passe erronés, **sans durée d'attente**. Le compte reste bloqué jusqu'à ce que le super administrateur choisisse un nouveau mot de passe avec le **lien reçu par e-mail**, ou qu'un autre administrateur le débloque (*Comptes bloqués*).
+- **Au moment du blocage**, un e-mail part automatiquement avec ce lien (option désactivable). Sinon : « Mot de passe oublié ? » sur l'écran de connexion. L'identifiant tapé est repris.
+- **Réglages** :
+  - nombre d'essais (0 = jamais bloqué : essais ralentis et alerte e-mail toutes les 3 erreurs) ;
+  - durée (0 = jusqu'au lien e-mail ; sinon N minutes, le lien débloquant aussi avant la fin) ;
+  - validité du lien (30 min par défaut) ;
+  - envoi de l'e-mail au blocage.
+- **Les autres comptes** gardent leurs propres réglages (3 essais, 15 min) et passent par un administrateur.
+- Le blocage par adresse IP (8 échecs, 15 min) reste en place pour tout le monde.
+- **Si l'envoi d'e-mails n'est pas configuré**, un super administrateur bloqué doit être débloqué par un autre administrateur : configurez l'envoi, ou nommez au moins deux super administrateurs.
 
 **Mot de passe oublié.** Sur l'écran de connexion : « Mot de passe oublié ? », puis l'identifiant.
 - Si c'est un super administrateur dont la fiche (*Utilisateurs*) a une adresse e-mail, il reçoit un lien valable **30 minutes, une seule fois**.

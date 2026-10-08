@@ -1167,7 +1167,7 @@ const Auth = {
         if (r && r.ok && r.body) { rs.name = r.body.name; rs.login = r.body.login; rs.expires = r.body.expires; setPolicy(r.body.policy); }
         else rs.err = (r && r.body && r.body.error) || 'Serveur injoignable.';
       }
-      const head = !exp && tab === 'forgot' ? `<h3>Mot de passe oublié</h3><p class="auth-note" style="margin-bottom:12px"><b>Super administrateurs</b> : un lien de réinitialisation est envoyé à l’adresse e-mail de votre fiche.
+      const head = !exp && tab === 'forgot' ? `<h3>Mot de passe oublié ou compte bloqué</h3><p class="auth-note" style="margin-bottom:12px"><b>Super administrateurs</b> : un lien pour choisir un nouveau mot de passe est envoyé à l’adresse e-mail de votre fiche ; il débloque aussi le compte.
             Les autres utilisateurs demandent à un administrateur de réinitialiser leur accès.</p>`
         : !exp && tab === 'reset' ? `<h3>Nouveau mot de passe</h3>`
         : exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
@@ -1191,7 +1191,7 @@ const Auth = {
           <p class="auth-note" style="margin-bottom:12px">Pas de message ? Vérifiez les courriers indésirables, puis réessayez dans quelques minutes.</p>
           <button class="btn" type="button" data-t="login" style="width:100%">Revenir à la connexion</button>`
         : `<form data-f="forgot" class="fgrid one" novalidate>
-          <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false"></div>
+          <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" value="${esc(this.tried || '')}" autocomplete="username" autocapitalize="none" spellcheck="false"></div>
           <button class="btn pri" type="submit">${ic('mail')} Recevoir le lien par e-mail</button>
           <button class="btn gh" type="button" data-t="login">Revenir à la connexion</button></form>`;
       const reset = rs.err ? `<div class="bnr warn" style="margin:0 0 12px">${ic('warn')}<span>${esc(rs.err)}</span></div>
@@ -1287,6 +1287,7 @@ const Auth = {
         if (boot) v.name = (list.find(u => u.id === v.userId) || {}).name || '';
         if (!boot) v.invite = String(v.invite).trim();
       }
+      if (kind === 'login') this.tried = v.login;        // repris dans « Mot de passe oublié ? »
       const btn = $('button[type=submit]', form); btn.disabled = true; err('');
       let r = null; try { r = await this.api(kind, v); } catch (x) { }
       btn.disabled = false;
@@ -5717,6 +5718,14 @@ function pageSecurity() {
       <div class="fld"><label>Blocage du compte après (mots de passe erronés)</label><input class="in" type="number" min="1" max="20" name="lockAttempts" value="${c.lockAttempts || 3}" ${dis}></div>
       <div class="fld"><label>Durée du blocage (minutes)</label><input class="in" type="number" min="0" max="1440" name="lockMinutes" value="${c.lockMinutes ?? 15}" ${dis}>
         <span class="help">0 = bloqué jusqu’au déblocage par un administrateur.</span></div>
+      <div class="fld full"><label>${ic('shield', 'sm')} Comptes super administrateur</label><span class="help">Règles propres aux super administrateurs : ils peuvent se débloquer eux-mêmes en recevant un lien par e-mail (« Mot de passe oublié ? »).</span></div>
+      <div class="fld"><label>Blocage après (mots de passe erronés)</label><input class="in" type="number" min="0" max="20" name="superLockAttempts" value="${c.superLockAttempts ?? 3}" ${dis}>
+        <span class="help">0 = jamais bloqué (essais ralentis et alerte e-mail à la place).</span></div>
+      <div class="fld"><label>Durée du blocage (minutes)</label><input class="in" type="number" min="0" max="1440" name="superLockMinutes" value="${c.superLockMinutes ?? 0}" ${dis}>
+        <span class="help">0 = pas d’attente : bloqué jusqu’à la réinitialisation par le lien reçu par e-mail (ou le déblocage par un administrateur).</span></div>
+      <div class="fld"><label>Validité du lien reçu par e-mail (minutes)</label><input class="in" type="number" min="5" max="1440" name="resetMinutes" value="${c.resetMinutes || 30}" ${dis}></div>
+      <div class="fld full"><label class="sw"><input type="checkbox" name="superLockMail"${c.superLockMail !== false ? ' checked' : ''} ${dis}><i></i>
+        <span>Au moment du blocage, envoyer au super administrateur un e-mail avec le lien pour choisir un nouveau mot de passe</span></label></div>
       <div class="fld full sec-sep"><label>Sauvegarde complète automatique : heures</label><input class="in" name="backupTimes" value="${esc((c.backupTimes || []).join(', '))}" placeholder="12:00, 17:00" ${dis}>
         <span class="help">Séparées par des virgules. Vide = pas de sauvegarde automatique. Fuseau du serveur : ${esc((D0.backups.auto || {}).tz || '')}.</span></div>
       <div class="fld full"><label>Jours</label><div class="chips">${[1, 2, 3, 4, 5, 6, 7].map(d => `<label class="chip${(c.backupDays || []).includes(d) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="backupDays" value="${d}"${(c.backupDays || []).includes(d) ? ' checked' : ''} ${dis}>${['', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'][d]}</label>`).join('')}</div></div>
@@ -5804,7 +5813,8 @@ Object.assign(ACT, {
     if (v.appUrl && !/^https?:\/\/\S+$/i.test(v.appUrl.trim())) return toast('Adresse de l’application invalide (http://… ou https://…).', 'danger');
     secCall('sec-set', { smtpHost: v.smtpHost, smtpPort: +v.smtpPort || 0, smtpSecure: v.smtpSecure, smtpUser: v.smtpUser, smtpPass: v.smtpPass || '', mailFrom: v.mailFrom, mailFromName: v.mailFromName, appUrl: v.appUrl,
       inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword, pwDigit: !!v.pwDigit, pwSpecial: !!v.pwSpecial, pwUpper: !!v.pwUpper,
-      lockAttempts: +v.lockAttempts, lockMinutes: +v.lockMinutes, backupTimes: times, backupDays: (v.backupDays || []).map(Number), backupKeep: +v.backupKeep }, 'Réglages enregistrés')
+      lockAttempts: +v.lockAttempts, lockMinutes: +v.lockMinutes, superLockAttempts: +v.superLockAttempts || 0, superLockMinutes: +v.superLockMinutes || 0,
+      superLockMail: !!v.superLockMail, resetMinutes: +v.resetMinutes || 30, backupTimes: times, backupDays: (v.backupDays || []).map(Number), backupKeep: +v.backupKeep }, 'Réglages enregistrés')
       .then(ok => { if (ok) { clearDraft('sec'); dirtyBar($('#sec-f'), false); } });
   },
   'app-url-here': () => { const i = $('#sec-f [name=appUrl]'); if (i) { i.value = appBase(); i.dispatchEvent(new Event('input', { bubbles: true })); } },
