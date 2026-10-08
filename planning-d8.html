@@ -314,6 +314,11 @@ label.chip input{display:none}
 .dirty-bar{position:sticky;bottom:12px;z-index:5;display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px;padding:10px 12px;border-radius:10px;
   background:var(--surface);border:1px solid #d98b1c;box-shadow:0 6px 22px rgba(0,0,0,.14);color:var(--text)}.dirty-bar>span{flex:1;min-width:220px}.dirty-bar>.ic{color:#d98b1c}
 .mfa-qr{display:flex;justify-content:center;padding:8px;background:#fff;border-radius:12px;border:1px solid var(--border);width:max-content;margin:4px auto 0}
+.pw-wrap{position:relative;display:block}.pw-wrap>.in{padding-right:44px}
+.pw-eye{position:absolute;top:50%;right:3px;transform:translateY(-50%);width:36px;height:30px;display:grid;place-items:center;border:0;background:0;border-radius:6px;color:var(--text-3);cursor:pointer;padding:0}
+.pw-eye:hover{color:var(--text);background:var(--surface-3)}.pw-eye[aria-pressed=true]{color:var(--primary)}
+input::-ms-reveal,input::-ms-clear{display:none}
+@media(pointer:coarse){.pw-eye{width:42px;height:36px}.pw-wrap>.in{padding-right:48px}}
 .mfa-here{display:none;flex-direction:column;gap:9px;margin:10px 0;padding:11px 12px;border-radius:10px;background:var(--primary-soft);font-size:13px;line-height:1.45}
 @media(pointer:coarse){.mfa-here{display:flex}}
 .mfa-steps{margin:0;padding-left:20px;font-size:13.5px;line-height:1.6}.otp{font-size:22px;letter-spacing:.25em;text-align:center}
@@ -750,6 +755,7 @@ const ICONS = {
   repeat: 'M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3',
   card: 'M2 5h20v14H2zM2 10h20M6 15h4',
   eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  eyeoff: 'M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c7 0 11 7 11 7a18.5 18.5 0 0 1-3.4 4.3M6.6 6.6C3.2 8.6 1 12 1 12s4 7 11 7c1.9 0 3.6-.5 5-1.3M9.9 9.9a3 3 0 0 0 4.2 4.2',
   monitor: 'M2 3h20v14H2zM8 21h8M12 17v4',
   pie: 'M21.2 15.9A10 10 0 1 1 8 2.8M22 12A10 10 0 0 0 12 2v10z',
   bar: 'M12 20V10M18 20V4M6 20v-4',
@@ -1302,6 +1308,37 @@ const PW_RULES = () => [[`${PWP.min} caractères minimum`, p => [...p].length >=
   PWP.special && ['1 caractère spécial (! ? @ # % & * - _ …)', p => /[^\p{L}\p{N}]/u.test(p)], PWP.upper && ['1 majuscule', p => /\p{Lu}/u.test(p)]].filter(Boolean);
 const pwCheck = (p, login) => { const bad = PW_RULES().find(r => !r[1](p)); return bad ? 'Mot de passe : ' + bad[0] + ' requis.' : (login && p.toLowerCase() === String(login).toLowerCase() ? 'Le mot de passe doit être différent de l’identifiant.' : ''); };
 const pwRulesHTML = (p = '') => `<ul class="pw-rules">${PW_RULES().map(r => `<li class="${p && r[1](p) ? 'ok' : ''}">${ic(p && r[1](p) ? 'check' : 'dot', 'sm')}${esc(r[0])}</li>`).join('')}</ul>`;
+/* mots de passe : un œil dans chaque champ pour afficher / masquer la saisie (ajouté automatiquement à tout champ mot de passe) */
+function pwEyes(root) {
+  const list = root.matches && root.matches('input[type=password]:not([data-eye])') ? [root] : root.querySelectorAll ? root.querySelectorAll('input[type=password]:not([data-eye])') : [];
+  for (const i of list) {
+    i.dataset.eye = '1';
+    const had = document.activeElement === i, s = i.selectionStart, e = i.selectionEnd;
+    const w = document.createElement('span'); w.className = 'pw-wrap';
+    i.replaceWith(w); w.appendChild(i);
+    w.insertAdjacentHTML('beforeend', `<button type="button" class="pw-eye" aria-pressed="false" aria-label="Afficher le mot de passe" title="Afficher le mot de passe">${ic('eye')}</button>`);
+    if (had) { i.focus(); try { i.setSelectionRange(s, e); } catch (x) { } }
+  }
+}
+function pwEye(b, show) {
+  const i = b.parentElement.querySelector('input'); if (!i) return;
+  const s = i.selectionStart, e = i.selectionEnd;
+  i.type = show ? 'text' : 'password';
+  b.innerHTML = ic(show ? 'eyeoff' : 'eye'); b.setAttribute('aria-pressed', show ? 'true' : 'false');
+  b.title = show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'; b.setAttribute('aria-label', b.title);
+  // changer le type remet le curseur au début (Chrome, Edge) : on le replace là où il était, aussi après le rafraîchissement du champ
+  const put = () => { if (document.activeElement === i && s != null) try { i.setSelectionRange(s, e); } catch (x) { } };
+  put(); setTimeout(put, 0);
+}
+new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) pwEyes(n); }).observe(document.body, { childList: true, subtree: true });
+pwEyes(document.body);
+document.addEventListener('mousedown', e => { if (e.target.closest && e.target.closest('.pw-eye')) e.preventDefault(); });   // le champ garde le curseur
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('.pw-eye'); if (!b) return;
+  e.preventDefault(); const i = b.parentElement.querySelector('input'); if (i) pwEye(b, i.type === 'password');
+});
+// à l'envoi, on remasque : le navigateur reconnaît bien un mot de passe (enregistrement, gestionnaire) et rien ne reste affiché
+document.addEventListener('submit', e => { for (const b of e.target.querySelectorAll('.pw-eye[aria-pressed=true]')) pwEye(b, false); }, true);
 function pwLive(root, sel) {                     // coche les règles au fil de la frappe
   const i = $(sel, root); if (!i || !i.closest('.fld').querySelector('.pw-rules')) return;
   i.addEventListener('input', () => { const box = i.closest('.fld').querySelector('.pw-rules'); if (box) box.outerHTML = pwRulesHTML(i.value); });

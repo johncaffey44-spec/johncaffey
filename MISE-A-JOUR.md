@@ -105,6 +105,7 @@ Ordre à respecter :
   - Le serveur ne garde que l'empreinte du code (`data/invites.json`) : le code n'est plus affiché après la fermeture de la fenêtre.
   - Un super administrateur ne peut être invité que par un super administrateur.
 - **Mise en service, ou plus aucun accès sur le serveur** (`accounts.json` supprimé) : la page propose les administrateurs du planning et exige le **mot de passe super administrateur**. C'est le seul cas où l'on choisit un nom.
+- **Voir le mot de passe saisi** : l'œil à droite de chaque champ mot de passe l'affiche en clair, un second clic le masque. Il est remasqué automatiquement à l'envoi. Évitez de l'afficher devant d'autres personnes ou en partage d'écran.
 - **Se connecter** : identifiant et mot de passe. La session dure jusqu'à la fermeture du navigateur, ou jusqu'à 12 h sans aucun échange avec le serveur (`$SESSION_IDLE`).
 - **Session expirée pendant le travail** : les modifications en attente sont **conservées**. La page redemande le mot de passe, puis les enregistre.
 - **Mot de passe oublié** : un administrateur clique sur le cadenas de la personne dans *Paramétrage › Utilisateurs* (colonne « Identifiant »). L'accès est supprimé et la page propose aussitôt une nouvelle invitation à lui transmettre.
