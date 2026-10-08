@@ -331,3 +331,31 @@ Tout se règle dans *Paramétrage › Sécurité & accès › Réglages de sécu
 - **Adresse de l'application** : bouton « Adresse actuelle ». Les liens envoyés pointent **uniquement** vers cette adresse, jamais vers celle déduite de la demande : un attaquant ne peut pas faire envoyer un lien piégé.
 - Le mot de passe SMTP est conservé dans `data/security.json` (protégé comme le reste du dossier `data`) et n'est jamais renvoyé à la page.
 - Vérifiez que **votre fiche utilisateur a bien votre adresse e-mail**. La page Sécurité vous prévient si elle manque.
+
+## 12. Double authentification (application Microsoft / Google Authenticator)
+
+**Réglage** (*Sécurité & accès › Réglages*, super administrateur) : obligatoire pour **personne** (facultative, par défaut), **les super administrateurs**, **les administrateurs et super administrateurs**, ou **tout le monde**.
+
+**Mise en place** : à la connexion qui suit (si elle est obligatoire), ou volontairement par le menu en haut à droite › *Double authentification*.
+1. Installer **Microsoft Authenticator** ou **Google Authenticator** sur le téléphone.
+2. Scanner le QR code affiché, ou saisir la clé.
+3. Saisir le code à 6 chiffres.
+4. Mettre en lieu sûr les **10 codes de secours** (copier, télécharger ou imprimer). Ils ne sont plus affichés ensuite.
+
+**À chaque connexion** : mot de passe, puis code de l'application.
+- Sans le code, aucun accès aux données.
+- Un même code ne sert qu'une fois.
+- Au bout de 5 codes erronés, l'identifiant et le mot de passe sont redemandés.
+- Le lien « mot de passe oublié » ne dispense pas du code.
+
+**Téléphone perdu ou changé** :
+- La personne saisit un **code de secours** à la place du code. Chaque code ne sert qu'une fois ; elle en régénère de nouveaux depuis son menu.
+- Ou un administrateur clique sur **Réinitialiser la double authentification** (icône bouclier, *Utilisateurs*) : ses sessions sont fermées, et elle refait la mise en place.
+- Pour un super administrateur, il faut un autre super administrateur ou le mot de passe super administrateur.
+- En dernier recours, sur le serveur : supprimer la partie `"mfa"` du compte dans `data/accounts.json`.
+
+**Bon à savoir** :
+- **L'heure du serveur doit être juste** (synchronisation NTP de Windows) : les codes changent toutes les 30 s, avec 30 s de tolérance.
+- **Le changement de réglage s'applique à la prochaine connexion.** Pour l'imposer tout de suite : *Déconnecter tout le monde*.
+- **La clé secrète est conservée dans `data/accounts.json`.** Protégez et sauvegardez ce dossier, comme le reste.
+- **Sans https, la double authentification ne protège pas tout** : elle évite qu'un mot de passe volé suffise, mais les échanges restent lisibles sur le réseau.

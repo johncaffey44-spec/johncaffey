@@ -69,6 +69,7 @@ $SUPER_LOCK_ATTEMPTS = 3;             // super administrateurs : bloqués après
 $SUPER_LOCK_MINUTES  = 0;             // …pendant N minutes (0 = jusqu'à la réinitialisation par e-mail ou le déblocage par un administrateur)
 $SUPER_LOCK_MAIL     = true;          // e-mail au super administrateur bloqué, avec un lien pour choisir un nouveau mot de passe
 $RESET_MINUTES = 30;                  // validité du lien « mot de passe oublié » envoyé aux super administrateurs
+$MFA_REQUIRED  = 'none';              // double authentification obligatoire pour : 'none' (facultative), 'super', 'admin' ou 'all'
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
 $FAIL_WINDOW   = 900;                 // …sur cette durée (s), puis blocage pendant la même durée
 
@@ -298,6 +299,7 @@ if (isset($SEC['superLockAttempts'])) $SUPER_LOCK_ATTEMPTS = max(0, min(20, (int
 if (isset($SEC['superLockMinutes'])) $SUPER_LOCK_MINUTES = max(0, min(1440, (int)$SEC['superLockMinutes']));
 if (isset($SEC['superLockMail'])) $SUPER_LOCK_MAIL = (bool)$SEC['superLockMail'];
 if (isset($SEC['resetMinutes'])) $RESET_MINUTES = max(5, min(1440, (int)$SEC['resetMinutes']));
+if (isset($SEC['mfaRequired']) && in_array($SEC['mfaRequired'], ['none', 'super', 'admin', 'all'], true)) $MFA_REQUIRED = $SEC['mfaRequired'];
 if (isset($SEC['backupTimes']) && is_array($SEC['backupTimes'])) $AUTO_BACKUP_TIMES = array_values(array_filter($SEC['backupTimes'], function ($t) { return is_string($t) && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $t); }));
 if (isset($SEC['backupDays']) && is_array($SEC['backupDays'])) $AUTO_BACKUP_DAYS = array_values(array_filter(array_map('intval', $SEC['backupDays']), function ($d) { return $d >= 1 && $d <= 7; }));
 if (!empty($SEC['backupKeep'])) $AUTO_BACKUP_KEEP = max(2, min(500, (int)$SEC['backupKeep']));
@@ -577,6 +579,72 @@ function reset_find(string $F, string $token): ?array {
     $v = $keep[hash('sha256', $token)] ?? null;
     return $v && (int)$v['exp'] > $now && empty($v['used']) ? $v : null;
 }
+/* --- double authentification (TOTP, RFC 6238) : application Microsoft Authenticator, Google Authenticator… --- */
+function b32_encode(string $bin): string {
+    $al = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; $bits = ''; $out = '';
+    foreach (str_split($bin) as $c) $bits .= str_pad(decbin(ord($c)), 8, '0', STR_PAD_LEFT);
+    foreach (str_split($bits, 5) as $chunk) $out .= $al[bindec(str_pad($chunk, 5, '0'))];
+    return $out;
+}
+function b32_decode(string $s): string {
+    $al = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; $bits = ''; $out = '';
+    foreach (str_split(strtoupper(preg_replace('/[^A-Za-z2-7]/', '', $s))) as $c) $bits .= str_pad(decbin(strpos($al, $c)), 5, '0', STR_PAD_LEFT);
+    foreach (str_split($bits, 8) as $b) if (strlen($b) === 8) $out .= chr(bindec($b));
+    return $out;
+}
+function totp_at(string $key, int $step): string {
+    $h = hash_hmac('sha1', pack('N2', 0, $step), $key, true);
+    $o = ord($h[19]) & 0xf;
+    $v = ((ord($h[$o]) & 0x7f) << 24 | ord($h[$o + 1]) << 16 | ord($h[$o + 2]) << 8 | ord($h[$o + 3])) % 1000000;
+    return str_pad((string)$v, 6, '0', STR_PAD_LEFT);
+}
+/** pas de temps accepté pour ce code (± 30 s de décalage d'horloge toléré), ou 0 ; refuse un code déjà utilisé */
+function totp_check(string $secret, string $code, int $last = 0): int {
+    if (!preg_match('/^\d{6}$/', $code)) return 0;
+    $key = b32_decode($secret); $now = intdiv(time(), 30);
+    for ($d = -1; $d <= 1; $d++) { $st = $now + $d; if ($st > $last && hash_equals(totp_at($key, $st), $code)) return $st; }
+    return 0;
+}
+function otp_uri(string $login, string $secret): string {
+    $iss = 'Planning D8';
+    return 'otpauth://totp/' . rawurlencode($iss) . ':' . rawurlencode($login) . '?secret=' . $secret . '&issuer=' . rawurlencode($iss) . '&algorithm=SHA1&digits=6&period=30';
+}
+/** 10 codes de secours à usage unique : on renvoie les codes en clair (affichés une fois) et on garde leurs empreintes */
+function recovery_codes(): array {
+    $al = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; $codes = []; $hashes = [];
+    for ($i = 0; $i < 10; $i++) {
+        $s = ''; for ($j = 0; $j < 8; $j++) $s .= $al[random_int(0, strlen($al) - 1)];
+        $codes[] = substr($s, 0, 4) . '-' . substr($s, 4); $hashes[] = hash('sha256', $s);
+    }
+    return [$codes, $hashes];
+}
+/** la double authentification est-elle exigée pour cette personne (réglage de Sécurité & accès) ? */
+function mfa_required(?array $doc, string $uid): bool {
+    global $MFA_REQUIRED;
+    if ($MFA_REQUIRED === 'all') return true;
+    if ($MFA_REQUIRED === 'admin') return has_any($doc, $uid, ['admin', 'users', 'security', 'settings', 'data', 'super']);
+    if ($MFA_REQUIRED === 'super') return has_perm($doc, $uid, 'super');
+    return false;
+}
+/** fin de connexion (mot de passe vérifié) : demande du code si la double authentification est active ou exigée, sinon session ouverte */
+function finish_login(string $login, array $acc, string $name, bool $weak, ?array $doc, string $ev = ''): array {
+    $a = $acc[$login];
+    $on = !empty($a['mfa']['on']);
+    if (!$on && !mfa_required($doc, (string)$a['userId'])) {
+        if ($ev !== '') auth_log($ev, $login, $name);
+        $s = open_session($login, $a, $name);
+        if ($weak) { $_SESSION['auth']['weak'] = true; $s = $_SESSION['auth']; }
+        return me_payload($s);
+    }
+    session_regenerate_id(true);
+    unset($_SESSION['auth']);
+    $p = ['login' => $login, 'name' => $name, 'weak' => $weak, 't' => time(), 'n' => 0];
+    if ($on) { $_SESSION['mfa_pending'] = $p; auth_log('mfa-ask', $login, $name); return ['auth' => false, 'mfa' => 'code', 'name' => $name]; }
+    $p['enroll'] = b32_encode(random_bytes(20));        // exigée mais pas encore activée : mise en place à cette connexion
+    $_SESSION['mfa_pending'] = $p;
+    auth_log('mfa-ask', $login, $name . ' (mise en place obligatoire)');
+    return ['auth' => false, 'mfa' => 'enroll', 'name' => $name, 'login' => $login, 'secret' => $p['enroll'], 'uri' => otp_uri($login, $p['enroll'])];
+}
 function superadmin_hash(string $DATA_DIR, string $default): string {
     $h = read_json("$DATA_DIR/superadmin.json")['hash'] ?? '';
     return is_string($h) && $h !== '' ? $h : $default;
@@ -643,10 +711,10 @@ if ($action === 'view') {
 }
 
 $me = auth_user($ACC, $SESSION_IDLE, $lock);
-$PUBLIC = ['me', 'signup-list', 'invite-check', 'signup', 'login', 'logout', 'forgot', 'reset-check', 'reset-password'];
+$PUBLIC = ['me', 'signup-list', 'invite-check', 'signup', 'login', 'logout', 'forgot', 'reset-check', 'reset-password', 'mfa-verify'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);
 // la session n'est plus modifiée ensuite : on la libère pour ne pas bloquer les requêtes parallèles
-if (!in_array($action, ['signup', 'login', 'logout', 'password', 'sa-check', 'sa-change', 'kick-all', 'reset-password'], true)) session_write_close();
+if (!in_array($action, ['signup', 'login', 'logout', 'password', 'sa-check', 'sa-change', 'kick-all', 'reset-password', 'mfa-verify', 'mfa-setup', 'mfa-enable'], true)) session_write_close();
 
 /* --- super administrateur : confirmation (valable $SUPERADMIN_TTL s pour cette session) --- */
 if ($action === 'sa-check' || $action === 'sa-change') {
@@ -765,7 +833,7 @@ if ($action === 'signup') {
     throttle_clear($FAILS, $ip);
     flock($lock, LOCK_UN);
     auth_log('signup', $login, $name . ($boot ? ' (mise en service)' : ' (invitation)'));
-    out(200, me_payload(open_session($login, $acc[$login], $name)));
+    out(200, finish_login($login, $acc, $name, false, $doc));
 }
 
 /* --- connexion --- */
@@ -830,10 +898,8 @@ if ($action === 'login') {
     $acc[$login]['name'] = $name;
     write_json($ACC, $acc);
     flock($lock, LOCK_UN);
-    auth_log('login', $login, $name);
-    $s = open_session($login, $acc[$login], $name);
-    if (pw_problem($pass, $login)) { $_SESSION['auth']['weak'] = true; $s = $_SESSION['auth']; }   // ne respecte plus les règles : à changer
-    out(200, me_payload($s));
+    // double authentification si active ou exigée ; mot de passe ne respectant plus les règles : à changer
+    out(200, finish_login($login, $acc, $name, (bool)pw_problem($pass, $login), $doc, 'login'));
 }
 
 /* --- mot de passe oublié (super administrateurs) : lien de réinitialisation par e-mail --- */
@@ -887,8 +953,112 @@ if ($action === 'reset-check' || $action === 'reset-password') {
     if (mail_ready()) send_mail($tg['email'], 'Votre mot de passe a été changé – planning',
         "Bonjour {$tg['name']},\n\nLe mot de passe de votre compte (identifiant « $login ») vient d'être changé grâce au lien de réinitialisation, depuis l'adresse $ip, le " . date('d/m/Y à H:i') . ".\n\n"
         . "Si ce n'est pas vous, prévenez immédiatement le service informatique.\n");
-    out(200, me_payload(open_session($login, $acc[$login], $tg['name'])));
+    out(200, finish_login($login, $acc, $tg['name'], false, $doc));      // le lien e-mail ne dispense pas de la double authentification
 }
+/* --- double authentification : code saisi après le mot de passe (ou mise en place obligatoire) --- */
+if ($action === 'mfa-verify') {
+    $in = body_json();
+    throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
+    $p = $_SESSION['mfa_pending'] ?? null;
+    if (!is_array($p) || time() - (int)$p['t'] > 300) { unset($_SESSION['mfa_pending']); out(401, ['auth' => false, 'restart' => true, 'error' => 'Délai dépassé : ressaisissez votre identifiant et votre mot de passe.']); }
+    $code = strtoupper(preg_replace('/[\s-]/', '', (string)($in['code'] ?? '')));
+    flock($lock, LOCK_EX);
+    $acc = read_json($ACC); $login = (string)$p['login']; $a = $acc[$login] ?? null;
+    if (!is_array($a)) { unset($_SESSION['mfa_pending']); flock($lock, LOCK_UN); out(401, ['auth' => false, 'restart' => true, 'error' => 'Compte introuvable.']); }
+    $ok = false; $usedRecovery = false; $recovery = null;
+    if (!empty($p['enroll'])) {                                   // mise en place : on vérifie le code produit par la nouvelle clé
+        if ($st = totp_check($p['enroll'], $code)) {
+            [$recovery, $hashes] = recovery_codes();
+            $acc[$login]['mfa'] = ['on' => true, 'secret' => $p['enroll'], 'since' => date('c'), 'last' => $st, 'recovery' => $hashes];
+            $ok = true; auth_log('mfa-on', $login, $p['name']);
+        }
+    } elseif (!empty($a['mfa']['on'])) {
+        if ($st = totp_check((string)$a['mfa']['secret'], $code, (int)($a['mfa']['last'] ?? 0))) { $acc[$login]['mfa']['last'] = $st; $ok = true; }
+        elseif (strlen($code) === 8 && ($k = array_search(hash('sha256', $code), (array)($a['mfa']['recovery'] ?? []), true)) !== false) {
+            array_splice($acc[$login]['mfa']['recovery'], $k, 1); $ok = true; $usedRecovery = true;
+            auth_log('mfa-recovery', $login, 'code de secours utilisé, ' . count($acc[$login]['mfa']['recovery']) . ' restant(s)');
+        }
+    }
+    if (!$ok) {
+        throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+        $_SESSION['mfa_pending']['n'] = (int)$p['n'] + 1;
+        auth_log('mfa-fail', $login, 'code erroné');
+        flock($lock, LOCK_UN);
+        if ($_SESSION['mfa_pending']['n'] >= 5) { unset($_SESSION['mfa_pending']); out(401, ['auth' => false, 'restart' => true, 'error' => 'Trop de codes erronés : ressaisissez votre identifiant et votre mot de passe.']); }
+        $replay = !empty($a['mfa']['on']) && empty($p['enroll']) && totp_check((string)$a['mfa']['secret'], $code) > 0;
+        out(401, ['auth' => false, 'error' => $replay ? 'Ce code vient déjà d’être utilisé : attendez le code suivant (il change toutes les 30 secondes).'
+            : 'Code incorrect. Vérifiez que l’heure du téléphone est à l’heure exacte, ou utilisez un code de secours.']);
+    }
+    write_json($ACC, $acc);
+    flock($lock, LOCK_UN);
+    unset($_SESSION['mfa_pending']);
+    auth_log('login', $login, $p['name'] . ' (double authentification)');
+    $s = open_session($login, $acc[$login], (string)$p['name']);
+    if (!empty($p['weak'])) { $_SESSION['auth']['weak'] = true; $s = $_SESSION['auth']; }
+    out(200, me_payload($s) + ['recovery' => $recovery, 'recoveryLeft' => count((array)($acc[$login]['mfa']['recovery'] ?? [])), 'usedRecovery' => $usedRecovery]);
+}
+
+/* --- double authentification : gestion par la personne connectée --- */
+if (in_array($action, ['mfa-status', 'mfa-setup', 'mfa-enable', 'mfa-disable', 'mfa-recovery'], true)) {
+    $in = $action === 'mfa-status' ? [] : body_json();
+    $doc = read_doc($FILE); $login = (string)$me['login'];
+    flock($lock, LOCK_EX);
+    $acc = read_json($ACC); $m = $acc[$login]['mfa'] ?? [];
+    $req = mfa_required($doc, (string)$me['userId']);
+    if ($action === 'mfa-status') { flock($lock, LOCK_UN); out(200, ['on' => !empty($m['on']), 'since' => $m['since'] ?? null, 'recoveryLeft' => count((array)($m['recovery'] ?? [])), 'required' => $req, 'policy' => $MFA_REQUIRED]); }
+    if ($action === 'mfa-setup') {
+        if (!empty($m['on'])) { flock($lock, LOCK_UN); out(409, ['error' => 'La double authentification est déjà active.']); }
+        $_SESSION['mfa_setup'] = ['secret' => b32_encode(random_bytes(20)), 't' => time()];
+        flock($lock, LOCK_UN);
+        out(200, ['secret' => $_SESSION['mfa_setup']['secret'], 'uri' => otp_uri($login, $_SESSION['mfa_setup']['secret'])]);
+    }
+    if ($action === 'mfa-enable') {
+        $su = $_SESSION['mfa_setup'] ?? null;
+        if (!is_array($su) || time() - (int)$su['t'] > 900) { flock($lock, LOCK_UN); out(400, ['error' => 'Délai dépassé : recommencez la mise en place.']); }
+        $st = totp_check((string)$su['secret'], preg_replace('/\s/', '', (string)($in['code'] ?? '')));
+        if (!$st) { flock($lock, LOCK_UN); throttle_fail($FAILS, $ip, $FAIL_WINDOW); out(400, ['error' => 'Code incorrect : saisissez le code affiché par l’application (vérifiez l’heure du téléphone).']); }
+        [$codes, $hashes] = recovery_codes();
+        $acc[$login]['mfa'] = ['on' => true, 'secret' => $su['secret'], 'since' => date('c'), 'last' => $st, 'recovery' => $hashes];
+        write_json($ACC, $acc); flock($lock, LOCK_UN);
+        unset($_SESSION['mfa_setup']);
+        auth_log('mfa-on', $login, $me['name']);
+        out(200, ['ok' => true, 'recovery' => $codes]);
+    }
+    // désactiver ou regénérer les codes de secours : mot de passe exigé
+    if (!password_verify((string)($in['password'] ?? ''), (string)($acc[$login]['hash'] ?? ''))) { flock($lock, LOCK_UN); throttle_fail($FAILS, $ip, $FAIL_WINDOW); out(403, ['error' => 'Mot de passe incorrect.']); }
+    if (empty($m['on'])) { flock($lock, LOCK_UN); out(409, ['error' => 'La double authentification n’est pas active.']); }
+    if ($action === 'mfa-disable') {
+        if ($req) { flock($lock, LOCK_UN); out(403, ['error' => 'La double authentification est obligatoire pour votre rôle : elle ne peut pas être désactivée.']); }
+        unset($acc[$login]['mfa']); write_json($ACC, $acc); flock($lock, LOCK_UN);
+        auth_log('mfa-off', $login, $me['name']);
+        out(200, ['ok' => true]);
+    }
+    [$codes, $hashes] = recovery_codes();
+    $acc[$login]['mfa']['recovery'] = $hashes; write_json($ACC, $acc); flock($lock, LOCK_UN);
+    auth_log('mfa-codes', $login, 'nouveaux codes de secours');
+    out(200, ['ok' => true, 'recovery' => $codes]);
+}
+
+/* --- administrateurs : réinitialiser la double authentification d'une personne (téléphone perdu) --- */
+if ($action === 'mfa-reset') {
+    $in = body_json();
+    $uid = (string)($in['userId'] ?? '');
+    $doc = read_doc($FILE);
+    if (!has_perm($doc, $me['userId'], 'users')) out(403, ['error' => 'Réservé aux gestionnaires des utilisateurs']);
+    // super administrateur : par un super administrateur, ou avec le mot de passe super administrateur (seul super administrateur ayant perdu son téléphone)
+    if (has_perm($doc, $uid, 'super') && !has_perm($doc, $me['userId'], 'super') && (int)($_SESSION['sa_until'] ?? 0) <= time())
+        out(403, ['superadmin' => true, 'error' => 'Réinitialiser la double authentification d’un super administrateur exige le mot de passe super administrateur.']);
+    flock($lock, LOCK_EX);
+    $acc = read_json($ACC); $n = 0;
+    foreach ($acc as $l => $a) if ((string)($a['userId'] ?? '') === $uid && isset($a['mfa'])) {
+        unset($acc[$l]['mfa']); $acc[$l]['stamp'] = bin2hex(random_bytes(8)); $n++;       // ses sessions ouvertes sont fermées
+    }
+    if ($n) write_json($ACC, $acc);
+    flock($lock, LOCK_UN);
+    auth_log('mfa-reset', $me['login'], user_label(find_user($doc, $uid) ?? ['name' => $uid]));
+    out(200, ['ok' => true, 'removed' => $n]);
+}
+
 /* --- super administrateur : e-mail de test --- */
 if ($action === 'mail-test') {
     body_json();
@@ -945,7 +1115,7 @@ if ($action === 'accounts') {
     if (!has_any($doc, $me['userId'], ['users', 'security'])) out(403, ['error' => 'Réservé aux gestionnaires des utilisateurs']);
     $list = [];
     foreach ($acc as $login => $a) $list[] = ['login' => (string)$login, 'userId' => (string)$a['userId'],
-                                             'created' => $a['created'] ?? null, 'lastLogin' => $a['lastLogin'] ?? null];
+                                             'created' => $a['created'] ?? null, 'lastLogin' => $a['lastLogin'] ?? null, 'mfa' => !empty($a['mfa']['on'])];
     out(200, ['accounts' => $list]);
 }
 
@@ -1106,6 +1276,7 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
             'mailFrom' => (string)($SEC['mailFrom'] ?? ''), 'mailFromName' => (string)($SEC['mailFromName'] ?? 'Planning D8'), 'appUrl' => (string)($SEC['appUrl'] ?? ''),
             'mailReady' => mail_ready(), 'resetMinutes' => $RESET_MINUTES,
             'superLockAttempts' => $SUPER_LOCK_ATTEMPTS, 'superLockMinutes' => $SUPER_LOCK_MINUTES, 'superLockMail' => $SUPER_LOCK_MAIL,
+            'mfaRequired' => $MFA_REQUIRED, 'mfaCount' => count(array_filter(read_json($ACC), function ($a) { return !empty($a['mfa']['on']); })), 'accCount' => count(read_json($ACC)),
             'maxFails' => $MAX_FAILS, 'failWindow' => $FAIL_WINDOW, 'https' => $https, 'super' => $isSuper]);
     }
     if ($action === 'sec-set') {
@@ -1120,6 +1291,7 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
                 'lockAttempts' => max(1, min(20, (int)($in['lockAttempts'] ?? 3))), 'lockMinutes' => max(0, min(1440, (int)($in['lockMinutes'] ?? 15))),
                 'superLockAttempts' => max(0, min(20, (int)($in['superLockAttempts'] ?? 3))), 'superLockMinutes' => max(0, min(1440, (int)($in['superLockMinutes'] ?? 0))),
                 'superLockMail' => !array_key_exists('superLockMail', $in) || !empty($in['superLockMail']), 'resetMinutes' => max(5, min(1440, (int)($in['resetMinutes'] ?? 30))),
+                'mfaRequired' => in_array($in['mfaRequired'] ?? '', ['none', 'super', 'admin', 'all'], true) ? $in['mfaRequired'] : $MFA_REQUIRED,
                 'backupTimes' => array_slice($times, 0, 12), 'backupDays' => $days ?: [1, 2, 3, 4, 5, 6, 7], 'backupKeep' => max(2, min(500, (int)($in['backupKeep'] ?? 60))),
                 'changed' => date('c'), 'by' => $me['name']]);
         if (!empty($in['newCronKey'])) $new['cronKey'] = bin2hex(random_bytes(20));
@@ -1143,7 +1315,7 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
         if (!write_json($SECF, $new)) out(500, ['error' => 'Écriture impossible']);
         auth_log('sec-set', $me['login'], 'mots de passe ' . $new['minPassword'] . ' car.' . ($new['pwDigit'] ? ' + chiffre' : '') . ($new['pwSpecial'] ? ' + spécial' : '') . ($new['pwUpper'] ? ' + majuscule' : '')
             . ' · blocage après ' . $new['lockAttempts'] . ' essais (' . ($new['lockMinutes'] ?: '∞') . ' min), super admin ' . ($new['superLockAttempts'] ?: 'jamais') . ' (' . ($new['superLockMinutes'] ?: 'jusqu’au lien e-mail') . ') · sauvegardes ' . (implode(', ', $new['backupTimes']) ?: 'désactivées')
-            . ' · session ' . $new['sessionHours'] . ' h · invitations ' . $new['inviteDays'] . ' j');
+            . ' · double authentification : ' . $new['mfaRequired'] . ' · session ' . $new['sessionHours'] . ' h · invitations ' . $new['inviteDays'] . ' j');
         out(200, ['ok' => true]);
     }
 }

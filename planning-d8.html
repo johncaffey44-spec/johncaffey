@@ -308,6 +308,9 @@ label.chip input{display:none}
 .fs-pick{display:grid;grid-template-columns:1fr 1fr;gap:5px}.fs-pick .btn{justify-content:center;white-space:nowrap;width:100%}
 .dirty-bar{position:sticky;bottom:12px;z-index:5;display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px;padding:10px 12px;border-radius:10px;
   background:var(--surface);border:1px solid #d98b1c;box-shadow:0 6px 22px rgba(0,0,0,.14);color:var(--text)}.dirty-bar>span{flex:1;min-width:220px}.dirty-bar>.ic{color:#d98b1c}
+.mfa-qr{display:flex;justify-content:center;padding:8px;background:#fff;border-radius:12px;border:1px solid var(--border);width:max-content;margin:4px auto 0}
+.mfa-steps{margin:0;padding-left:20px;font-size:13.5px;line-height:1.6}.otp{font-size:22px;letter-spacing:.25em;text-align:center}
+.rec-codes{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:16px;padding:12px;background:var(--surface-2);border-radius:10px;text-align:center;user-select:all}
 .inv-code{font-size:26px;font-weight:700;letter-spacing:.08em;text-align:center;padding:14px;border-radius:12px;background:var(--surface-2);border:1px dashed var(--border);user-select:all}
 .tbl.atl td,.tbl.atl th{padding-left:6px;padding-right:6px}.tbl tr.tot td{border-top:2px solid var(--border);background:var(--surface-2)}
 .dq{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.dq .chip{cursor:pointer;border:1px solid var(--border);background:var(--surface-2)}.dq .chip:hover{border-color:var(--primary);color:var(--primary)}
@@ -1093,6 +1096,104 @@ async function fetchJSON(url, opt = {}, ms = 8000) {
    il n'y a pas de connexion : les données ne quittent pas le poste. */
 const PAGE = location.pathname.split('/').pop() || 'index.html';
 const fatalErr = msg => Object.assign(new Error(msg), { fatal: true });
+/* ---------- QR code (mode octets, correction M), sans librairie : clé de la double authentification ---------- */
+const QR = (() => {
+  const ECC = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28];
+  const BLK = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49];
+  const rawModules = v => { let r = (16 * v + 128) * v + 64; if (v >= 2) { const n = Math.floor(v / 7) + 2; r -= (25 * n - 10) * n - 55; if (v >= 7) r -= 36; } return r; };
+  const dataCodewords = v => Math.floor(rawModules(v) / 8) - ECC[v] * BLK[v];
+  const mul = (x, y) => { let z = 0; for (let i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11D); z ^= ((y >>> i) & 1) * x; } return z & 0xFF; };
+  const divisor = deg => { const r = new Array(deg).fill(0); r[deg - 1] = 1; let root = 1;
+    for (let i = 0; i < deg; i++) { for (let j = 0; j < r.length; j++) { r[j] = mul(r[j], root); if (j + 1 < r.length) r[j] ^= r[j + 1]; } root = mul(root, 2); } return r; };
+  const remainder = (data, div) => { const r = div.map(() => 0); for (const b of data) { const f = b ^ r.shift(); r.push(0); div.forEach((c, i) => { r[i] ^= mul(c, f); }); } return r; };
+  const alignPos = v => { if (v === 1) return []; const n = Math.floor(v / 7) + 2, step = v === 32 ? 26 : Math.ceil((v * 4 + 4) / (n * 2 - 2)) * 2, r = [6];
+    for (let p = v * 4 + 10; r.length < n; p -= step) r.splice(1, 0, p); return r; };
+  function encode(text) {
+    const bytes = [...new TextEncoder().encode(text)];
+    let v = 1; for (; v <= 40; v++) if (4 + (v < 10 ? 8 : 16) + bytes.length * 8 <= dataCodewords(v) * 8) break;
+    if (v > 40) throw new Error('texte trop long');
+    const bits = []; const put = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+    put(4, 4); put(bytes.length, v < 10 ? 8 : 16); bytes.forEach(b => put(b, 8));
+    const cap = dataCodewords(v) * 8;
+    put(0, Math.min(4, cap - bits.length)); put(0, (8 - bits.length % 8) % 8);
+    for (let pad = 0xEC; bits.length < cap; pad ^= 0xEC ^ 0x11) put(pad, 8);
+    const data = []; for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(''), 2));
+    // blocs de correction d'erreurs puis entrelacement
+    const nb = BLK[v], el = ECC[v], raw = Math.floor(rawModules(v) / 8), nShort = nb - raw % nb, shortLen = Math.floor(raw / nb), div = divisor(el), blocks = [];
+    for (let i = 0, k = 0; i < nb; i++) { const d = data.slice(k, k + shortLen - el + (i < nShort ? 0 : 1)); k += d.length; const e = remainder(d, div); if (i < nShort) d.push(0); blocks.push(d.concat(e)); }
+    const cw = []; for (let i = 0; i < blocks[0].length; i++) blocks.forEach((b, j) => { if (i !== shortLen - el || j >= nShort) cw.push(b[i]); });
+    // matrice
+    const size = v * 4 + 17, M = Array.from({ length: size }, () => new Array(size).fill(false)), F = Array.from({ length: size }, () => new Array(size).fill(false));
+    const fn = (x, y, d) => { M[y][x] = d; F[y][x] = true; };
+    for (let i = 0; i < size; i++) { fn(6, i, i % 2 === 0); fn(i, 6, i % 2 === 0); }
+    const finder = (x, y) => { for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const d = Math.max(Math.abs(dx), Math.abs(dy)), xx = x + dx, yy = y + dy; if (xx >= 0 && xx < size && yy >= 0 && yy < size) fn(xx, yy, d !== 2 && d !== 4); } };
+    finder(3, 3); finder(size - 4, 3); finder(3, size - 4);
+    const ap = alignPos(v), na = ap.length;
+    for (let i = 0; i < na; i++) for (let j = 0; j < na; j++) {
+      if ((i === 0 && j === 0) || (i === 0 && j === na - 1) || (i === na - 1 && j === 0)) continue;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) fn(ap[i] + dx, ap[j] + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+    }
+    const format = mask => { const d = (0 << 3) | mask; let r = d; for (let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537);   // M = 00
+      const b = ((d << 10) | r) ^ 0x5412, g = i => ((b >>> i) & 1) === 1;
+      for (let i = 0; i <= 5; i++) fn(8, i, g(i));
+      fn(8, 7, g(6)); fn(8, 8, g(7)); fn(7, 8, g(8));
+      for (let i = 9; i < 15; i++) fn(14 - i, 8, g(i));
+      for (let i = 0; i < 8; i++) fn(size - 1 - i, 8, g(i));
+      for (let i = 8; i < 15; i++) fn(8, size - 15 + i, g(i));
+      fn(8, size - 8, true); };
+    format(0);
+    if (v >= 7) { let r = v; for (let i = 0; i < 12; i++) r = (r << 1) ^ ((r >>> 11) * 0x1F25); const b = (v << 12) | r;
+      for (let i = 0; i < 18; i++) { const d = ((b >>> i) & 1) === 1, a = size - 11 + i % 3, c = Math.floor(i / 3); fn(a, c, d); fn(c, a, d); } }
+    let bi = 0;
+    for (let right = size - 1; right >= 1; right -= 2) { if (right === 6) right = 5;
+      for (let vert = 0; vert < size; vert++) for (let j = 0; j < 2; j++) { const x = right - j, up = ((right + 1) & 2) === 0, y = up ? size - 1 - vert : vert;
+        if (!F[y][x] && bi < cw.length * 8) { M[y][x] = ((cw[bi >>> 3] >>> (7 - (bi & 7))) & 1) === 1; bi++; } } }
+    const maskFn = [(x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, x => x % 3 === 0, (x, y) => (x + y) % 3 === 0, (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0,
+      (x, y) => x * y % 2 + x * y % 3 === 0, (x, y) => (x * y % 2 + x * y % 3) % 2 === 0, (x, y) => ((x + y) % 2 + x * y % 3) % 2 === 0];
+    const apply = m => { for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (!F[y][x] && maskFn[m](x, y)) M[y][x] = !M[y][x]; };
+    const penalty = () => { let p = 0, dark = 0;
+      for (let a = 0; a < size; a++) for (const row of [true, false]) { let run = 1;
+        for (let b = 1; b < size; b++) { const c = row ? M[a][b] : M[b][a], pr = row ? M[a][b - 1] : M[b - 1][a]; if (c === pr) { run++; if (run === 5) p += 3; else if (run > 5) p++; } else run = 1; } }
+      for (let y = 0; y < size - 1; y++) for (let x = 0; x < size - 1; x++) { const c = M[y][x]; if (c === M[y][x + 1] && c === M[y + 1][x] && c === M[y + 1][x + 1]) p += 3; }
+      M.forEach(r => r.forEach(c => { if (c) dark++; }));
+      return p + Math.floor(Math.abs(dark * 20 - size * size * 10) / (size * size)) * 10; };
+    let best = 0, bestP = Infinity;
+    for (let m = 0; m < 8; m++) { apply(m); format(m); const p = penalty(); if (p < bestP) { bestP = p; best = m; } apply(m); }
+    apply(best); format(best);
+    return M;
+  }
+  /** QR code en SVG (marge de 4 modules) */
+  function svg(text, px = 220) {
+    const M = encode(text), n = M.length, q = 4, s = n + q * 2; let d = '';
+    M.forEach((row, y) => row.forEach((c, x) => { if (c) d += `M${x + q},${y + q}h1v1h-1z`; }));
+    return `<svg class="qr" viewBox="0 0 ${s} ${s}" width="${px}" height="${px}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="${s}" height="${s}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  }
+  return { encode, svg };
+})();
+
+/* ---------- double authentification : codes de secours ---------- */
+const otpKey = s => String(s || '').replace(/(.{4})/g, '$1 ').trim();
+function recoveryHTML(codes) {
+  return `<div class="bnr warn" style="margin:0 0 10px">${ic('warn')}<span><b>Codes de secours</b> : chacun sert une seule fois si vous n’avez plus votre téléphone.
+    Imprimez-les ou rangez-les en lieu sûr (pas sur le téléphone) : ils ne seront plus affichés.</span></div>
+    <div class="rec-codes mono">${codes.map(c => `<span>${esc(c)}</span>`).join('')}</div>
+    <div class="row wrap" style="gap:6px;margin-top:10px"><button class="btn sm" type="button" data-rec="copy">${ic('copy', 'sm')} Copier</button>
+      <button class="btn sm" type="button" data-rec="dl">${ic('download', 'sm')} Télécharger (.txt)</button><button class="btn sm" type="button" data-rec="print">${ic('printer', 'sm')} Imprimer</button></div>`;
+}
+function recoveryBind(root, codes, login) {
+  const txt = `Codes de secours – double authentification du planning ${DB ? DB.settings.appName : ''}\r\nCompte : ${login || ''} · générés le ${D.dt(D.now())}\r\nChaque code ne sert qu’une fois.\r\n\r\n${codes.join('\r\n')}\r\n`;
+  $$('[data-rec]', root).forEach(b => b.onclick = () => {
+    if (b.dataset.rec === 'copy') copyText(txt).then(() => toast('Codes copiés', 'ok'));
+    else if (b.dataset.rec === 'dl') download('codes-secours-planning.txt', txt, 'text/plain');
+    else printHTML(`<h2>Codes de secours</h2><p>Compte : ${esc(login || '')} — chaque code ne sert qu’une fois.</p><pre style="font-size:18px;line-height:1.8">${esc(codes.join('\n'))}</pre>`);
+  });
+}
+const mfaSetupHTML = (uri, secret) => `<ol class="mfa-steps">
+    <li>Installez <b>Microsoft Authenticator</b> ou <b>Google Authenticator</b> sur votre téléphone.</li>
+    <li>Dans l’application : <b>+</b> › « Autre compte » (ou « Scanner un code QR »), puis scannez :</li></ol>
+  <div class="mfa-qr">${QR.svg(uri, 196)}</div>
+  <p class="auth-note" style="text-align:center;margin:6px 0 10px">Pas d’appareil photo ? Clé à saisir : <b class="mono">${esc(otpKey(secret))}</b></p>
+  <ol class="mfa-steps" start="3"><li>Saisissez le code à 6 chiffres affiché par l’application :</li></ol>`;
 /* ---------- règles des mots de passe (fixées par le serveur, rappelées et vérifiées ici avant envoi) ---------- */
 let PWP = { min: 8, digit: true, special: true, upper: false };
 const setPolicy = p => { if (p && typeof p === 'object') PWP = Object.assign({}, PWP, p); };
@@ -1136,6 +1237,7 @@ const Auth = {
     const urlReset = (new URLSearchParams(location.search).get('reinit') || '').toLowerCase();      // lien « mot de passe oublié » reçu par e-mail
     let tab = urlReset && !boot && !exp ? 'reset' : boot || urlInv ? 'signup' : 'login', list = null, min = info.minPassword || 8, fresh = true, inv = { code: urlInv, name: '', err: '' };
     let rs = { token: urlReset, checked: false, name: '', login: '', err: '' }, sent = '';
+    let mf = null, recCodes = null, after = null;          // double authentification : demande du serveur, codes de secours à afficher
     const dropParam = () => history.replaceState(null, '', location.pathname + location.hash);
     setPolicy(info.policy);
     const loadList = async () => {
@@ -1167,7 +1269,9 @@ const Auth = {
         if (r && r.ok && r.body) { rs.name = r.body.name; rs.login = r.body.login; rs.expires = r.body.expires; setPolicy(r.body.policy); }
         else rs.err = (r && r.body && r.body.error) || 'Serveur injoignable.';
       }
-      const head = !exp && tab === 'forgot' ? `<h3>Mot de passe oublié ou compte bloqué</h3><p class="auth-note" style="margin-bottom:12px"><b>Super administrateurs</b> : un lien pour choisir un nouveau mot de passe est envoyé à l’adresse e-mail de votre fiche ; il débloque aussi le compte.
+      const head = tab === 'mfa' ? `<h3>${mf.mfa === 'enroll' ? 'Mise en place de la double authentification' : 'Double authentification'}</h3>`
+        : tab === 'mfa-codes' ? `<h3>Double authentification activée</h3>`
+        : !exp && tab === 'forgot' ? `<h3>Mot de passe oublié ou compte bloqué</h3><p class="auth-note" style="margin-bottom:12px"><b>Super administrateurs</b> : un lien pour choisir un nouveau mot de passe est envoyé à l’adresse e-mail de votre fiche ; il débloque aussi le compte.
             Les autres utilisateurs demandent à un administrateur de réinitialiser leur accès.</p>`
         : !exp && tab === 'reset' ? `<h3>Nouveau mot de passe</h3>`
         : exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
@@ -1204,6 +1308,16 @@ const Auth = {
           <div class="fld"><label for="au-c">Confirmation</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
           <button class="btn pri" type="submit">Enregistrer et me connecter</button>
           <p class="auth-note">Toutes vos sessions ouvertes sur d’autres postes seront fermées.</p></form>`;
+      const otpIn = `<div class="fld"><label for="au-o">Code</label><input class="in mono otp" id="au-o" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="123 456"></div>`;
+      const mfaV = () => mf.mfa === 'enroll'
+        ? `<form data-f="mfa" class="fgrid one" novalidate><div class="bnr info" style="margin:0">${ic('shield')}<span>Bonjour ${esc(mf.name)} : la double authentification est <b>obligatoire</b> pour votre compte. Mise en place en 3 étapes (2 minutes).</span></div>
+            ${mfaSetupHTML(mf.uri, mf.secret)}${otpIn}<button class="btn pri" type="submit">Activer et me connecter</button><button class="btn gh" type="button" data-t="login">Annuler</button></form>`
+        : `<form data-f="mfa" class="fgrid one" novalidate><p class="auth-note" style="margin:0">Ouvrez votre application d’authentification et saisissez le code à 6 chiffres affiché pour « Planning D8 ».</p>
+            ${otpIn}<button class="btn pri" type="submit">Valider</button>
+            <p class="auth-note">Téléphone perdu ? Saisissez un de vos <b>codes de secours</b> (XXXX-XXXX) à la place du code, ou demandez à un administrateur de réinitialiser votre double authentification.</p>
+            <button class="btn gh" type="button" data-t="login">Annuler</button></form>`;
+      const codesV = () => `${recoveryHTML(recCodes)}<label class="sw" style="margin:12px 0"><input type="checkbox" id="au-ack"><i></i><span>J’ai mis ces codes en lieu sûr</span></label>
+        <button class="btn pri" type="button" data-mfa-done style="width:100%">Continuer</button>`;
       const who = boot
         ? `<div class="fld"><label for="au-u">Administrateur</label><select class="in" id="au-u" name="userId"><option value="">— choisissez votre nom —</option>
             ${(list || []).map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
@@ -1223,10 +1337,11 @@ const Auth = {
         <div class="fld"><label for="au-c">Confirmation du mot de passe</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
         <button class="btn pri" type="submit">Créer mon accès</button></form>`;
       el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b">${head}
-        <div class="bnr danger hide" data-err></div>${tab === 'login' || exp ? login : tab === 'forgot' ? forgot : tab === 'reset' ? reset : signup}</div></div>
+        <div class="bnr danger hide" data-err></div>${tab === 'mfa' ? mfaV() : tab === 'mfa-codes' ? codesV() : tab === 'login' || exp ? login : tab === 'forgot' ? forgot : tab === 'reset' ? reset : signup}</div></div>
         <p class="auth-foot">La session reste ouverte jusqu’à la fermeture du navigateur ou une longue inactivité.${location.protocol === 'https:' ? ''
           : '<br>Connexion non chiffrée (http) : n’utilisez pas un mot de passe qui sert ailleurs.'}</p></div>`;
-      const f = $(exp || tab === 'reset' ? '#au-p' : tab === 'signup' ? (boot ? '#au-u' : inv.name ? '#au-l' : '#au-k') : '#au-l', el); if (f) f.focus();
+      if (tab === 'mfa-codes') recoveryBind(el, recCodes, after && after.login);
+      const f = tab === 'mfa' ? $('#au-o', el) : $(exp || tab === 'reset' ? '#au-p' : tab === 'signup' ? (boot ? '#au-u' : inv.name ? '#au-l' : '#au-k') : '#au-l', el); if (f) f.focus();
       if (tab === 'signup' || tab === 'reset') pwLive(el, '#au-p');
       const k = $('#au-k', el);
       if (k) k.oninput = () => {                     // code complet saisi : on vérifie l'invitation et on affiche à qui elle est destinée
@@ -1237,7 +1352,11 @@ const Auth = {
     const err = m => { const b = $('[data-err]', el); if (!b) return; b.innerHTML = m ? ic('warn') + '<span>' + esc(m) + '</span>' : ''; b.classList.toggle('hide', !m); };
     el.onclick = e => {
       const t = e.target.closest('[data-t]');
-      if (t && t.dataset.t !== tab) { if (tab === 'reset') dropParam(); tab = t.dataset.t; sent = ''; draw(); return; }
+      if (t && t.dataset.t !== tab) { if (tab === 'reset') dropParam(); if (tab === 'mfa') this.api('logout', {}).catch(() => { }); tab = t.dataset.t; sent = ''; mf = null; draw(); return; }
+      if (e.target.closest('[data-mfa-done]')) {
+        if (!$('#au-ack', el).checked) return err('Cochez « J’ai mis ces codes en lieu sûr » : sans eux, un téléphone perdu bloque votre accès.');
+        el.onclick = el.onsubmit = null; done(after); return;
+      }
       if (e.target.closest('[data-import]')) {
         pickFile('.json,application/json').then(async f => {
           if (!f) return;
@@ -1256,6 +1375,25 @@ const Auth = {
       e.preventDefault();
       const form = e.target, kind = form.dataset.f, v = Object.fromEntries(new FormData(form));
       v.login = String(v.login || '').trim();
+      const toMfa = r => { if (r && r.ok && r.body && r.body.mfa) { mf = r.body; tab = 'mfa'; draw(); return true; } return false; };
+      if (kind === 'mfa') {
+        const code = String(v.code || '').replace(/\s/g, '');
+        if (!/^\d{6}$/.test(code) && !/^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$/.test(code)) return err('Saisissez le code à 6 chiffres (ou un code de secours XXXX-XXXX).');
+        const b = $('button[type=submit]', form); b.disabled = true; err('');
+        const r = await this.api('mfa-verify', { code }).catch(() => null);
+        b.disabled = false;
+        if (r && r.ok && r.body && r.body.auth) {
+          if (urlInv || urlReset) dropParam();
+          this.set(r.body);
+          if (r.body.recovery) { recCodes = r.body.recovery; after = r.body; tab = 'mfa-codes'; draw(); return; }
+          if (r.body.usedRecovery) toast(`Code de secours utilisé : il vous en reste ${r.body.recoveryLeft}. Pensez à en générer de nouveaux (menu › Double authentification).`, 'warn', null, 15000);
+          el.onclick = el.onsubmit = null; done(r.body); return;
+        }
+        if (r && r.body && r.body.restart) { mf = null; tab = 'login'; draw(); }
+        err((r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.');
+        const i = $('#au-o', el); if (i) { i.value = ''; i.focus(); }
+        return;
+      }
       if (kind === 'forgot') {
         if (!v.login) return err('Saisissez votre identifiant.');
         const b = $('button[type=submit]', form); b.disabled = true; err('');
@@ -1270,6 +1408,7 @@ const Auth = {
         const b = $('button[type=submit]', form); b.disabled = true; err('');
         const r = await this.api('reset-password', { token: rs.token, password: v.password }).catch(() => null);
         b.disabled = false;
+        if (toMfa(r)) { toast('Mot de passe changé : saisissez maintenant le code de double authentification.', 'ok'); return; }
         if (r && r.ok && r.body && r.body.auth) { el.onclick = el.onsubmit = null; dropParam(); this.set(r.body); toast('Mot de passe changé : vous êtes connecté.', 'ok'); done(r.body); }
         else if (r && r.status === 404) { rs.err = r.body.error; draw(); }
         else err((r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.');
@@ -1291,6 +1430,7 @@ const Auth = {
       const btn = $('button[type=submit]', form); btn.disabled = true; err('');
       let r = null; try { r = await this.api(kind, v); } catch (x) { }
       btn.disabled = false;
+      if (toMfa(r)) return;                              // mot de passe bon : code de double authentification (ou mise en place) demandé
       if (r && r.ok && r.body && r.body.auth) {
         el.onclick = el.onsubmit = null;
         if (urlInv) history.replaceState(null, '', location.pathname + location.hash);   // le code est consommé : on le retire de l'adresse
@@ -1360,6 +1500,53 @@ const Auth = {
   }
 };
 
+/* ---------- double authentification : gestion par la personne connectée ---------- */
+async function mfaDialog() {
+  closePop();
+  const r = await Auth.api('mfa-status').catch(() => null);
+  if (!r || !r.ok) return toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+  const s = r.body, login = Auth.user ? Auth.user.login : '';
+  const m = modal({ title: 'Double authentification', size: '', body: '<div id="mfa-b"></div>', foot: `<span class="spacer"></span><button class="btn" data-close>Fermer</button>` });
+  const box = $('#mfa-b', m.el);
+  const pwField = `<div class="fld" style="margin-top:12px"><label>Mot de passe (confirmation)</label><input class="in" type="password" id="mfa-pw" autocomplete="current-password"></div>`;
+  const showCodes = codes => { box.innerHTML = recoveryHTML(codes); recoveryBind(box, codes, login); };
+  const statusView = () => {
+    box.innerHTML = s.on
+      ? `<div class="bnr info" style="margin:0 0 12px">${ic('check')}<span><b>Active</b> depuis le ${esc(D.dt(s.since))} · ${s.recoveryLeft} code(s) de secours restant(s).</span></div>
+         <p class="mut" style="margin:0">À chaque connexion, le code de votre application est demandé après le mot de passe.</p>${pwField}
+         <div class="row wrap" style="gap:6px;margin-top:10px"><button class="btn" data-x="codes">${ic('refresh', 'sm')} Nouveaux codes de secours</button>
+           ${s.required ? `<span class="mut" style="font-size:12.5px">Obligatoire pour votre rôle : ne peut pas être désactivée.</span>` : `<button class="btn dgr" data-x="off">Désactiver</button>`}</div>`
+      : `<p style="margin:0 0 10px">Protège votre compte même si votre mot de passe est découvert : après le mot de passe, un code à 6 chiffres affiché par une application de votre téléphone est demandé.</p>
+         ${s.required ? `<div class="bnr warn" style="margin:0 0 10px">${ic('warn')}<span>Obligatoire pour votre rôle : elle sera demandée à votre prochaine connexion.</span></div>` : ''}
+         <button class="btn pri" data-x="setup">${ic('shield', 'sm')} Activer</button>`;
+    bind();
+  };
+  const bind = () => $$('[data-x]', box).forEach(b => b.onclick = async () => {
+    const x = b.dataset.x;
+    if (x === 'setup') {
+      const q = await Auth.api('mfa-setup', {}).catch(() => null);
+      if (!q || !q.ok) return toast((q && q.body && q.body.error) || 'Serveur injoignable.', 'danger');
+      box.innerHTML = mfaSetupHTML(q.body.uri, q.body.secret) + `<div class="fld"><input class="in mono otp" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123 456"></div>
+        <button class="btn pri" data-x="enable" style="margin-top:10px;width:100%">Activer</button>`;
+      bind(); $('#mfa-code', box).focus(); return;
+    }
+    if (x === 'enable') {
+      const code = $('#mfa-code', box).value.replace(/\s/g, '');
+      if (!/^\d{6}$/.test(code)) return toast('Saisissez le code à 6 chiffres affiché par l’application.', 'warn');
+      const q = await Auth.api('mfa-enable', { code }).catch(() => null);
+      if (!q || !q.ok) return toast((q && q.body && q.body.error) || 'Serveur injoignable.', 'danger');
+      toast('Double authentification activée', 'ok'); showCodes(q.body.recovery); return;
+    }
+    const pw = ($('#mfa-pw', box) || {}).value;
+    if (!pw) return toast('Saisissez votre mot de passe pour confirmer.', 'warn');
+    if (x === 'off' && !await ask('Désactiver la double authentification ? Votre compte ne sera plus protégé que par le mot de passe.', { ok: 'Désactiver', danger: true })) return;
+    const q = await Auth.api(x === 'off' ? 'mfa-disable' : 'mfa-recovery', { password: pw }).catch(() => null);
+    if (!q || !q.ok) return toast((q && q.body && q.body.error) || 'Serveur injoignable.', 'danger');
+    if (x === 'off') { toast('Double authentification désactivée', 'ok'); m.close(); }
+    else { toast('Nouveaux codes générés : les anciens ne fonctionnent plus.', 'ok'); showCodes(q.body.recovery); }
+  });
+  statusView();
+}
 /* ---------- invitation : code à usage unique + lien, à transmettre à la personne ---------- */
 function showInvite(u, inv) {
   const link = location.href.split('#')[0].split('?')[0] + '?invitation=' + encodeURIComponent(inv.code);
@@ -2258,7 +2445,8 @@ Object.assign(ACT, {
       ${srv ? '' : `<div style="max-height:260px;overflow:auto">${DB.users.filter(x => x.active !== false).sort(byName).map(x =>
       `<div class="pal-i" data-act="switch-user" data-id="${x.id}"><span class="av" style="background:${x.id === (u && u.id) ? 'var(--primary)' : 'var(--text-3)'}">${initials(label(x))}</span><span>${esc(label(x))}</span><small>${esc(label(roleOf(x)) || '')}</small></div>`).join('')}</div>`}
       <div style="${srv ? '' : 'border-top:1px solid var(--border);'}margin-top:4px">
-        ${srv ? `<div class="pal-i" data-act="change-pwd">${ic('lock')}<span>Changer mon mot de passe</span></div>` : ''}
+        ${srv ? `<div class="pal-i" data-act="change-pwd">${ic('lock')}<span>Changer mon mot de passe</span></div>
+          <div class="pal-i" data-act="mfa-dialog">${ic('shield')}<span>Double authentification</span></div>` : ''}
         <div style="padding:6px 10px 8px"><div class="mut" style="font-size:12px;margin-bottom:6px">Taille d’affichage</div><div class="fs-pick">
           ${[['auto', 'Auto', 'selon l’écran'], ['n', 'Normal', ''], ['l', 'Grand', ''], ['xl', 'Très grand', '']].map(([k, l, s]) => `<button class="btn sm${(UI.fs || 'auto') === k ? ' pri' : ''}" data-act="fs" data-v="${k}" title="${esc(s || l)}">${l}</button>`).join('')}</div></div>
         <div class="pal-i" data-act="shortcuts">${ic('keyboard')}<span>Raccourcis clavier</span></div>
@@ -2267,6 +2455,7 @@ Object.assign(ACT, {
       </div>`);
   },
   'change-pwd': () => Auth.changePassword(),
+  'mfa-dialog': () => mfaDialog(),
   fs: el => { UI.fs = el.dataset.v; saveUI(); closePop(); applyFs(); render(); },
   logout: () => Auth.logout(),
   'app-reload': () => {
@@ -3716,12 +3905,13 @@ function pageAdmin(kind, q) {
   if (accs && (Auth.acc === null || lastPath !== route().path)) { if (lastPath !== route().path) Auth.acc = null; Auth.loadAccounts(); }
   const invOf = x => (Auth.inv || {})[x.id];
   const accCell = x => !accs ? '' : `<td>${!Auth.acc ? '<span class="mut">…</span>' : Auth.acc[x.id]
-    ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>${(Auth.locks || {})[Auth.acc[x.id].login]
+    ? `<span class="chip" title="Créé le ${esc(D.dt(Auth.acc[x.id].created))} · dernière connexion ${esc(D.dt(Auth.acc[x.id].lastLogin))}">${esc(Auth.acc[x.id].login)}</span>${Auth.acc[x.id].mfa ? ` <span class="chip" style="${cvar('#3c9f5f', .14, .35)}" title="Double authentification active">${ic('shield', 'sm')} 2FA</span>` : ''}${(Auth.locks || {})[Auth.acc[x.id].login]
       ? ` <span class="pill nowrap" style="${cvar('#d1444a', .14, .35)}">${ic('lock', 'sm')} bloqué</span>` : ''}`
     : invOf(x) ? `<span class="pill nowrap" style="${cvar('#1487c9', .13, .35)}" title="Invitation de ${esc(invOf(x).by)}, le ${esc(D.dt(invOf(x).created))}">${ic('mail', 'sm')} invité · jusqu’au ${esc(D.short(invOf(x).expires.slice(0, 10)))}</span>`
     : x.active === false ? '<span class="mut">compte désactivé</span>' : '<span class="mut">sans accès</span>'}</td>`;
   const accBtn = x => !(accs && Auth.acc && can('users') && (can('super') || !isSuperUser(x))) ? ''
     : Auth.acc[x.id] ? ((Auth.locks || {})[Auth.acc[x.id].login] ? `<button class="btn sm" data-act="unlock-login" data-login="${esc(Auth.acc[x.id].login)}" title="Débloquer le compte">${ic('lock', 'sm')} Débloquer</button>` : '')
+      + (Auth.acc[x.id].mfa && !(Auth.user && Auth.user.userId === x.id) ? `<button class="ibtn" data-act="mfa-reset" data-id="${esc(x.id)}" title="Réinitialiser la double authentification (téléphone perdu)">${ic('shield')}</button>` : '')
       + (Auth.user && Auth.user.userId === x.id ? '' : `<button class="ibtn" data-act="kick" data-id="${esc(x.id)}" title="Forcer la déconnexion">${ic('logout')}</button><button class="ibtn" data-act="reset-access" data-id="${esc(x.id)}" title="Réinitialiser l’accès (identifiant et mot de passe)">${ic('lock')}</button>`)
     : x.active === false ? ''
     : `<button class="btn sm${invOf(x) ? '' : ' pri'}" data-act="invite" data-id="${esc(x.id)}" title="${invOf(x) ? 'Générer un nouveau code (l’ancien ne fonctionnera plus)' : 'Créer une invitation à usage unique pour que cette personne crée son accès'}">${ic('mail', 'sm')} ${invOf(x) ? 'Renvoyer' : 'Inviter'}</button>${invOf(x) ? `<button class="ibtn" data-act="invite-revoke" data-id="${esc(x.id)}" title="Annuler l’invitation">${ic('x')}</button>` : ''}`;
@@ -4050,6 +4240,19 @@ Object.assign(ACT, {
     if (!await ask(`Annuler l’invitation de <b>${esc(label(u))}</b> ? Le code envoyé ne fonctionnera plus.`, { ok: 'Annuler l’invitation', danger: true })) return;
     const r = await Auth.api('invite-revoke', { userId: u.id }).catch(() => null);
     if (r && r.ok) { toast('Invitation annulée', 'ok'); Auth.acc = null; Auth.loadAccounts(); }
+    else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
+  },
+  'mfa-reset': async (el, e) => {
+    if (e) e.stopPropagation(); if (!needs('users')) return;
+    const u = get('users', el.dataset.id); if (!u) return;
+    if (!await ask(`Réinitialiser la double authentification de <b>${esc(label(u))}</b> (téléphone perdu ou changé) ?<br><br>Ses sessions ouvertes sont fermées.
+      ${DB.settings && true ? 'Si la double authentification est obligatoire pour son rôle, la personne la remettra en place à sa prochaine connexion (nouveau QR code) ; sinon elle pourra la réactiver depuis son menu.' : ''}`, { ok: 'Réinitialiser' })) return;
+    let r = await Auth.api('mfa-reset', { userId: u.id }).catch(() => null);
+    if (r && r.status === 403 && r.body && r.body.superadmin) {
+      if (!await superAdmin('Réinitialiser la double authentification d’un super administrateur exige le mot de passe super administrateur.', { ok: 'Confirmer', forcePwd: true })) return;
+      r = await Auth.api('mfa-reset', { userId: u.id }).catch(() => null);
+    }
+    if (r && r.ok) { toast('Double authentification de ' + label(u) + ' réinitialisée', 'ok'); Auth.acc = null; Auth.loadAccounts(); }
     else toast((r && r.body && r.body.error) || 'Serveur injoignable.', 'danger');
   },
   'reset-access': async (el, e) => {
@@ -5632,7 +5835,9 @@ const AUTH_EV = {
   locked: ['Compte bloqué', 'danger'], unlock: ['Compte débloqué', ''], 'backup-auto': ['Sauvegarde automatique', 'ok'],
   invite: ['Invitation créée', ''], 'invite-revoke': ['Invitation annulée', ''],
   forgot: ['Mot de passe oublié', 'warn'], 'pw-reset': ['Mot de passe réinitialisé (e-mail)', 'warn'], 'super-alert': ['Alerte e-mail : essais sur un super admin', 'danger'],
-  'mail-fail': ['Échec d’envoi d’e-mail', 'danger'], 'mail-test': ['E-mail de test envoyé', 'ok']
+  'mail-fail': ['Échec d’envoi d’e-mail', 'danger'], 'mail-test': ['E-mail de test envoyé', 'ok'],
+  'mfa-ask': ['Code 2FA demandé', ''], 'mfa-fail': ['Code 2FA erroné', 'danger'], 'mfa-on': ['2FA activée', 'ok'], 'mfa-off': ['2FA désactivée', 'warn'],
+  'mfa-codes': ['Nouveaux codes de secours', ''], 'mfa-recovery': ['Code de secours utilisé', 'warn'], 'mfa-reset': ['2FA réinitialisée par un admin', 'warn']
 };
 async function loadSecurity() {
   if (SEC.busy || Sync.mode !== 'server') return; SEC.busy = true;
@@ -5718,6 +5923,9 @@ function pageSecurity() {
       <div class="fld"><label>Blocage du compte après (mots de passe erronés)</label><input class="in" type="number" min="1" max="20" name="lockAttempts" value="${c.lockAttempts || 3}" ${dis}></div>
       <div class="fld"><label>Durée du blocage (minutes)</label><input class="in" type="number" min="0" max="1440" name="lockMinutes" value="${c.lockMinutes ?? 15}" ${dis}>
         <span class="help">0 = bloqué jusqu’au déblocage par un administrateur.</span></div>
+      <div class="fld full sec-sep"><label>${ic('shield', 'sm')} Double authentification (Microsoft Authenticator, Google Authenticator…) obligatoire pour</label>
+        <select class="in" name="mfaRequired" style="max-width:520px" ${dis}>${[['none', 'Personne : facultative, chacun peut l’activer depuis son menu'], ['super', 'Les super administrateurs'], ['admin', 'Les administrateurs et super administrateurs'], ['all', 'Tout le monde']].map(([k, l]) => `<option value="${k}"${(c.mfaRequired || 'none') === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span class="help">${c.mfaCount ?? 0} compte(s) sur ${c.accCount ?? 0} l’ont activée. Les personnes concernées la mettent en place à leur prochaine connexion (QR code à scanner) ; pour l’imposer tout de suite, « Déconnecter tout le monde ».</span></div>
       <div class="fld full"><label>${ic('shield', 'sm')} Comptes super administrateur</label><span class="help">Règles propres aux super administrateurs : ils peuvent se débloquer eux-mêmes en recevant un lien par e-mail (« Mot de passe oublié ? »).</span></div>
       <div class="fld"><label>Blocage après (mots de passe erronés)</label><input class="in" type="number" min="0" max="20" name="superLockAttempts" value="${c.superLockAttempts ?? 3}" ${dis}>
         <span class="help">0 = jamais bloqué (essais ralentis et alerte e-mail à la place).</span></div>
@@ -5818,7 +6026,7 @@ Object.assign(ACT, {
     secCall('sec-set', { smtpHost: v.smtpHost, smtpPort: +v.smtpPort || 0, smtpSecure: v.smtpSecure, smtpUser: v.smtpUser, smtpPass: v.smtpPass || '', mailFrom: v.mailFrom, mailFromName: v.mailFromName, appUrl: v.appUrl,
       inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword, pwDigit: !!v.pwDigit, pwSpecial: !!v.pwSpecial, pwUpper: !!v.pwUpper,
       lockAttempts: +v.lockAttempts, lockMinutes: +v.lockMinutes, superLockAttempts: +v.superLockAttempts || 0, superLockMinutes: +v.superLockMinutes || 0,
-      superLockMail: !!v.superLockMail, resetMinutes: +v.resetMinutes || 30, backupTimes: times, backupDays: (v.backupDays || []).map(Number), backupKeep: +v.backupKeep }, 'Réglages enregistrés')
+      superLockMail: !!v.superLockMail, resetMinutes: +v.resetMinutes || 30, mfaRequired: v.mfaRequired || 'none', backupTimes: times, backupDays: (v.backupDays || []).map(Number), backupKeep: +v.backupKeep }, 'Réglages enregistrés')
       .then(ok => { if (ok) { clearDraft('sec'); SEC.mail = null; dirtyBar($('#sec-f'), false); } });
   },
   'smtp-preset': el => {
