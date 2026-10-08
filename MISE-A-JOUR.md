@@ -293,3 +293,24 @@ Tout se règle dans *Paramétrage › Sécurité & accès › Réglages de sécu
 **Règles des mots de passe** : par défaut, **8 caractères minimum, dont au moins 1 chiffre et 1 caractère spécial**. On peut y ajouter une majuscule obligatoire.
 - Les règles s'affichent et se cochent pendant la saisie. Le serveur les vérifie aussi : impossible de les contourner.
 - **Mots de passe existants** : à la connexion, si le mot de passe ne respecte plus les règles, la personne doit en choisir un nouveau. La fenêtre ne peut pas être fermée, et le serveur refuse ses enregistrements tant que ce n'est pas fait.
+
+## 11. Super administrateurs : jamais bloqués, mot de passe oublié par e-mail
+
+**Pas de blocage du compte.** Un super administrateur n'est jamais bloqué après N mots de passe erronés, pour qu'on ne puisse pas lui interdire l'accès en se trompant exprès. Trois protections compensent :
+- **Le blocage par adresse IP reste en place** : 8 échecs, puis 15 min d'attente pour ce poste. Deviner le mot de passe reste donc très lent.
+- **Chaque essai raté est ralenti** (0,8 s) et noté dans le journal des connexions.
+- **Une alerte par e-mail** est envoyée au super administrateur toutes les 3 erreurs sur son compte, avec l'adresse IP d'origine.
+
+**Mot de passe oublié.** Sur l'écran de connexion : « Mot de passe oublié ? », puis l'identifiant.
+- Si c'est un super administrateur dont la fiche (*Utilisateurs*) a une adresse e-mail, il reçoit un lien valable **30 minutes, une seule fois**.
+- Le lien ouvre une page qui demande le nouveau mot de passe, selon les règles en vigueur. La personne est ensuite connectée, ses autres sessions sont fermées, et un e-mail de confirmation est envoyé.
+- La réponse à l'écran est la même, et met le même temps, que le compte existe ou non : on ne peut pas s'en servir pour deviner les identifiants.
+- Au plus 3 liens par heure et par compte.
+- Les autres utilisateurs continuent de demander à un administrateur (réinitialisation, puis nouvelle invitation).
+
+**À régler une fois** (*Sécurité & accès › Réglages*, rubrique « Envoi des e-mails »), puis bouton **Envoyer un e-mail de test** :
+- **Serveur SMTP** : Microsoft 365 = `smtp.office365.com`, STARTTLS, port 587, avec le compte et le mot de passe d'une boîte d'envoi (ex. `planning@d8.fr`). La boîte doit avoir l'« authentification SMTP » autorisée dans l'administration Microsoft 365. Avec un relais interne : port 25, sans chiffrement ni compte.
+- **Adresse d'expédition** : la boîte d'envoi.
+- **Adresse de l'application** : bouton « Adresse actuelle ». Les liens envoyés pointent **uniquement** vers cette adresse, jamais vers celle déduite de la demande : un attaquant ne peut pas faire envoyer un lien piégé.
+- Le mot de passe SMTP est conservé dans `data/security.json` (protégé comme le reste du dossier `data`) et n'est jamais renvoyé à la page.
+- Vérifiez que **votre fiche utilisateur a bien votre adresse e-mail**. La page Sécurité vous prévient si elle manque.

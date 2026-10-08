@@ -664,6 +664,7 @@ const ICONS = {
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7',
   coffee: 'M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3',
   check: 'M20 6 9 17l-5-5',
+  link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
   dot: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   checkcircle: 'M22 11v1a10 10 0 1 1-5.9-9.1M22 4 12 14.9l-3-3',
   calx: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM10 14l4 4M14 14l-4 4',
@@ -1132,7 +1133,10 @@ const Auth = {
     // un accès ne se crée qu'avec une invitation (code à usage unique donné par un administrateur) ;
     // seule la mise en service (aucun accès sur le serveur) propose les administrateurs, avec le mot de passe super administrateur
     const urlInv = new URLSearchParams(location.search).get('invitation') || '';
-    let tab = boot || urlInv ? 'signup' : 'login', list = null, min = info.minPassword || 8, fresh = true, inv = { code: urlInv, name: '', err: '' };
+    const urlReset = (new URLSearchParams(location.search).get('reinit') || '').toLowerCase();      // lien « mot de passe oublié » reçu par e-mail
+    let tab = urlReset && !boot && !exp ? 'reset' : boot || urlInv ? 'signup' : 'login', list = null, min = info.minPassword || 8, fresh = true, inv = { code: urlInv, name: '', err: '' };
+    let rs = { token: urlReset, checked: false, name: '', login: '', err: '' }, sent = '';
+    const dropParam = () => history.replaceState(null, '', location.pathname + location.hash);
     setPolicy(info.policy);
     const loadList = async () => {
       const r = await this.api('signup-list').catch(() => null);
@@ -1156,7 +1160,17 @@ const Auth = {
         list = await loadList();
       }
       if (tab === 'signup' && !boot && inv.code && !inv.name && !inv.err) await checkInv();
-      const head = exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
+      if (tab === 'reset' && !rs.checked) {
+        el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b mut">Vérification du lien…</div></div></div>`;
+        const r = await fetchJSON('api.php?a=reset-check&token=' + encodeURIComponent(rs.token), {}, 15000).catch(() => null);
+        rs.checked = true;
+        if (r && r.ok && r.body) { rs.name = r.body.name; rs.login = r.body.login; rs.expires = r.body.expires; setPolicy(r.body.policy); }
+        else rs.err = (r && r.body && r.body.error) || 'Serveur injoignable.';
+      }
+      const head = !exp && tab === 'forgot' ? `<h3>Mot de passe oublié</h3><p class="auth-note" style="margin-bottom:12px"><b>Super administrateurs</b> : un lien de réinitialisation est envoyé à l’adresse e-mail de votre fiche.
+            Les autres utilisateurs demandent à un administrateur de réinitialiser leur accès.</p>`
+        : !exp && tab === 'reset' ? `<h3>Nouveau mot de passe</h3>`
+        : exp ? `<h3>Session expirée</h3><p class="auth-note" style="margin-bottom:12px">Ressaisissez votre mot de passe : les modifications en attente seront enregistrées ensuite.</p>`
         : boot && !fresh ? `<h3>Remise en route des accès</h3><p class="auth-note" style="margin-bottom:12px">Aucun accès n’existe sur le serveur.
             Un administrateur du planning recrée le sien avec le mot de passe super administrateur, puis invite les autres utilisateurs.</p>`
         : boot ? `<h3>Première mise en service</h3><p class="auth-note" style="margin-bottom:12px">Le serveur ne contient encore aucun planning.
@@ -1171,7 +1185,25 @@ const Auth = {
         <div class="fld"><label for="au-p">Mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="current-password"></div>
         <button class="btn pri" type="submit">Se connecter</button>
         ${exp ? `<button class="btn gh" type="button" data-other>Se connecter avec un autre compte</button>`
-          : `<p class="auth-note">Première connexion ? Il vous faut une invitation : demandez-la à un administrateur, puis choisissez « J’ai une invitation ».<br>Mot de passe oublié ? Un administrateur réinitialise votre accès et vous renvoie une invitation.</p>`}</form>`;
+          : `<button class="btn gh" type="button" data-t="forgot">Mot de passe oublié ?</button>
+             <p class="auth-note">Première connexion ? Il vous faut une invitation : demandez-la à un administrateur, puis choisissez « J’ai une invitation ».</p>`}</form>`;
+      const forgot = sent ? `<div class="bnr info" style="margin:0 0 12px">${ic('mail')}<span>${esc(sent)}</span></div>
+          <p class="auth-note" style="margin-bottom:12px">Pas de message ? Vérifiez les courriers indésirables, puis réessayez dans quelques minutes.</p>
+          <button class="btn" type="button" data-t="login" style="width:100%">Revenir à la connexion</button>`
+        : `<form data-f="forgot" class="fgrid one" novalidate>
+          <div class="fld"><label for="au-l">Identifiant</label><input class="in" id="au-l" name="login" autocomplete="username" autocapitalize="none" spellcheck="false"></div>
+          <button class="btn pri" type="submit">${ic('mail')} Recevoir le lien par e-mail</button>
+          <button class="btn gh" type="button" data-t="login">Revenir à la connexion</button></form>`;
+      const reset = rs.err ? `<div class="bnr warn" style="margin:0 0 12px">${ic('warn')}<span>${esc(rs.err)}</span></div>
+          <button class="btn" type="button" data-t="forgot" style="width:100%;margin-bottom:6px">Refaire une demande</button>
+          <button class="btn gh" type="button" data-t="login" style="width:100%">Revenir à la connexion</button>`
+        : `<form data-f="reset" class="fgrid one" novalidate>
+          <div class="bnr info" style="margin:0">${ic('user')}<span>Compte de <b>${esc(rs.name)}</b> · identifiant <b>${esc(rs.login)}</b>${rs.expires ? `<br>Lien valable jusqu’à ${esc(D.dt(rs.expires).slice(-5))}` : ''}</span></div>
+          <input type="text" name="login" value="${esc(rs.login)}" autocomplete="username" hidden>
+          <div class="fld"><label for="au-p">Nouveau mot de passe</label><input class="in" id="au-p" type="password" name="password" autocomplete="new-password">${pwRulesHTML()}</div>
+          <div class="fld"><label for="au-c">Confirmation</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
+          <button class="btn pri" type="submit">Enregistrer et me connecter</button>
+          <p class="auth-note">Toutes vos sessions ouvertes sur d’autres postes seront fermées.</p></form>`;
       const who = boot
         ? `<div class="fld"><label for="au-u">Administrateur</label><select class="in" id="au-u" name="userId"><option value="">— choisissez votre nom —</option>
             ${(list || []).map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}</select>
@@ -1191,11 +1223,11 @@ const Auth = {
         <div class="fld"><label for="au-c">Confirmation du mot de passe</label><input class="in" id="au-c" type="password" name="confirm" autocomplete="new-password"></div>
         <button class="btn pri" type="submit">Créer mon accès</button></form>`;
       el.innerHTML = `<div class="auth-box">${this.brand()}<div class="card"><div class="card-b">${head}
-        <div class="bnr danger hide" data-err></div>${tab === 'login' || exp ? login : signup}</div></div>
+        <div class="bnr danger hide" data-err></div>${tab === 'login' || exp ? login : tab === 'forgot' ? forgot : tab === 'reset' ? reset : signup}</div></div>
         <p class="auth-foot">La session reste ouverte jusqu’à la fermeture du navigateur ou une longue inactivité.${location.protocol === 'https:' ? ''
           : '<br>Connexion non chiffrée (http) : n’utilisez pas un mot de passe qui sert ailleurs.'}</p></div>`;
-      const f = $(exp ? '#au-p' : tab === 'signup' ? (boot ? '#au-u' : inv.name ? '#au-l' : '#au-k') : '#au-l', el); if (f) f.focus();
-      if (tab === 'signup') pwLive(el, '#au-p');
+      const f = $(exp || tab === 'reset' ? '#au-p' : tab === 'signup' ? (boot ? '#au-u' : inv.name ? '#au-l' : '#au-k') : '#au-l', el); if (f) f.focus();
+      if (tab === 'signup' || tab === 'reset') pwLive(el, '#au-p');
       const k = $('#au-k', el);
       if (k) k.oninput = () => {                     // code complet saisi : on vérifie l'invitation et on affiche à qui elle est destinée
         const c = k.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1205,7 +1237,7 @@ const Auth = {
     const err = m => { const b = $('[data-err]', el); if (!b) return; b.innerHTML = m ? ic('warn') + '<span>' + esc(m) + '</span>' : ''; b.classList.toggle('hide', !m); };
     el.onclick = e => {
       const t = e.target.closest('[data-t]');
-      if (t && t.dataset.t !== tab) { tab = t.dataset.t; draw(); return; }
+      if (t && t.dataset.t !== tab) { if (tab === 'reset') dropParam(); tab = t.dataset.t; sent = ''; draw(); return; }
       if (e.target.closest('[data-import]')) {
         pickFile('.json,application/json').then(async f => {
           if (!f) return;
@@ -1224,6 +1256,25 @@ const Auth = {
       e.preventDefault();
       const form = e.target, kind = form.dataset.f, v = Object.fromEntries(new FormData(form));
       v.login = String(v.login || '').trim();
+      if (kind === 'forgot') {
+        if (!v.login) return err('Saisissez votre identifiant.');
+        const b = $('button[type=submit]', form); b.disabled = true; err('');
+        const r = await this.api('forgot', { login: v.login }).catch(() => null);
+        b.disabled = false;
+        if (r && r.ok && r.body) { sent = r.body.message; draw(); } else err((r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.');
+        return;
+      }
+      if (kind === 'reset') {
+        const pe = pwCheck(v.password || '', rs.login); if (pe) return err(pe);
+        if (v.password !== v.confirm) return err('Les deux mots de passe ne correspondent pas.');
+        const b = $('button[type=submit]', form); b.disabled = true; err('');
+        const r = await this.api('reset-password', { token: rs.token, password: v.password }).catch(() => null);
+        b.disabled = false;
+        if (r && r.ok && r.body && r.body.auth) { el.onclick = el.onsubmit = null; dropParam(); this.set(r.body); toast('Mot de passe changé : vous êtes connecté.', 'ok'); done(r.body); }
+        else if (r && r.status === 404) { rs.err = r.body.error; draw(); }
+        else err((r && r.body && r.body.error) || 'Serveur injoignable. Réessayez.');
+        return;
+      }
       if (!v.login || !v.password) return err('Renseignez l’identifiant et le mot de passe.');
       if (kind === 'signup') {
         if (boot && !v.userId) return err('Choisissez votre nom dans la liste.');
@@ -5578,7 +5629,9 @@ const AUTH_EV = {
   'sa-fail': ['Mot de passe super admin erroné', 'danger'], 'sa-change': ['Mot de passe super admin changé', 'warn'], 'sec-set': ['Réglages de sécurité modifiés', 'warn'],
   unblock: ['Adresse débloquée', ''], 'backup-now': ['Sauvegarde manuelle', 'ok'], 'backup-get': ['Sauvegarde téléchargée', ''],
   locked: ['Compte bloqué', 'danger'], unlock: ['Compte débloqué', ''], 'backup-auto': ['Sauvegarde automatique', 'ok'],
-  invite: ['Invitation créée', ''], 'invite-revoke': ['Invitation annulée', '']
+  invite: ['Invitation créée', ''], 'invite-revoke': ['Invitation annulée', ''],
+  forgot: ['Mot de passe oublié', 'warn'], 'pw-reset': ['Mot de passe réinitialisé (e-mail)', 'warn'], 'super-alert': ['Alerte e-mail : essais sur un super admin', 'danger'],
+  'mail-fail': ['Échec d’envoi d’e-mail', 'danger'], 'mail-test': ['E-mail de test envoyé', 'ok']
 };
 async function loadSecurity() {
   if (SEC.busy || Sync.mode !== 'server') return; SEC.busy = true;
@@ -5588,6 +5641,7 @@ async function loadSecurity() {
   SEC.busy = false;
   if (route().path === '/admin/securite') render();
 }
+const appBase = () => location.href.split('#')[0].split('?')[0];
 const cronCmd = k => `powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing '${location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, '')}api.php?a=cron&key=${k}'"`;
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-copy-cron]'); if (b) copyText(b.dataset.copyCron).then(() => toast('Commande copiée', 'ok')); });
 async function fetchBackup(name) {
@@ -5667,7 +5721,26 @@ function pageSecurity() {
         <span class="help">Séparées par des virgules. Vide = pas de sauvegarde automatique. Fuseau du serveur : ${esc((D0.backups.auto || {}).tz || '')}.</span></div>
       <div class="fld full"><label>Jours</label><div class="chips">${[1, 2, 3, 4, 5, 6, 7].map(d => `<label class="chip${(c.backupDays || []).includes(d) ? ' sel' : ''}"><input type="checkbox" data-multi="1" name="backupDays" value="${d}"${(c.backupDays || []).includes(d) ? ' checked' : ''} ${dis}>${['', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'][d]}</label>`).join('')}</div></div>
       <div class="fld"><label>Sauvegardes complètes conservées</label><input class="in" type="number" min="2" max="500" name="backupKeep" value="${c.backupKeep || 60}" ${dis}>
-        <span class="help">60 = un mois à 2 sauvegardes par jour.</span></div></form>
+        <span class="help">60 = un mois à 2 sauvegardes par jour.</span></div>
+      <div class="fld full sec-sep"><label>Envoi des e-mails (lien « mot de passe oublié » et alertes des super administrateurs)</label>
+        <span class="help">Paramètres du serveur de messagerie de l’entreprise (Microsoft 365 : smtp.office365.com, port 587, STARTTLS, compte et mot de passe d’une boîte d’envoi).
+          Serveur laissé vide : la fonction mail() de PHP est utilisée.</span></div>
+      <div class="fld"><label>Serveur SMTP</label><input class="in" name="smtpHost" value="${esc(c.smtpHost || '')}" placeholder="smtp.office365.com" autocomplete="off" ${dis}></div>
+      <div class="fld"><label>Chiffrement</label><select class="in" name="smtpSecure" ${dis}>${[['tls', 'STARTTLS (port 587)'], ['ssl', 'SSL/TLS (port 465)'], ['none', 'Aucun (relais interne, port 25)']].map(([k, l]) => `<option value="${k}"${(c.smtpSecure || 'tls') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="fld"><label>Port</label><input class="in" type="number" min="0" max="65535" name="smtpPort" value="${c.smtpPort || ''}" placeholder="selon le chiffrement" ${dis}></div>
+      <div class="fld"><label>Compte SMTP</label><input class="in" name="smtpUser" value="${esc(c.smtpUser || '')}" placeholder="planning@d8.fr (vide = sans authentification)" autocomplete="off" ${dis}></div>
+      <div class="fld"><label>Mot de passe SMTP</label><input class="in" type="password" name="smtpPass" value="" placeholder="${c.smtpPassSet ? '•••••••• (enregistré, laisser vide pour le garder)' : 'aucun'}" autocomplete="new-password" ${dis}>
+        <span class="help">Conservé sur le serveur (data/security.json), jamais renvoyé à la page.</span></div>
+      <div class="fld"><label>Adresse d’expédition</label><input class="in" type="email" name="mailFrom" value="${esc(c.mailFrom || '')}" placeholder="planning@d8.fr" ${dis}></div>
+      <div class="fld"><label>Nom de l’expéditeur</label><input class="in" name="mailFromName" value="${esc(c.mailFromName || 'Planning D8')}" ${dis}></div>
+      <div class="fld full"><label>Adresse de l’application (utilisée dans les liens envoyés)</label>
+        <div class="row" style="gap:6px"><input class="in" name="appUrl" value="${esc(c.appUrl || '')}" placeholder="${esc(appBase())}" style="flex:1" ${dis}>
+          ${iAmSuper ? `<button class="btn sm" type="button" data-act="app-url-here" title="Reprendre l’adresse de cette page">${ic('link', 'sm')} Adresse actuelle</button>` : ''}</div>
+        <span class="help">Fixée ici par un super administrateur, jamais déduite de la demande : un lien piégé ne peut pas être fabriqué depuis l’extérieur.</span></div></form>
+    <div class="row wrap" style="gap:8px;margin-top:10px">
+      <span class="pill" style="${cvar(c.mailReady ? '#3c9f5f' : '#b4700c', .14, .35)}">${ic(c.mailReady ? 'check' : 'warn', 'sm')} ${c.mailReady ? 'Envoi des e-mails configuré' : 'Envoi des e-mails non configuré : « Mot de passe oublié » et alertes inactifs'}</span>
+      ${iAmSuper ? `<button class="btn sm" data-act="mail-test">${ic('mail', 'sm')} Envoyer un e-mail de test (à moi)</button>` : ''}
+      ${iAmSuper && !/@/.test((me() || {}).email || '') ? `<span class="pill" style="${cvar('#d1444a', .14, .35)}">${ic('warn', 'sm')} Votre fiche utilisateur n’a pas d’adresse e-mail : vous ne pourrez pas recevoir le lien</span>` : ''}</div>
     ${iAmSuper && c.cronKey ? `<details class="cron"><summary>Garantir les sauvegardes même quand personne n’a l’application ouverte (tâche planifiée Windows)</summary>
       <p class="mut">Les sauvegardes sont faites dès qu’une page de l’application est ouverte (postes, écrans d’atelier). Pour les garantir la nuit ou le week-end, créez une tâche planifiée sur le serveur, toutes les 15 min, qui exécute :</p>
       <div class="row" style="gap:6px"><input class="in mono" readonly value="${esc(cronCmd(c.cronKey))}" style="flex:1" onclick="this.select()">
@@ -5727,9 +5800,20 @@ Object.assign(ACT, {
     const badT = times.find(t => !/^([01]?\d|2[0-3])([:hH]([0-5]\d)?)?$/.test(t));
     if (badT) return toast(`Heure de sauvegarde invalide : « ${badT} » (format 12:00).`, 'danger');
     if (!(v.backupDays || []).length && times.length) return toast('Cochez au moins un jour de sauvegarde.', 'danger');
-    secCall('sec-set', { inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword, pwDigit: !!v.pwDigit, pwSpecial: !!v.pwSpecial, pwUpper: !!v.pwUpper,
+    if (v.mailFrom && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.mailFrom.trim())) return toast('Adresse d’expédition invalide.', 'danger');
+    if (v.appUrl && !/^https?:\/\/\S+$/i.test(v.appUrl.trim())) return toast('Adresse de l’application invalide (http://… ou https://…).', 'danger');
+    secCall('sec-set', { smtpHost: v.smtpHost, smtpPort: +v.smtpPort || 0, smtpSecure: v.smtpSecure, smtpUser: v.smtpUser, smtpPass: v.smtpPass || '', mailFrom: v.mailFrom, mailFromName: v.mailFromName, appUrl: v.appUrl,
+      inviteDays: +v.inviteDays, sessionHours: +v.sessionHours, minPassword: +v.minPassword, pwDigit: !!v.pwDigit, pwSpecial: !!v.pwSpecial, pwUpper: !!v.pwUpper,
       lockAttempts: +v.lockAttempts, lockMinutes: +v.lockMinutes, backupTimes: times, backupDays: (v.backupDays || []).map(Number), backupKeep: +v.backupKeep }, 'Réglages enregistrés')
       .then(ok => { if (ok) { clearDraft('sec'); dirtyBar($('#sec-f'), false); } });
+  },
+  'app-url-here': () => { const i = $('#sec-f [name=appUrl]'); if (i) { i.value = appBase(); i.dispatchEvent(new Event('input', { bubbles: true })); } },
+  'mail-test': async el => {
+    if (!needs('super')) return;
+    if (FORM_DRAFT.sec) return toast('Enregistrez d’abord les réglages modifiés, puis envoyez le test.', 'warn');
+    el.disabled = true; const r = await Auth.api('mail-test', {}).catch(() => null); el.disabled = false;
+    toast(r && r.ok ? 'E-mail de test envoyé à ' + r.body.to + ' : vérifiez votre boîte de réception.' : (r && r.body && r.body.error) || 'Serveur injoignable.', r && r.ok ? 'ok' : 'danger');
+    SEC.data = null; loadSecurity();
   },
   'cron-key': async () => {
     if (!needs('super') || !await ask('Générer une nouvelle clé ? La tâche planifiée devra être mise à jour avec la nouvelle commande.', { ok: 'Nouvelle clé' })) return;

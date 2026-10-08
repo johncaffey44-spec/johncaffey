@@ -65,6 +65,8 @@ $PW_SPECIAL    = true;                // au moins un caractère spécial (ni let
 $PW_UPPER      = false;               // au moins une majuscule
 $LOCK_ATTEMPTS = 3;                   // compte bloqué après N mots de passe erronés…
 $LOCK_MINUTES  = 15;                  // …pendant N minutes (0 = jusqu'au déblocage par un administrateur)
+                                      //   les super administrateurs ne sont jamais bloqués : alerte par e-mail à la place
+$RESET_MINUTES = 30;                  // validité du lien « mot de passe oublié » envoyé aux super administrateurs
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
 $FAIL_WINDOW   = 900;                 // …sur cette durée (s), puis blocage pendant la même durée
 
@@ -294,6 +296,8 @@ if (isset($SEC['backupTimes']) && is_array($SEC['backupTimes'])) $AUTO_BACKUP_TI
 if (isset($SEC['backupDays']) && is_array($SEC['backupDays'])) $AUTO_BACKUP_DAYS = array_values(array_filter(array_map('intval', $SEC['backupDays']), function ($d) { return $d >= 1 && $d <= 7; }));
 if (!empty($SEC['backupKeep'])) $AUTO_BACKUP_KEEP = max(2, min(500, (int)$SEC['backupKeep']));
 $LOCKF = "$DATA_DIR/login-locks.json";   // comptes bloqués après trop de mots de passe erronés
+$RESETS = "$DATA_DIR/resets.json";       // liens « mot de passe oublié » (empreinte du lien → compte, échéance)
+$RFAILS = "$DATA_DIR/reset-fails.json";  // demandes de lien et liens erronés, par adresse IP
 if (!empty($SEC['sessionHours'])) $SESSION_IDLE = max(1, min(72, (int)$SEC['sessionHours'])) * 3600;
 if (!empty($SEC['minPassword'])) $MIN_PASSWORD = max(8, min(64, (int)$SEC['minPassword']));
 
@@ -382,12 +386,13 @@ function lock_msg(array $e): string {
         : 'Compte bloqué après ' . (int)$e['n'] . ' mots de passe erronés, jusqu’à ' . date('H:i', $u) . '. Un administrateur peut le débloquer avant.';
 }
 /** compte un échec ; renvoie l'état (bloqué ou non) */
-function lock_fail(string $F, string $login): array {
+function lock_fail(string $F, string $login, bool $exempt = false): array {
     global $LOCK_ATTEMPTS, $LOCK_MINUTES;
     $all = read_json($F);
     $e = lock_state($F, $login) ?? ['n' => 0, 'until' => 0];
     $e['n'] = (int)$e['n'] + 1; $e['t'] = time();
-    if ($e['n'] >= $LOCK_ATTEMPTS && (int)$e['until'] <= time()) {
+    if ($exempt) $e['until'] = 0;                               // super administrateur : jamais bloqué
+    elseif ($e['n'] >= $LOCK_ATTEMPTS && (int)$e['until'] <= time()) {
         $e['until'] = $LOCK_MINUTES > 0 ? time() + $LOCK_MINUTES * 60 : PHP_INT_MAX;
         auth_log('locked', $login, $e['n'] . ' mots de passe erronés');
     }
@@ -410,7 +415,7 @@ function full_backup(string $why): ?string {
     $head = ['kind' => 'd8-complet', 'created' => date('c'), 'reason' => $why, 'version' => $ver,
              'accounts' => read_json($ACC), 'security' => read_json($SECF), 'invites' => read_json($INV), 'superadmin' => $sa];
     $json = rtrim((string)json_encode($head, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), '}') . ',"planning":' . $raw . '}';
-    $name = sprintf('complet-%s-v%06d-%s.json', date('Ymd-Hi'), $ver, $why);
+    $name = sprintf('complet-%s-v%06d-%s.json', date('Ymd-His'), $ver, $why);
     if (@file_put_contents("$bdir/$name.tmp", $json) === false || !@rename("$bdir/$name.tmp", "$bdir/$name")) return null;
     $files = glob("$bdir/complet-*.json") ?: [];
     if (count($files) > $AUTO_BACKUP_KEEP) { sort($files); foreach (array_slice($files, 0, count($files) - $AUTO_BACKUP_KEEP) as $old) @unlink($old); }
@@ -451,6 +456,85 @@ function auto_backup_tick(): ?string {
     }
     flock($bl, LOCK_UN); fclose($bl);
     return $name;
+}
+/* --- envoi d'e-mails : serveur SMTP (Microsoft 365, Exchange, relais interne…) ou mail() de PHP --- */
+function mail_cfg(): array {
+    global $SEC;
+    return ['host' => (string)($SEC['smtpHost'] ?? ''), 'port' => (int)($SEC['smtpPort'] ?? 0), 'secure' => (string)($SEC['smtpSecure'] ?? 'tls'),
+            'user' => (string)($SEC['smtpUser'] ?? ''), 'pass' => (string)($SEC['smtpPass'] ?? ''), 'from' => (string)($SEC['mailFrom'] ?? ''),
+            'fromName' => (string)($SEC['mailFromName'] ?? 'Planning D8'), 'appUrl' => (string)($SEC['appUrl'] ?? '')];
+}
+function mail_ready(): bool { $c = mail_cfg(); return filter_var($c['from'], FILTER_VALIDATE_EMAIL) !== false && $c['appUrl'] !== ''; }
+/** envoie un e-mail texte ; renvoie null si tout va bien, sinon le motif de l'échec */
+function send_mail(string $to, string $subject, string $body): ?string {
+    $c = mail_cfg();
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return 'Adresse du destinataire invalide.';
+    if (!filter_var($c['from'], FILTER_VALIDATE_EMAIL)) return 'Adresse d’expédition non réglée (Sécurité & accès › Envoi des e-mails).';
+    $enc = function (string $s): string { return '=?UTF-8?B?' . base64_encode(str_replace(["\r", "\n"], ' ', $s)) . '?='; };
+    $domain = substr(strrchr($c['from'], '@'), 1);
+    $headers = ['Date: ' . date('r'), 'From: ' . $enc($c['fromName']) . ' <' . $c['from'] . '>', 'To: <' . $to . '>', 'Subject: ' . $enc($subject),
+                'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . $domain . '>', 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8',
+                'Content-Transfer-Encoding: base64', 'Auto-Submitted: auto-generated'];
+    $data = chunk_split(base64_encode($body));
+    if ($c['host'] === '') {                       // pas de serveur SMTP réglé : mail() de PHP (SMTP / sendmail du php.ini)
+        $h = array_values(array_filter($headers, function ($x) { return stripos($x, 'To:') !== 0 && stripos($x, 'Subject:') !== 0; }));
+        return @mail($to, $enc($subject), $data, implode("\r\n", $h), '-f' . $c['from']) ? null : 'La fonction mail() de PHP a échoué : réglez un serveur SMTP.';
+    }
+    $port = $c['port'] ?: ($c['secure'] === 'ssl' ? 465 : ($c['secure'] === 'tls' ? 587 : 25));
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'SNI_enabled' => true, 'peer_name' => $c['host']]]);
+    $fp = @stream_socket_client(($c['secure'] === 'ssl' ? 'ssl://' : 'tcp://') . $c['host'] . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) return "Connexion impossible au serveur {$c['host']}:$port ($errstr).";
+    stream_set_timeout($fp, 20);
+    $read = function () use ($fp): string { $r = ''; while (($l = fgets($fp, 1024)) !== false) { $r .= $l; if (strlen($l) < 4 || $l[3] === ' ') break; } return $r; };
+    $cmd = function (?string $line, array $ok) use ($fp, $read): string {
+        if ($line !== null) fwrite($fp, $line . "\r\n");
+        $r = $read();
+        if (!in_array((int)substr($r, 0, 3), $ok, true)) throw new RuntimeException(trim($r) !== '' ? trim(preg_replace('/\s+/', ' ', $r)) : 'pas de réponse');
+        return $r;
+    };
+    try {
+        $cmd(null, [220]);
+        $ehlo = 'EHLO ' . preg_replace('/[^A-Za-z0-9.-]/', '', (string)(gethostname() ?: 'planning'));
+        $cmd($ehlo, [250]);
+        if ($c['secure'] === 'tls') {
+            $cmd('STARTTLS', [220]);
+            $m = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) $m |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
+            if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) $m |= STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
+            if (!@stream_socket_enable_crypto($fp, true, $m)) throw new RuntimeException('chiffrement STARTTLS refusé (certificat ?)');
+            $cmd($ehlo, [250]);
+        }
+        if ($c['user'] !== '') { $cmd('AUTH LOGIN', [334]); $cmd(base64_encode($c['user']), [334]); $cmd(base64_encode($c['pass']), [235]); }
+        $cmd('MAIL FROM:<' . $c['from'] . '>', [250]);
+        $cmd('RCPT TO:<' . $to . '>', [250, 251]);
+        $cmd('DATA', [354]);
+        $cmd(implode("\r\n", $headers) . "\r\n\r\n" . $data . "\r\n.", [250]);
+        try { $cmd('QUIT', [221]); } catch (Throwable $e) { }
+        fclose($fp);
+        return null;
+    } catch (Throwable $e) {
+        @fclose($fp);
+        return 'Serveur de messagerie : ' . $e->getMessage();
+    }
+}
+/** fiche et adresse d'un super administrateur à partir de son identifiant, ou null */
+function super_target(?array $doc, array $acc, string $login): ?array {
+    $a = $acc[$login] ?? null;
+    if (!is_array($a) || !$doc) return null;
+    $uid = (string)$a['userId'];
+    $u = find_user($doc, $uid);
+    if (!$u || ($u['active'] ?? true) === false || !has_perm($doc, $uid, 'super')) return null;
+    return ['userId' => $uid, 'name' => user_label($u), 'email' => trim((string)($u['email'] ?? ''))];
+}
+function app_link(string $param, string $token): string { $u = mail_cfg()['appUrl']; return $u . (strpos($u, '?') === false ? '?' : '&') . $param . '=' . $token; }
+/** demande de réinitialisation valide pour ce lien, ou null (les demandes expirées sont purgées) */
+function reset_find(string $F, string $token): ?array {
+    $all = read_json($F); $now = time(); $keep = [];
+    foreach ($all as $k => $v) if (is_array($v) && (int)($v['exp'] ?? 0) > $now - 3600) $keep[$k] = $v;   // on garde 1 h l'historique des envois (limite par compte)
+    if (count($keep) !== count($all)) write_json($F, $keep);
+    if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
+    $v = $keep[hash('sha256', $token)] ?? null;
+    return $v && (int)$v['exp'] > $now && empty($v['used']) ? $v : null;
 }
 function superadmin_hash(string $DATA_DIR, string $default): string {
     $h = read_json("$DATA_DIR/superadmin.json")['hash'] ?? '';
@@ -518,10 +602,10 @@ if ($action === 'view') {
 }
 
 $me = auth_user($ACC, $SESSION_IDLE, $lock);
-$PUBLIC = ['me', 'signup-list', 'invite-check', 'signup', 'login', 'logout'];
+$PUBLIC = ['me', 'signup-list', 'invite-check', 'signup', 'login', 'logout', 'forgot', 'reset-check', 'reset-password'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);
 // la session n'est plus modifiée ensuite : on la libère pour ne pas bloquer les requêtes parallèles
-if (!in_array($action, ['signup', 'login', 'logout', 'password', 'sa-check', 'sa-change', 'kick-all'], true)) session_write_close();
+if (!in_array($action, ['signup', 'login', 'logout', 'password', 'sa-check', 'sa-change', 'kick-all', 'reset-password'], true)) session_write_close();
 
 /* --- super administrateur : confirmation (valable $SUPERADMIN_TTL s pour cette session) --- */
 if ($action === 'sa-check' || $action === 'sa-change') {
@@ -652,8 +736,10 @@ if ($action === 'login') {
     $pass = (string)($in['password'] ?? '');
     $acc = read_json($ACC);
     $a = $acc[$login] ?? null;
+    $doc = read_doc($FILE);
+    $sup = $login !== '' ? super_target($doc, $acc, $login) : null;   // super administrateur : pas de blocage du compte
     // compte bloqué : refusé sans même vérifier le mot de passe (même traitement que l'identifiant existe ou non)
-    $lk = $login !== '' ? lock_state($LOCKF, $login) : null;
+    $lk = $login !== '' && !$sup ? lock_state($LOCKF, $login) : null;
     if ($lk && (int)($lk['until'] ?? 0) > time()) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
         auth_log('fail', $login, 'compte bloqué');
@@ -663,14 +749,34 @@ if ($action === 'login') {
     $ok = password_verify($pass, is_array($a) ? (string)$a['hash'] : password_hash('x', PASSWORD_DEFAULT));
     if (!is_array($a) || !$ok) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
-        auth_log('fail', $login, is_array($a) ? 'mot de passe incorrect' : 'identifiant inconnu');
-        $e = $login !== '' ? lock_fail($LOCKF, $login) : ['n' => 0, 'until' => 0];
+        auth_log('fail', $login, is_array($a) ? ($sup ? 'mot de passe incorrect (super administrateur)' : 'mot de passe incorrect') : 'identifiant inconnu');
+        $e = $login !== '' ? lock_fail($LOCKF, $login, (bool)$sup) : ['n' => 0, 'until' => 0];
         if ((int)$e['until'] > time()) out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($e)]);
+        if ($sup) {
+            flock($lock, LOCK_UN);
+            usleep(800000);                            // ralentit les essais en série sur un compte qui ne se bloque pas
+            // alerte par e-mail toutes les N erreurs : le titulaire sait qu'on essaie son mot de passe
+            if ((int)$e['n'] % $LOCK_ATTEMPTS === 0 && mail_ready() && filter_var($sup['email'], FILTER_VALIDATE_EMAIL)) {
+                $err = send_mail($sup['email'], 'Alerte : mots de passe erronés sur votre compte – planning',
+                    "Bonjour {$sup['name']},
+
+" . (int)$e['n'] . " mots de passe erronés ont été saisis sur votre compte super administrateur (identifiant « $login »), le dernier depuis l'adresse $ip, le " . date('d/m/Y à H:i') . ".
+
+"
+                    . "Si c'était vous, rien à faire. Sinon, changez votre mot de passe dès maintenant (menu en haut à droite › Changer mon mot de passe) ou utilisez « Mot de passe oublié ? » sur l'écran de connexion :
+" . mail_cfg()['appUrl'] . "
+
+"
+                    . "Votre compte n'est pas bloqué (super administrateur), mais l'adresse IP qui se trompe l'est après $MAX_FAILS essais.
+");
+                auth_log($err ? 'mail-fail' : 'super-alert', $login, $err ?: 'alerte envoyée à ' . $sup['email']);
+            }
+            out(401, ['auth' => false, 'error' => 'Identifiant ou mot de passe incorrect.']);
+        }
         $left = $LOCK_ATTEMPTS - (int)$e['n'];
         out(401, ['auth' => false, 'error' => 'Identifiant ou mot de passe incorrect.' . ($left > 0 && $left < $LOCK_ATTEMPTS ? " Encore $left essai" . ($left > 1 ? 's' : '') . ' avant le blocage du compte.' : '')]);
     }
     lock_clear($LOCKF, $login);
-    $doc = read_doc($FILE);
     $name = (string)($a['name'] ?? $login);
     if ($doc !== null) {
         $u = find_user($doc, (string)$a['userId']);
@@ -687,6 +793,82 @@ if ($action === 'login') {
     $s = open_session($login, $acc[$login], $name);
     if (pw_problem($pass, $login)) { $_SESSION['auth']['weak'] = true; $s = $_SESSION['auth']; }   // ne respecte plus les règles : à changer
     out(200, me_payload($s));
+}
+
+/* --- mot de passe oublié (super administrateurs) : lien de réinitialisation par e-mail --- */
+if ($action === 'forgot') {
+    $in = body_json();
+    $t0 = microtime(true);
+    throttle_check($RFAILS, $ip, 10, 900);
+    throttle_fail($RFAILS, $ip, 900);                 // chaque demande compte : 10 par quart d'heure et par adresse IP
+    $login = clean_login($in['login'] ?? '');
+    flock($lock, LOCK_EX);
+    $tg = $login !== '' ? super_target(read_doc($FILE), read_json($ACC), $login) : null;
+    $send = null;
+    if ($tg && filter_var($tg['email'], FILTER_VALIDATE_EMAIL) && mail_ready()) {
+        reset_find($RESETS, '');                      // purge
+        $all = read_json($RESETS);
+        $recent = count(array_filter($all, function ($v) use ($login) { return is_array($v) && ($v['login'] ?? '') === $login && (int)($v['t'] ?? 0) > time() - 3600; }));
+        if ($recent < 3) {                            // 3 e-mails par heure et par compte au plus
+            $tok = bin2hex(random_bytes(32));
+            $all[hash('sha256', $tok)] = ['login' => $login, 'userId' => $tg['userId'], 't' => time(), 'exp' => time() + $RESET_MINUTES * 60, 'ip' => $ip];
+            write_json($RESETS, $all);
+            $send = $tok;
+        }
+    }
+    flock($lock, LOCK_UN);
+    if ($send) {
+        $err = send_mail($tg['email'], 'Réinitialisation de votre mot de passe – planning',
+            "Bonjour {$tg['name']},\n\nUne réinitialisation du mot de passe de votre compte super administrateur (identifiant « $login ») a été demandée depuis l'adresse $ip, le " . date('d/m/Y à H:i') . ".\n\n"
+            . "Pour choisir un nouveau mot de passe, ouvrez ce lien (valable $RESET_MINUTES minutes, une seule fois) :\n" . app_link('reinit', $send) . "\n\n"
+            . "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe actuel reste valable.\n");
+        auth_log($err ? 'mail-fail' : 'forgot', $login, $err ?: 'lien envoyé à ' . $tg['email']);
+    } else auth_log('forgot', $login, 'aucun envoi (compte non super administrateur, sans adresse, envoi non réglé ou limite atteinte)');
+    $wait = 2.0 - (microtime(true) - $t0); if ($wait > 0) usleep((int)($wait * 1e6));   // même durée de réponse dans tous les cas
+    out(200, ['ok' => true, 'message' => 'Si cet identifiant est celui d’un super administrateur dont la fiche comporte une adresse e-mail, un lien de réinitialisation vient de lui être envoyé (valable ' . $RESET_MINUTES . ' minutes).']);
+}
+if ($action === 'reset-check' || $action === 'reset-password') {
+    $in = $action === 'reset-password' ? body_json() : [];
+    throttle_check($RFAILS, $ip, 10, 900);
+    $tok = strtolower((string)($action === 'reset-check' ? ($_GET['token'] ?? '') : ($in['token'] ?? '')));
+    flock($lock, LOCK_EX);
+    $r = reset_find($RESETS, $tok);
+    $acc = read_json($ACC); $doc = read_doc($FILE);
+    $tg = $r ? super_target($doc, $acc, (string)$r['login']) : null;
+    if (!$r || !$tg || $tg['userId'] !== (string)$r['userId']) {
+        throttle_fail($RFAILS, $ip, 900); flock($lock, LOCK_UN);
+        out(404, ['error' => 'Lien de réinitialisation inconnu, déjà utilisé ou expiré : refaites une demande depuis « Mot de passe oublié ? ».']);
+    }
+    $login = (string)$r['login'];
+    if ($action === 'reset-check') { flock($lock, LOCK_UN); out(200, ['name' => $tg['name'], 'login' => $login, 'policy' => pw_policy(), 'expires' => date('c', (int)$r['exp'])]); }
+    $pass = (string)($in['password'] ?? '');
+    if ($why = pw_problem($pass, $login)) { flock($lock, LOCK_UN); out(400, ['error' => $why]); }
+    $acc[$login]['hash'] = password_hash($pass, PASSWORD_DEFAULT);
+    $acc[$login]['stamp'] = bin2hex(random_bytes(8));          // toutes les sessions ouvertes sont fermées
+    $acc[$login]['lastLogin'] = date('c');
+    if (!write_json($ACC, $acc)) { flock($lock, LOCK_UN); out(500, ['error' => 'Écriture impossible']); }
+    $all = read_json($RESETS);
+    foreach ($all as $k => $v) if (($v['login'] ?? '') === $login) $all[$k]['used'] = true;   // tous les liens envoyés à ce compte deviennent inutilisables
+    write_json($RESETS, $all);
+    lock_clear($LOCKF, $login); throttle_clear($FAILS, $ip); throttle_clear($RFAILS, $ip);
+    flock($lock, LOCK_UN);
+    auth_log('pw-reset', $login, $tg['name'] . ' (lien reçu par e-mail)');
+    if (mail_ready()) send_mail($tg['email'], 'Votre mot de passe a été changé – planning',
+        "Bonjour {$tg['name']},\n\nLe mot de passe de votre compte (identifiant « $login ») vient d'être changé grâce au lien de réinitialisation, depuis l'adresse $ip, le " . date('d/m/Y à H:i') . ".\n\n"
+        . "Si ce n'est pas vous, prévenez immédiatement le service informatique.\n");
+    out(200, me_payload(open_session($login, $acc[$login], $tg['name'])));
+}
+/* --- super administrateur : e-mail de test --- */
+if ($action === 'mail-test') {
+    body_json();
+    $doc = read_doc($FILE);
+    if (!has_perm($doc, $me['userId'], 'super')) out(403, ['error' => 'Réservé au super administrateur']);
+    $u = find_user($doc, $me['userId']); $to = trim((string)($u['email'] ?? ''));
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) out(400, ['error' => 'Votre fiche utilisateur n’a pas d’adresse e-mail valide (Paramétrage › Utilisateurs).']);
+    $err = send_mail($to, 'E-mail de test – planning', "Bonjour,\n\nCet e-mail confirme que le planning peut envoyer des messages (réinitialisation du mot de passe des super administrateurs, alertes de connexion).\n\nLien de l'application : " . mail_cfg()['appUrl'] . "\n");
+    auth_log($err ? 'mail-fail' : 'mail-test', $me['login'], $err ?: 'envoyé à ' . $to);
+    if ($err) out(502, ['error' => $err]);
+    out(200, ['ok' => true, 'to' => $to]);
 }
 
 /* --- déconnexion --- */
@@ -888,6 +1070,10 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
             'lockAttempts' => $LOCK_ATTEMPTS, 'lockMinutes' => $LOCK_MINUTES,
             'backupTimes' => $AUTO_BACKUP_TIMES, 'backupDays' => $AUTO_BACKUP_DAYS, 'backupKeep' => $AUTO_BACKUP_KEEP,
             'cronKey' => $isSuper ? (string)($SEC['cronKey'] ?? '') : '',
+            'smtpHost' => (string)($SEC['smtpHost'] ?? ''), 'smtpPort' => (int)($SEC['smtpPort'] ?? 0), 'smtpSecure' => (string)($SEC['smtpSecure'] ?? 'tls'),
+            'smtpUser' => $isSuper ? (string)($SEC['smtpUser'] ?? '') : '', 'smtpPassSet' => ($SEC['smtpPass'] ?? '') !== '',
+            'mailFrom' => (string)($SEC['mailFrom'] ?? ''), 'mailFromName' => (string)($SEC['mailFromName'] ?? 'Planning D8'), 'appUrl' => (string)($SEC['appUrl'] ?? ''),
+            'mailReady' => mail_ready(), 'resetMinutes' => $RESET_MINUTES,
             'maxFails' => $MAX_FAILS, 'failWindow' => $FAIL_WINDOW, 'https' => $https, 'super' => $isSuper]);
     }
     if ($action === 'sec-set') {
@@ -903,6 +1089,23 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
                 'backupTimes' => array_slice($times, 0, 12), 'backupDays' => $days ?: [1, 2, 3, 4, 5, 6, 7], 'backupKeep' => max(2, min(500, (int)($in['backupKeep'] ?? 60))),
                 'changed' => date('c'), 'by' => $me['name']]);
         if (!empty($in['newCronKey'])) $new['cronKey'] = bin2hex(random_bytes(20));
+        // envoi des e-mails (le mot de passe SMTP n'est remplacé que s'il est ressaisi)
+        $clean = function ($v, int $n): string { return cut(trim(str_replace(["\r", "\n", "\0"], '', (string)$v)), $n); };
+        if (array_key_exists('smtpHost', $in)) {
+            $new['smtpHost'] = preg_replace('/[^A-Za-z0-9.\-]/', '', $clean($in['smtpHost'], 120));
+            $new['smtpPort'] = max(0, min(65535, (int)($in['smtpPort'] ?? 0)));
+            $new['smtpSecure'] = in_array($in['smtpSecure'] ?? '', ['none', 'tls', 'ssl'], true) ? $in['smtpSecure'] : 'tls';
+            $new['smtpUser'] = $clean($in['smtpUser'] ?? '', 120);
+            if ((string)($in['smtpPass'] ?? '') !== '') $new['smtpPass'] = cut((string)$in['smtpPass'], 200);
+            if (!empty($in['smtpPassClear'])) $new['smtpPass'] = '';
+            $from = $clean($in['mailFrom'] ?? '', 120);
+            if ($from !== '' && !filter_var($from, FILTER_VALIDATE_EMAIL)) out(400, ['error' => 'Adresse d’expédition invalide.']);
+            $new['mailFrom'] = $from;
+            $new['mailFromName'] = $clean($in['mailFromName'] ?? 'Planning D8', 60) ?: 'Planning D8';
+            $url = $clean($in['appUrl'] ?? '', 300);
+            if ($url !== '' && !preg_match('#^https?://[^\s"<>]+$#i', $url)) out(400, ['error' => 'Adresse de l’application invalide (http://… ou https://…).']);
+            $new['appUrl'] = preg_replace('/[?#].*$/', '', $url);
+        }
         if (!write_json($SECF, $new)) out(500, ['error' => 'Écriture impossible']);
         auth_log('sec-set', $me['login'], 'mots de passe ' . $new['minPassword'] . ' car.' . ($new['pwDigit'] ? ' + chiffre' : '') . ($new['pwSpecial'] ? ' + spécial' : '') . ($new['pwUpper'] ? ' + majuscule' : '')
             . ' · blocage après ' . $new['lockAttempts'] . ' essais (' . ($new['lockMinutes'] ?: '∞') . ' min) · sauvegardes ' . (implode(', ', $new['backupTimes']) ?: 'désactivées')
