@@ -1,0 +1,15 @@
+# D8 · Espace SI — réglages Apache du dossier de l'application
+DirectoryIndex index.html
+
+# le dossier des données n'est jamais servi directement
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^data(/|$) - [F,L]
+</IfModule>
+
+# toujours recharger la dernière version de l'application
+<IfModule mod_headers.c>
+  <Files "index.html">
+    Header set Cache-Control "no-cache"
+  </Files>
+</IfModule>
