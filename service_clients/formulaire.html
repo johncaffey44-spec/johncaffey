@@ -134,7 +134,7 @@ function formHTML(c, pre) {
     <fieldset><legend>1. Vos coordonnées</legend><div class="grid">
       ${field('nom', 'Nom et prénom', { req: 1, html: input('nom', 'text', `maxlength="80" autocomplete="name" value="${esc(pre.nom || '')}"`) })}
       ${field('site', 'Entreprise / Site', { req: 1, hint: 'Nom du site où se trouve le distributeur', html: input('site', 'text', 'maxlength="120" autocomplete="organization" aria-describedby="site-h"') })}
-      ${field('email', 'E-mail', { req: 1, hint: 'L’accusé de réception y sera envoyé', html: input('email', 'email', `maxlength="120" autocomplete="email" inputmode="email" value="${esc(pre.email || '')}" aria-describedby="email-h"`) })}
+      ${field('email', 'E-mail', { req: 1, hint: pre.email ? `L’accusé de réception sera envoyé à ${pre.email}, l’adresse à laquelle vous avez reçu ce lien. Modifiez ce champ seulement pour que nous vous répondions à une autre adresse.` : 'L’accusé de réception y sera envoyé', html: input('email', 'email', `maxlength="120" autocomplete="email" inputmode="email" value="${esc(pre.email || '')}" aria-describedby="email-h"`) })}
       ${field('tel', 'Téléphone', { hint: 'Facultatif', html: input('tel', 'tel', 'maxlength="30" autocomplete="tel"') })}
     </div></fieldset>
     <fieldset><legend>2. Le distributeur concerné</legend><div class="grid">
@@ -149,7 +149,7 @@ function formHTML(c, pre) {
       ${radioField('paiement', 'Moyen de paiement utilisé', PAIEMENT, true, 'paiement_autre')}
     </div></fieldset>
     <fieldset data-sec="carte"><legend>4. Identification de la carte bancaire utilisée</legend><div class="grid">
-      ${field('last4', '4 derniers chiffres de la carte', { req: 1, hint: 'Uniquement les 4 derniers chiffres : jamais le numéro complet ni le cryptogramme', html: input('last4', 'text', 'class="comb" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off" aria-describedby="last4-h"') })}
+      ${field('last4', '4 derniers chiffres de la carte', { req: 1, hint: 'Uniquement les 4 derniers chiffres : jamais le numéro complet ni le cryptogramme', html: input('last4', 'text', 'class="comb" inputmode="numeric" maxlength="24" placeholder="0000" autocomplete="off" aria-describedby="last4-h"') })}
       <div class="f full"><details class="help" id="help-mobile"><summary>Vous avez payé avec votre téléphone ou votre montre ?</summary>
         <div class="box info"><p>Les 4 derniers chiffres à indiquer <b>ne sont pas</b> ceux de votre carte physique : votre banque a attribué à votre appareil un numéro de carte qui lui est propre, et c’est lui qui est transmis au distributeur.</p>
         <ul><li><b>iPhone (Apple Pay)</b> : Réglages › Cartes et Apple Pay › carte utilisée › onglet « Informations » : 4 derniers chiffres du « Numéro de compte de l’appareil ».</li>
@@ -181,6 +181,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 function values() {
   const f = $('#f'), fd = new FormData(f), v = {};
   for (const k of ['nom', 'site', 'email', 'tel', 'matricule', 'emplacement', 'tx_date', 'tx_heure', 'montant', 'produit', 'paiement', 'paiement_autre', 'last4', 'incident', 'description', 'rb_mode']) v[k] = String(fd.get(k) || '').trim();
+  if (!['cb', 'mobile'].includes(v.paiement)) v.last4 = '';     // section masquée : rien envoyé
+  if (v.paiement !== 'autre') v.paiement_autre = '';
   v.attestation = $('#attestation').checked;
   return { v, hp: String(fd.get('site_web') || '') };
 }
@@ -256,7 +258,12 @@ async function start() {
     $('#send').disabled = true; $('#sending').hidden = false;
     const body = { nonce: INFO.nonce, v, site_web: hp };
     if (TOKEN) body.t = TOKEN; else body.f = GENERIC;
-    const res = await api('form-submit', body);
+    let res = await api('form-submit', body);
+    if (!(res.ok && res.body && res.body.ok) && res.body && res.body.reload && !res.body.fields) {
+      // jeton anti-robots expiré (page ouverte depuis longtemps) ou trop récent : nouveau jeton puis nouvel envoi, la saisie est gardée
+      const r2 = await api('form-info', null, TOKEN ? '&t=' + TOKEN : '&f=' + encodeURIComponent(GENERIC));
+      if (r2.ok && r2.body && r2.body.nonce) { INFO.nonce = body.nonce = r2.body.nonce; await new Promise(ok => setTimeout(ok, 3300)); res = await api('form-submit', body); }
+    }
     $('#send').disabled = false; $('#sending').hidden = true;
     if (res.ok && res.body && res.body.ok) return done(res.body, v);
     if (res.body && res.body.fields) { showErrors(res.body.fields); }

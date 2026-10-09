@@ -42,14 +42,20 @@ Rôles et personnes se modifient dans **Administration › Rôles et droits** et
 
 3. Le script fait seulement ce qui manque, dans cet ordre :
    1. Rôles IIS : serveur web, CGI/FastCGI, filtrage des requêtes.
-   2. PHP : il réutilise le PHP déjà déclaré dans IIS pour le planning. S'il n'y en a pas, il prend un PHP existant (`-PhpPath`), une archive (`-PhpZip`), ou le télécharge depuis windows.php.net (`-InstallPhp`, avec vérification SHA-256).
-   3. Extensions PHP. `php.ini` est partagé avec le planning : le script signale seulement ce qui manque, sauf avec `-CorrigerPhpIni`.
+
+      Le dossier devient une **application IIS avec son propre pool**, `D8-ServiceClients`. Le planning et les autres applications du serveur n'ont ainsi aucun accès aux comptes ni aux dossiers clients.
+   2. PHP : il réutilise le PHP qui traite déjà les `.php` du site, ou celui déclaré dans IIS pour le planning. Sinon, il prend un PHP existant (`-PhpPath`), une archive (`-PhpZip`), ou le télécharge depuis windows.php.net (`-InstallPhp`, avec vérification SHA-256).
+   3. Extensions PHP. Le `php.ini` d'un PHP déjà utilisé est partagé avec le planning : le script ne le crée ni ne le modifie, il signale seulement ce qui manque (sauf avec `-CorrigerPhpIni`).
    4. Traitement des fichiers `.php`, déclaré **pour le seul dossier `service_clients`**. Le reste du site n'est pas modifié.
-   5. Copie de `index.html`, `formulaire.html`, `api.php`, `web.config` et `.user.ini` dans `C:\inetpub\wwwroot\service_clients`. L'ancienne version est mise de côté.
-   6. Dossier des données hors de la racine web (`C:\inetpub\service_clients_data`), avec le droit « Modifier » pour le pool d'applications IIS.
+   5. Dossier des données hors de la racine web (`C:\inetpub\service_clients_data`). Si `config.php` existe déjà, c'est le dossier qu'il désigne.
+
+      L'héritage des droits est coupé : seuls le pool de l'outil, SYSTEM et les administrateurs y ont accès.
+   6. Copie de `index.html`, `formulaire.html`, `api.php`, `web.config` et `.user.ini` dans `C:\inetpub\wwwroot\service_clients`. L'ancienne version est mise de côté.
    7. Mot de passe super administrateur. Il est demandé, haché, et n'apparaît jamais en clair.
-   8. Tests : la page, l'API PHP, et le fait que les données ne sont pas servies par le web.
+   8. Tests sur l'adresse réelle du site (port, nom d'hôte, http ou https) : la page, l'API PHP, et le fait que les fichiers sensibles ne sont pas servis par le web.
    9. Avec `-SauvegardePlanifiee` : une tâche planifiée qui déclenche les sauvegardes même si personne n'a l'outil ouvert.
+
+   La fenêtre administrateur reste ouverte à la fin : lire le résumé. Le journal complet est dans `%TEMP%\installation-service-clients-*.log`.
 4. Ouvrir `http://<serveur>/service_clients/`.
 
 **Mise à jour :** remplacer les fichiers dans le dossier de copie, puis relancer le script. `config.php` et les données ne sont jamais écrasés. Les postes ouverts affichent « nouvelle version installée ».
@@ -87,7 +93,9 @@ Parcours, côté Monétique (compte `monetique@d8.fr`, vue « Formulaires en lig
 3. **À l'envoi, le serveur :**
    1. enregistre le dossier ;
    2. l'envoie à **Monetique@d8.fr**. On peut y répondre directement : la réponse part au client ;
-   3. **seulement si cet envoi a été accepté**, envoie au client un **accusé de réception avec le récapitulatif** de sa demande ;
+   3. **seulement si cet envoi a été accepté**, envoie au client un **accusé de réception avec le récapitulatif** de sa demande.
+
+      Avec un lien personnel, l'accusé part à l'adresse à laquelle le lien a été envoyé. Si le client en a tapé une autre, la Monétique en est prévenue. Les adresses web éventuellement tapées par le client sont retirées du texte : le formulaire ne peut pas servir à envoyer des liens à un tiers ;
    4. envoie à Monetique@d8.fr une **confirmation que l'accusé de réception est parti**, avec sa copie.
 4. **Dans la vue Formulaires en ligne :**
    - chaque demande affiche l'état de ses trois e-mails (✓ ou ✕) ;
@@ -109,14 +117,14 @@ Parcours, côté Monétique (compte `monetique@d8.fr`, vue « Formulaires en lig
 Par défaut, l'outil n'est accessible que depuis le réseau interne (`$ALLOWED_NETS`). Seules les deux actions du formulaire (`form-info`, `form-submit`) sont acceptées depuis l'extérieur, et **uniquement en HTTPS**. Pour qu'un client ouvre le lien depuis chez lui :
 
 1. Publier le dossier en HTTPS sous un nom public, par exemple `https://sav.d8.fr/service_clients/`. Cela passe par un certificat sur le site IIS, ou par un proxy inverse : Azure AD Application Proxy, pare-feu, IIS ARR…
-2. Si un **proxy inverse** relaie les requêtes, inscrire son adresse IP dans `config.php` : `$TRUSTED_PROXIES = ['10.0.0.5'];`.
+2. Si un **proxy inverse** relaie les requêtes, inscrire son adresse IP dans `config.php` : `$TRUSTED_PROXIES = ['10.0.0.5'];`. Le proxy doit transmettre `X-Forwarded-For` et `X-Forwarded-Proto`.
 
-   **Sans ce réglage, tous les visiteurs d'Internet paraissent venir de l'IP interne du proxy et auraient accès à l'écran de connexion de l'outil.**
-3. Indiquer cette adresse dans Formulaires en ligne › Réglages › « Adresse publique ». Les liens envoyés l'utiliseront.
+   Tant qu'il n'est pas déclaré, toute requête relayée par un proxy (en-tête `X-Forwarded-For`) est **refusée**, même si elle paraît venir du réseau interne. Sans cette règle, tous les visiteurs d'Internet paraîtraient venir de l'adresse interne du proxy et atteindraient l'écran de connexion de l'outil.
+3. Indiquer cette adresse dans Formulaires en ligne › Réglages › « Adresse publique », obligatoirement en `https://`. Les liens envoyés l'utiliseront.
 
 Tant que l'adresse publique n'est pas réglée, les liens ne s'ouvrent que sur le réseau de l'entreprise. Un bandeau le rappelle.
 
-**Lien générique** (affichette ou QR code sur les distributeurs) : il est désactivé par défaut et déconseillé. N'importe qui peut alors déposer une demande, et faire envoyer un accusé de réception à n'importe quelle adresse. Il est limité à 300 demandes par jour et 10 par heure et par adresse IP. Les robots sont filtrés par un champ piège et un délai minimal de remplissage.
+**Lien générique** (affichette ou QR code sur les distributeurs) : il est désactivé par défaut et déconseillé. N'importe qui peut alors déposer une demande, et faire envoyer un accusé de réception (sans lien) à n'importe quelle adresse. Il est limité à 300 demandes par jour et 10 par heure et par adresse IP. Les robots sont filtrés par un champ piège, un délai minimal de remplissage et un jeton à usage unique.
 
 ## Sécurité
 
@@ -125,8 +133,9 @@ Tant que l'adresse publique n'est pas réglée, les liens ne s'ouvrent que sur l
   - compte bloqué 15 min après 3 erreurs ;
   - super administrateurs bloqués jusqu'au lien de déblocage envoyé par e-mail ;
   - blocage par adresse IP en plus.
-- Double authentification (application TOTP : Microsoft Authenticator, Google Authenticator…), avec 10 codes de secours. Facultative par défaut, elle peut être rendue obligatoire pour les super administrateurs, les administrateurs ou tout le monde.
-- Le mot de passe super administrateur est redemandé pour la restauration d'une sauvegarde. La confirmation est valable 5 minutes.
+- Double authentification (application TOTP : Microsoft Authenticator, Google Authenticator…), avec 10 codes de secours. Facultative par défaut, elle peut être rendue obligatoire pour les super administrateurs, les administrateurs ou tout le monde. 10 codes erronés bloquent la double authentification du compte 15 minutes.
+- Le mot de passe super administrateur est redemandé pour télécharger ou restaurer une sauvegarde complète. La confirmation est valable 5 minutes.
+- La déconnexion après inactivité (12 h par défaut) s'applique même si l'onglet reste ouvert.
 - Le journal des connexions et des actions sensibles se consulte dans Administration › Journal et blocages.
 - Numéros de carte :
   - un numéro complet saisi par erreur (clé de Luhn valide) est masqué avant enregistrement ;
@@ -138,15 +147,17 @@ Tant que l'adresse publique n'est pas réglée, les liens ne s'ouvrent que sur l
 ## Sauvegardes
 
 - **Sauvegarde complète automatique** à 12 h et 17 h, 60 conservées. Elle contient les personnes, les rôles, les accès (mots de passe hachés), les réglages et les dossiers. Une sauvegarde manuelle se lance dans Administration › Sauvegardes.
-- **Restauration** (super administrateur et mot de passe super administrateur) : une copie de l'état actuel est faite juste avant.
+- **Téléchargement et restauration** : réservés au super administrateur, avec le mot de passe super administrateur. Une copie de l'état actuel est faite juste avant une restauration.
+- **Une sauvegarde complète contient les secrets** : mots de passe hachés, clés de double authentification, mot de passe SMTP. Un fichier téléchargé se range comme un mot de passe, jamais dans un partage ouvert ni en pièce jointe.
 - **Les sauvegardes sont dans le même dossier de données que les originaux.** Il faut donc inclure `C:\inetpub\service_clients_data` dans la sauvegarde du serveur, sinon une panne de disque emporte tout.
-- **Durée de conservation** (Réglages de l'outil, 12 mois par défaut) : les dossiers non modifiés depuis plus longtemps sont effacés automatiquement, une fois par jour.
+- **Durée de conservation** (Réglages de l'outil, 12 mois par défaut, 0 = jamais, sinon 6 à 120 mois) : les dossiers non modifiés depuis plus longtemps sont effacés automatiquement, une fois par jour.
 
 ## Points d'attention et limites
 
 - **Le compte `monetique@d8.fr` est partagé.** Plusieurs personnes qui l'utilisent apparaissent sous un même nom dans l'historique et le journal : on ne sait plus qui a fait quoi. Si plusieurs personnes traitent les formulaires, mieux vaut un compte nominatif pour chacune, avec le rôle « Formulaires en ligne (Monétique) ». De plus, tout le monde connaît alors le même mot de passe.
 - **« Envoyé » veut dire « accepté par le serveur de messagerie »**, pas « lu » ni même « arrivé ». L'accusé de réception est envoyé dès que Microsoft 365 a accepté le message pour Monétique. Il ne confirme pas qu'une personne l'a ouvert, et il peut finir en courrier indésirable.
 - **L'adresse du client est celle qu'il a saisie.** Avec un lien personnel, elle est pré-remplie, mais le client peut la changer.
+- **Blocage des super administrateurs.** Réglage repris du planning : après 3 erreurs, un super administrateur reste bloqué jusqu'au lien reçu par e-mail ou au déblocage par un autre super administrateur. Une personne malveillante du réseau interne peut donc bloquer les 4 comptes, volontairement. Si l'envoi d'e-mails n'est pas réglé, plus personne ne peut alors débloquer depuis l'outil. Pour l'éviter, fixer une durée (par exemple 30 minutes) dans Sécurité & accès › « Pendant (minutes) ».
 - **Le relais Microsoft 365 sans compte n'envoie pas vers l'extérieur.** Pour l'accusé de réception aux clients, il faut le SMTP authentifié, ou un connecteur M365 qui autorise l'adresse IP du serveur.
 - **Brouillon `.eml`.** Il s'ouvre comme un nouveau message dans Outlook classique. Le nouvel Outlook et Outlook Web peuvent l'afficher comme un message reçu : utiliser alors « Copier l'e-mail ».
 - **Données personnelles.** La mention RGPD du formulaire nomme D8 S.A.S.U. comme responsable du traitement, la durée de conservation et le recours à la CNIL. Le traitement est à inscrire au registre des traitements de D8.
@@ -157,7 +168,8 @@ Tant que l'adresse publique n'est pas réglée, les liens ne s'ouvrent que sur l
 |---|---|
 | « PHP n'est sans doute pas activé pour le dossier service_clients » | Le traitement des `.php` n'est pas déclaré : relancer le script. |
 | « Accès refusé pour l'adresse … » | Le poste n'est pas dans `$ALLOWED_NETS` : l'ajouter dans `config.php`. |
-| « Dossier de données non accessible en écriture » | Il manque le droit « Modifier » du pool d'applications IIS sur le dossier des données : relancer le script. |
+| « Requête relayée par un proxy non déclaré » | Un proxy se trouve entre les postes et le serveur : déclarer son adresse dans `$TRUSTED_PROXIES` (`config.php`). |
+| « Dossier de données non accessible en écriture » | Il manque le droit « Modifier » du pool `D8-ServiceClients` sur le dossier des données : relancer le script. |
 | E-mail refusé avec `5.7.139` | SMTP authentifié désactivé dans Microsoft 365 (voir Mise en service). |
 | Le client voit « Connexion non sécurisée : ouvrez le formulaire avec une adresse https:// » | La publication HTTPS n'est pas en place, ou le proxy inverse n'est pas déclaré dans `$TRUSTED_PROXIES` (il doit transmettre `X-Forwarded-Proto: https`). |
 

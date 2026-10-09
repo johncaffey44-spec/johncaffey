@@ -1423,9 +1423,9 @@ function textToBlocks(text) {
     return { t: 'p', s: lines.join('\n') };
   }).filter(Boolean);
 }
-function linkify(h) {
-  return h.replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)»]/g, u => `<a href="${u}" style="color:#2e5c8a">${u}</a>`)
-    .replace(/(^|[\s(>])([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g, (m0, p, e) => `${p}<a href="mailto:${e}" style="color:#2e5c8a">${e}</a>`);
+function linkify(h) {     // une seule passe : une adresse dans un lien n'est pas reprise
+  return h.replace(/(\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)»])|(^|[\s(>])([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g, (m0, u, p, e) =>
+    u ? `<a href="${u}" style="color:#2e5c8a">${u}</a>` : `${p}<a href="mailto:${e}" style="color:#2e5c8a">${e}</a>`);
 }
 function blocksToHtml(blocks) {
   const F = "font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:11pt;color:#222222;line-height:1.45";
@@ -1878,8 +1878,8 @@ function importValues(type, raw, legacy) {
   const putText = (id, s) => {
     const f = fieldById(type, id); s = String(s ?? '').trim(); if (!s) return;
     if (!f) { v[id] = s; return; }
-    if (f.type === 'date') { const d = parseDateAny(s); if (d) v[id] = d; else notes.push(`${f.label} : « ${s} » non reconnue, à saisir.`); }
-    else if (f.type === 'time') { const t = parseTimeAny(s); if (t) v[id] = t; else notes.push(`${f.label} : « ${s} » non reconnue, à saisir.`); }
+    if (f.type === 'date') { const d = parseDateAny(s); if (d) v[id] = d; else notes.push(`${f.label} : « ${maskPAN(s)} » non reconnue, à saisir.`); }
+    else if (f.type === 'time') { const t = parseTimeAny(s); if (t) v[id] = t; else notes.push(`${f.label} : « ${maskPAN(s)} » non reconnue, à saisir.`); }
     else if (f.type === 'money') v[id] = s.replace(/[€\s  ]/g, '').replace('.', ',');
     else if (f.type === 'comb') v[id] = s.replace(/\D/g, '');
     else v[id] = s;
@@ -1944,9 +1944,15 @@ async function importPdf(file) {
   if (!blank(v.dossier)) {
     const r = await api('dossier-get', null, { id: v.dossier });
     if (r.ok && r.body.dossier && r.body.dossier.type === det.type) {
-      linked = r.body.dossier;
-      Object.assign(st.v, linked.v);
-      notes.unshift(`Dossier ${linked.id} retrouvé sur le serveur : la fiche le complète (les renseignements de la fiche remplacent ceux du dossier).`);
+      // le numéro vient du fichier : on montre à qui appartient le dossier avant de le compléter
+      const x = r.body.dossier, xv = x.v || {}, autre = !blank(v.email) && !blank(xv.email) && String(v.email).trim().toLowerCase() !== String(xv.email).trim().toLowerCase();
+      if (await ask(`La fiche porte le numéro <b>${esc(x.id)}</b> : dossier existant de <b>${esc(xv.nom || '?')}</b> (${esc(xv.email || 'sans e-mail')}).`
+          + (autre ? `<br><br><b>Attention :</b> l’e-mail de la fiche (${esc(v.email)}) est différent. Si la fiche ne vient pas de ce client, créez un nouveau dossier.` : '')
+          + '<br><br>Compléter ce dossier avec la fiche ?', { title: 'Fiche liée à un dossier existant', ok: 'Compléter ce dossier', cancel: 'Créer un nouveau dossier', danger: autre })) {
+        linked = x;
+        Object.assign(st.v, linked.v);
+        notes.unshift(`Dossier ${linked.id} retrouvé sur le serveur : la fiche le complète (les renseignements de la fiche remplacent ceux du dossier).`);
+      } else notes.unshift(`Référence « ${v.dossier} » non reprise : un nouveau dossier sera créé à l'enregistrement.`);
     } else notes.unshift(`Référence « ${v.dossier} » inconnue sur le serveur : un nouveau dossier sera créé à l'enregistrement.`);
   }
   delete v.dossier;
@@ -2225,7 +2231,7 @@ async function buildEml(type) {
 /* Initialisation */
 function bindGenerator() {
   if (typeof PDFLib === 'undefined') toast('Bibliothèque PDF absente : fichier incomplet, les fiches PDF ne peuvent pas être créées.', true);
-  $('#mTo').addEventListener('input', e => { S[active].v.email = e.target.value; const f = $('#f_email'); if (f) f.value = e.target.value; saveState(); clearTimeout(refreshT); refreshT = setTimeout(refresh, 300); });
+  $('#mTo').addEventListener('input', e => { S[active].v.email = e.target.value; S[active].dirty = true; const f = $('#f_email'); if (f) f.value = e.target.value; saveState(); clearTimeout(refreshT); refreshT = setTimeout(refresh, 300); });
   $('#mSubject').addEventListener('input', e => { const st = S[active]; st.edited = Object.assign({}, st.edited, { subject: e.target.value }); last.subject = e.target.value; saveState(); $('#editedBar').hidden = false; });
   $('#btnRegen').onclick = () => { S[active].edited = null; saveState(); if (editing) setEditing(false); else refresh(); };
   $('#btnEdit').onclick = () => setEditing(!editing);
@@ -2482,7 +2488,11 @@ function authScreen(info = {}) {
     let mode = info.expired ? 'login' : qp.get('reinit') ? 'reset' : info.bootstrap ? 'boot' : qp.get('invitation') ? 'invite' : 'login';
     let mfa = null, err = '', note = '', tried = info.login || '';
     setPolicy(info.policy);
-    const dropParams = () => { if (location.search) history.replaceState(null, '', location.pathname + location.hash); };
+    const dropParams = () => {      // retire les codes d'invitation et de réinitialisation de l'adresse (pas ?dossier=)
+      const q = new URLSearchParams(location.search); if (!q.has('invitation') && !q.has('reinit')) return;
+      q.delete('invitation'); q.delete('reinit'); const s = q.toString();
+      history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash);
+    };
     const finish = me => { A.hidden = true; A.innerHTML = ''; resolve(me); };
     const after = async (r) => {           // réponse de login / signup / reset-password / mfa-verify
       if (r.body.mfa) { mfa = r.body; mode = 'mfa'; err = ''; return draw(); }
@@ -2753,6 +2763,7 @@ async function logout() {
   if (TYPES.some(t => S[t] && S[t].dirty) && !await ask('Des saisies ne sont pas enregistrées : elles seront perdues. Se déconnecter quand même ?', { ok: 'Se déconnecter', danger: true })) return;
   await api('logout', {});
   store.del('session', STATE_KEY);
+  TYPES.forEach(t => { if (S[t]) S[t].dirty = false; });          // pas de seconde question « quitter la page ? »
   location.href = location.pathname;
 }
 
@@ -2772,6 +2783,8 @@ function applyDossier(type, d) {
 /** enregistre le dossier de l'onglet ; event : réponse envoyée (inscrite à l'historique) */
 async function saveDossier(event, extra = {}) {
   const type = active, st = S[type]; if (!FORMS[type]) return null;
+  const sent = JSON.stringify(st.v);
+  if (st.imported && st.id && !event) event = { ev: 'import', info: 'fiche PDF importée (' + st.imported.name + ')' };
   const body = Object.assign({ id: st.id || '', rev: st.rev, type, v: st.v, event: event || null, origin: st.imported ? 'fiche PDF importée (' + st.imported.name + ')' : '' }, extra);
   setSync('', 'Enregistrement…');
   const r = await call('dossier-save', body, null, { raw: true, quiet: true });
@@ -2787,9 +2800,13 @@ async function saveDossier(event, extra = {}) {
   }
   if (!r.ok) { toast(r.body.error || `Enregistrement impossible (${r.status}).`, true); return null; }
   const d = r.body.dossier, isNew = !st.id;
+  const typed = JSON.stringify(st.v) !== sent, local = st.v;        // saisie faite pendant l'enregistrement
   applyDossier(type, d); st.imported = null;
+  if (typed) { st.v = Object.assign(local, { dossier: d.id }); st.dirty = true; }
   if (event && event.ev === 'reply') st.lastReply = replyKey();
-  renderForm(); refresh(); saveState();
+  if (typed && active === type) { const di = $('#f_dossier'); if (di) di.value = d.id; refresh(); }   // le formulaire n'est pas redessiné : la saisie continue
+  else { renderForm(); refresh(); }
+  saveState();
   if (isNew) toast(`Dossier ${d.id} créé.`);
   return d;
 }
@@ -2807,7 +2824,7 @@ async function ensureSaved(via) {
 async function openDossier(id) {
   const r = await call('dossier-get', null, { id }); if (!r) return;
   const d = r.dossier;
-  if (S[d.type].dirty && S[d.type].id !== d.id && !await ask(`La saisie en cours de l'onglet « ${esc(FORMS[d.type].label)} » n'est pas enregistrée : elle sera perdue. Ouvrir quand même le dossier ${esc(d.id)} ?`, { ok: 'Ouvrir', danger: true })) return;
+  if (S[d.type].dirty && !await ask(`La saisie en cours de l'onglet « ${esc(FORMS[d.type].label)} » n'est pas enregistrée : elle sera perdue. Ouvrir quand même le dossier ${esc(d.id)} ?`, { ok: 'Ouvrir', danger: true })) return;
   S[d.type] = blankState(d.type); applyDossier(d.type, d);
   switchTab(d.type);
   toast(`Dossier ${d.id} ouvert.`);
@@ -2841,7 +2858,7 @@ async function dossierList() {
   let t; $('#dl-q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(load, 300); });
   $('#dl-t').onchange = load; $('#dl-s').onchange = load;
   const x = $('#dl-x'); if (x) x.onclick = () => {
-    const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const q = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };   // pas de formule exécutée par Excel
     const csv = ['N°;Type;Origine;Client;E-mail;Site;Matricule;Dernière réponse;Date de la réponse;Clôturé;Créé le;Créé par;Modifié le;Modifié par',
       ...rows.map(d => [d.id, FORMS[d.type].label, d.origin === 'web' ? 'formulaire en ligne' : 'outil', d.client, d.email, d.site, d.matricule, SCEN_LABEL(d.type, d.lastScen), fdt(d.lastAt), d.closed ? 'oui' : 'non', fdt(d.createdAt), d.createdBy, fdt(d.updatedAt), d.updatedBy].map(q).join(';'))].join('\r\n');
     download(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), 'dossiers-service-clients.csv');
@@ -2978,7 +2995,7 @@ function webSettingsDialog() {
   m.el.querySelector('[data-c]').onclick = () => m.close();
   m.el.querySelector('[data-ok]').onclick = async () => {
     const b = { webRemb: $('#ws-on').checked, webNotify: $('#ws-n').value.trim(), webLinkDays: +$('#ws-d').value || 30, webPublicUrl: $('#ws-u').value.trim(), webAR: $('#ws-ar').checked, webGeneric: $('#ws-g').checked };
-    if (b.webPublicUrl && !/^https:\/\//i.test(b.webPublicUrl) && !await ask('L’adresse publique ne commence pas par https:// : le formulaire refusera les clients venant d’Internet (connexion non chiffrée). Enregistrer quand même ?')) return;
+    if (b.webPublicUrl && !/^https:\/\//i.test(b.webPublicUrl)) return toast('L’adresse publique doit commencer par https:// : le formulaire n’est accepté depuis Internet qu’en connexion chiffrée.', true);
     const r = await call('settings-set', b); if (!r) return;
     C = Object.assign({}, DEFAULTS, r.settings); m.close(); toast('Réglages enregistrés.'); renderWebView();
   };
@@ -3194,7 +3211,7 @@ function inviteDialog(d, u, reload) {
 
 /* --- Rôles --- */
 async function admRoles(sc, reload) {
-  const d = ADM.data && ADM.data.roles ? ADM.data : await call('admin-users'); if (!d) return;
+  const d = await call('admin-users'); if (!d) return;            // toujours relu : qui utilise chaque rôle a pu changer
   ADM.data = d;
   const isSuper = can('super'), myPerms = new Set(ME.perms);
   sc.innerHTML = `<div class="toolbar"><h3 style="margin:0;flex:1">Rôles et droits</h3><button class="btn sm primary" data-add>Ajouter un rôle</button></div>
@@ -3240,7 +3257,7 @@ const SET_FIELDS = [
   ['Entreprise (pied de page des fiches et signature)', [['societe', 'Raison sociale'], ['adresse', 'Adresse'], ['telephone', 'Téléphone'], ['emailGeneral', 'E-mail général']]],
   ['Adresses de retour des fiches et des réponses', [['emailMonetique', 'SAV carte bancaire et remboursements'], ['emailSav', 'Demandes d’intervention'], ['emailCommandes', 'Commandes']]],
   ['E-mails de réponse', [['politesse', 'Formule de politesse', '', ['Cordialement', 'Bien cordialement', 'Sincères salutations']], ['expediteur', 'Expéditeur des brouillons Outlook (« De : »)', 'ex. Monetique@d8.fr si vous avez accès à la boîte partagée ; vide = votre compte']]],
-  ['Délais et engagements écrits', [['delaiReclamation', 'Délai de réclamation (jours)', 'Remboursements', 'n'], ['delaiTraitement', 'Délai de réponse (jours ouvrés)', 'Remboursements', 'n'], ['delaiIntervention', 'Délai d’intervention', 'ex. « sous 48 heures ouvrées » ; vide = « dans les meilleurs délais »'], ['delaiLivraison', 'Délai de livraison', 'ex. « sous 5 jours ouvrés » ; vide = date confirmée au cas par cas'], ['horairesTel', 'Horaires téléphoniques', 'ex. « du lundi au vendredi, de 9 h à 17 h »'], ['conservation', 'Conservation des dossiers (mois)', 'Au-delà, les dossiers sont effacés automatiquement (0 = jamais)', 'n']]]
+  ['Délais et engagements écrits', [['delaiReclamation', 'Délai de réclamation (jours)', 'Remboursements', 'n'], ['delaiTraitement', 'Délai de réponse (jours ouvrés)', 'Remboursements', 'n'], ['delaiIntervention', 'Délai d’intervention', 'ex. « sous 48 heures ouvrées » ; vide = « dans les meilleurs délais »'], ['delaiLivraison', 'Délai de livraison', 'ex. « sous 5 jours ouvrés » ; vide = date confirmée au cas par cas'], ['horairesTel', 'Horaires téléphoniques', 'ex. « du lundi au vendredi, de 9 h à 17 h »'], ['conservation', 'Conservation des dossiers (mois)', 'Au-delà, les dossiers sont effacés automatiquement : 0 = jamais, sinon de 6 à 120 mois', 'n']]]
 ];
 async function admSettings(sc, reload) {
   const r = await call('settings'); if (!r) return;
@@ -3357,7 +3374,7 @@ async function admJournal(sc, reload) {
     tb.innerHTML = list.map(({ e, lab, tone }) => `<tr><td style="white-space:nowrap">${esc(fdt(e.t))}</td><td>${tone ? `<span class="tag ${tone}">${esc(lab)}</span>` : esc(lab)}</td><td>${esc(e.login)}</td><td class="mono">${esc(e.ip)}</td><td>${esc(e.info)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucun événement.</td></tr>';
   };
   sc.querySelector('[data-q]').oninput = draw;
-  sc.querySelector('[data-x]').onclick = () => { const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"'; download(new Blob(['﻿' + ['Date;Événement;Identifiant;Adresse IP;Détail', ...rows.map(r => [fdt(r.e.t), r.lab, r.e.login, r.e.ip, r.e.info].map(q).join(';'))].join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'journal-service-clients.csv'); };
+  sc.querySelector('[data-x]').onclick = () => { const q = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; }; download(new Blob(['﻿' + ['Date;Événement;Identifiant;Adresse IP;Détail', ...rows.map(r => [fdt(r.e.t), r.lab, r.e.login, r.e.ip, r.e.info].map(q).join(';'))].join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'journal-service-clients.csv'); };
   draw();
 }
 
@@ -3379,7 +3396,11 @@ async function admBackups(sc, reload) {
   const getFile = async (name) => {
     const r = await fetch('api.php?a=backup-get&f=' + encodeURIComponent(name), { credentials: 'same-origin', cache: 'no-store' });
     if (r.status === 401 && await relogin()) return getFile(name);
-    if (!r.ok) { let e = ''; try { e = (await r.json()).error; } catch (x) { } toast(e || 'Téléchargement impossible.', true); return null; }
+    if (!r.ok) {
+      let j = {}; try { j = await r.json(); } catch (x) { }
+      if (r.status === 403 && j.superadmin) return await superAdmin(j.error) ? getFile(name) : null;   // mot de passe super administrateur exigé
+      toast(j.error || 'Téléchargement impossible.', true); return null;
+    }
     return r.blob();
   };
   sc.querySelectorAll('[data-get]').forEach(x => x.onclick = async () => { const f = b.files[+x.dataset.get]; const blob = await getFile(f.name); if (blob) download(blob, f.name); });

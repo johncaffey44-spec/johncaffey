@@ -45,6 +45,7 @@
  * -----------------------------------------------------------------------------
  */
 declare(strict_types=1);
+const DUMMY_HASH = '$2y$10$4xOVay09Vpo4GvOveNWNLOlV4fL3bflcy3djVT1PSB8hLgyUOldu6';   // leurre : identifiant inconnu, même coût de calcul
 
 $DATA_DIR      = __DIR__ . '/data';   // idéalement hors racine web : 'C:\\inetpub\\service_clients_data'
 $ALLOWED_NETS  = ['127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
@@ -72,6 +73,7 @@ $RESET_MINUTES = 30;                  // validité du lien « mot de passe oubli
 $RESET_FOR     = 'all';               // « mot de passe oublié » par e-mail : 'all' (tout le monde), 'super' ou 'none'
 $MFA_REQUIRED  = 'none';              // double authentification obligatoire pour : 'none', 'super', 'admin' ou 'all'
 $MAX_FAILS     = 8;                   // échecs de connexion tolérés par adresse IP…
+$MFA_MAX_FAILS = 10;                  // codes de double authentification erronés (par compte) avant 15 minutes de blocage
 $FAIL_WINDOW   = 900;                 // …sur cette durée (s), puis blocage pendant la même durée
 
 /* --- mot de passe super administrateur : mise en service, restauration, réinitialisations sensibles.
@@ -161,6 +163,13 @@ function ip_in(string $ip, string $cidr): bool {
     return ($ipb[$bytes] & $mask) === ($netb[$bytes] & $mask);
 }
 function is_loopback(string $ip): bool { return ip_in($ip, '127.0.0.0/8') || $ip === '::1'; }
+/** adresse lue dans X-Forwarded-For (« 1.2.3.4:51234 » et « [2001:db8::1]:443 » acceptés) ; illisible : '0.0.0.0', traitée comme extérieure */
+function fwd_ip(string $s): string {
+    $s = trim($s, " \t\"");
+    if (preg_match('/^\[([0-9a-f:.]+)\](?::\d+)?$/i', $s, $m)) $s = $m[1];
+    elseif (preg_match('/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/', $s, $m)) $s = $m[1];
+    return filter_var($s, FILTER_VALIDATE_IP) ? $s : '0.0.0.0';
+}
 function valid_json(string $s): bool {
     if (function_exists('json_validate')) return json_validate($s);
     json_decode($s);
@@ -173,12 +182,11 @@ function read_json(string $f): array {
 function write_json(string $f, array $d): bool {
     $tmp = $f . '.' . bin2hex(random_bytes(4)) . '.tmp';
     if (@file_put_contents($tmp, json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), LOCK_EX) === false) return false;
-    if (@rename($tmp, $f)) return true;
-    // Windows : rename() échoue parfois si la cible est ouverte ; nouvelle tentative après suppression
-    @unlink($f);
-    if (@rename($tmp, $f)) return true;
+    // Windows : rename() échoue tant qu'un autre processus lit la cible ; on réessaie (jamais de suppression préalable)
+    for ($i = 0; $i < 25; $i++) { if (@rename($tmp, $f)) return true; usleep(20000); }
+    $ok = @file_put_contents($f, (string)file_get_contents($tmp), LOCK_EX) !== false;   // dernier recours : réécriture sur place
     @unlink($tmp);
-    return false;
+    return $ok;
 }
 /** la requête vient-elle de cette même application ? (en-tête Origin, envoyé par les navigateurs pour les POST) */
 function same_origin(): bool {
@@ -209,7 +217,7 @@ function clean_text($v, int $n, bool $multi = false): string {
     $s = preg_replace($multi ? '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u' : '/[\x00-\x1F\x7F]/u', '', $s);
     return cut(trim((string)$s), $n);
 }
-function clean_login($s): string { return strtolower(trim((string)$s)); }
+function clean_login($s): string { return substr(strtolower(trim((string)$s)), 0, 160); }
 function login_ok(string $l): bool { return strlen($l) <= 120 && (bool)preg_match('/^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/', $l); }
 /** nom affiché par défaut à partir de l'adresse : cfernandes@d8.fr → « C. Fernandes » */
 function name_from_login(string $l): string {
@@ -241,16 +249,21 @@ function page_build(): ?string {
 $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
 $viaProxy = false;
 foreach ($TRUSTED_PROXIES as $px) if (ip_in($ip, strpos($px, '/') === false ? $px . (strpos($px, ':') === false ? '/32' : '/128') : $px)) { $viaProxy = true; break; }
-if ($viaProxy && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-    $chain = array_map('trim', explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR']));
-    $cand = (string)end($chain);
-    if (filter_var($cand, FILTER_VALIDATE_IP)) $ip = $cand;
+$fwd = trim((string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
+$unknownProxy = false;
+if ($viaProxy) {
+    // le proxy de confiance ajoute l'adresse du client en dernier
+    if ($fwd !== '') { $chain = array_map('trim', explode(',', $fwd)); $ip = fwd_ip((string)end($chain)); }
+} elseif ($fwd !== '' || !empty($_SERVER['HTTP_FORWARDED'])) {
+    // relayée par un proxy non déclaré : l'adresse vue est celle du proxy (souvent interne), pas celle du visiteur
+    $unknownProxy = true;
 }
 $action = (string)($_GET['a'] ?? 'ping');
-$INTERNAL = empty($ALLOWED_NETS);
-foreach ($ALLOWED_NETS as $net) { if (ip_in($ip, $net)) { $INTERNAL = true; break; } }
+$INTERNAL = !$unknownProxy && empty($ALLOWED_NETS);
+if (!$unknownProxy) foreach ($ALLOWED_NETS as $net) { if (ip_in($ip, $net)) { $INTERNAL = true; break; } }
 $WEB_ACTIONS = ['form-info', 'form-submit'];
-if (!$INTERNAL && !($PUBLIC_FORMS && in_array($action, $WEB_ACTIONS, true))) out(403, ['error' => "Accès refusé pour l'adresse $ip"]);
+if (!$INTERNAL && !($PUBLIC_FORMS && in_array($action, $WEB_ACTIONS, true)))
+    out(403, ['error' => $unknownProxy ? "Requête relayée par un proxy non déclaré ($ip) : ajoutez son adresse à \$TRUSTED_PROXIES dans config.php." : "Accès refusé pour l'adresse $ip"]);
 
 /* --- dossier de données --- */
 if (!is_dir($DATA_DIR) && !@mkdir($DATA_DIR, 0770, true) && !is_dir($DATA_DIR)) out(500, ['error' => 'Impossible de créer le dossier de données (droits d’écriture du compte IIS ?)']);
@@ -373,7 +386,7 @@ function auth_log(string $ev, string $login = '', string $info = ''): void {
     $h = @fopen("$DATA_DIR/auth-log.json", 'c+'); if (!$h) return;
     flock($h, LOCK_EX);
     $all = json_decode((string)stream_get_contents($h), true); if (!is_array($all)) $all = [];
-    array_unshift($all, ['t' => date('c'), 'ev' => $ev, 'login' => $login, 'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''), 'info' => cut($info, 300)]);
+    array_unshift($all, ['t' => date('c'), 'ev' => $ev, 'login' => $login, 'ip' => (string)($GLOBALS['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? '')), 'info' => cut($info, 300)]);
     ftruncate($h, 0); rewind($h); fwrite($h, json_encode(array_slice($all, 0, 2000), JSON_UNESCAPED_UNICODE)); fflush($h);
     flock($h, LOCK_UN); fclose($h);
 }
@@ -388,17 +401,21 @@ function throttle_check(string $F, string $ip, int $max, int $win): void {
     }
 }
 function throttle_fail(string $F, string $ip, int $win): void {
+    $h = @fopen("$F.lock", 'c'); if ($h) flock($h, LOCK_EX);
     $all = array_filter(read_json($F), function ($e) use ($win) { return time() - (int)($e['t'] ?? 0) < $win; });
     $all[$ip] = ['n' => (int)($all[$ip]['n'] ?? 0) + 1, 't' => time()];
     write_json($F, $all);
+    if ($h) { flock($h, LOCK_UN); fclose($h); }
 }
 function throttle_clear(string $F, string $ip): void {
+    $h = @fopen("$F.lock", 'c'); if ($h) flock($h, LOCK_EX);
     $all = read_json($F);
     if (isset($all[$ip])) { unset($all[$ip]); write_json($F, $all); }
+    if ($h) { flock($h, LOCK_UN); fclose($h); }
 }
 
 /** utilisateur connecté, ou null (session absente, expirée, accès réinitialisé ou mot de passe changé ailleurs) */
-function auth_user(string $ACC, int $idle, $lock): ?array {
+function auth_user(string $ACC, int $idle, $lock, bool $activity = true): ?array {
     $s = $_SESSION['auth'] ?? null;
     if (!is_array($s)) return null;
     flock($lock, LOCK_SH);
@@ -409,11 +426,12 @@ function auth_user(string $ACC, int $idle, $lock): ?array {
         unset($_SESSION['auth']);
         return null;
     }
-    $_SESSION['auth']['seen'] = time();
+    if ($activity) $_SESSION['auth']['seen'] = time();
     return $_SESSION['auth'];
 }
 function open_session(string $login, array $a, string $name): array {
     session_regenerate_id(true);                // nouvel identifiant de session à chaque connexion
+    $_SESSION = [];                             // rien de la session précédente (confirmation super administrateur…) ne survit
     $_SESSION['auth'] = ['login' => $login, 'userId' => (string)$a['userId'], 'name' => $name, 'stamp' => (string)$a['stamp'], 'seen' => time()];
     return $_SESSION['auth'];
 }
@@ -795,7 +813,7 @@ function finish_login(string $login, array $acc, string $name, bool $weak, array
         return me_payload($s, $doc);
     }
     session_regenerate_id(true);
-    unset($_SESSION['auth']);
+    $_SESSION = [];
     $p = ['login' => $login, 'name' => $name, 'weak' => $weak, 't' => time(), 'n' => 0];
     if ($on) { $_SESSION['mfa_pending'] = $p; auth_log('mfa-ask', $login, $name); return ['auth' => false, 'mfa' => 'code', 'name' => $name]; }
     $p['enroll'] = b32_encode(random_bytes(20));        // exigée mais pas encore activée : mise en place à cette connexion
@@ -899,6 +917,7 @@ function web_validate(string $type, array $in): array {
                 break;
             case 'tel':
                 $x = preg_replace('/[^\d +().-]/', '', $x);
+                if (strlen((string)preg_replace('/\D/', '', $x)) >= 13) { $m = mask_pan($x); if ($m !== $x) { $pan = true; $x = $m; } }
                 break;
             default:
                 $x = mask_pan($x); if ($x !== clean_text((string)$raw, $kind === 'textarea' ? 2000 : 200, $kind === 'textarea')) $pan = true;
@@ -906,17 +925,20 @@ function web_validate(string $type, array $in): array {
         if (is_int($opt) && $opt > 0 && in_array($kind, ['text', 'textarea'], true)) $x = cut($x, $opt);
         $v[$k] = $x;
     }
+    if (array_key_exists('last4', $v) && !in_array($v['paiement'] ?? '', ['cb', 'mobile'], true)) { $v['last4'] = ''; unset($err['last4']); }
     foreach (WEB_FORMS[$type]['fields'] as $k => [$label, $kind, $req]) {
         if (isset($err[$k]) || !web_req_on($req, $v)) continue;
         if ($kind === 'check' ? !$v[$k] : (string)$v[$k] === '') $err[$k] = $kind === 'check' ? 'Cette attestation est nécessaire pour traiter votre demande.' : 'Champ obligatoire.';
     }
     return [$v, $err, $pan];
 }
-function web_money(string $s): string { $n = (float)str_replace(',', '.', $s); return number_format($n, 2, ',', "\u{00A0}") . "\u{00A0}€"; }
-function web_date(string $iso): string { return preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $iso, $m) ? "$m[3]/$m[2]/$m[1]" : $iso; }
-function web_time(string $t): string { return preg_match('/^(\d{2}):(\d{2})$/', $t, $m) ? (int)$m[1] . ' h ' . $m[2] : $t; }
+function web_money($s): string { $s = (string)$s; $n = (float)str_replace(',', '.', $s); return number_format($n, 2, ',', "\u{00A0}") . "\u{00A0}€"; }
+function web_date($iso): string { $iso = (string)$iso; return preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $iso, $m) ? "$m[3]/$m[2]/$m[1]" : $iso; }
+function web_time($t): string { $t = (string)$t; return preg_match('/^(\d{2}):(\d{2})$/', $t, $m) ? (int)$m[1] . ' h ' . $m[2] : $t; }
 function web_opt(string $type, string $k, string $val): string { $o = WEB_FORMS[$type]['fields'][$k][3] ?? []; return is_array($o) ? (string)($o[$val] ?? $val) : $val; }
-/** lignes « Libellé : valeur » du récapitulatif (le texte libre n'est repris que pour la Monétique, sans liens) */
+/** texte saisi par le client, repris dans un e-mail qui lui est envoyé : sans adresse web */
+function web_nolink($x): string { return (string)preg_replace('#\b(https?://|www\.)\S+|\b[\w-]+(\.[\w-]+)*\.(com|net|org|fr|io|ru|cn|xyz|top|info|biz|ly|me)\b(/\S*)?#i', '[lien retiré]', (string)$x); }
+/** lignes « Libellé : valeur » du récapitulatif (le texte libre n'est repris que pour la Monétique ; sans liens pour le client) */
 function web_recap(array $d, bool $full): array {
     $v = (array)$d['v']; $t = $d['type'];
     $carte = in_array($v['paiement'] ?? '', ['cb', 'mobile'], true) && preg_match('/^\d{4}$/', (string)($v['last4'] ?? ''));
@@ -935,7 +957,7 @@ function web_recap(array $d, bool $full): array {
     if ($full) $rows[] = ['Description', (string)($v['description'] ?? '')];
     else { $rows = array_values(array_filter($rows, function ($r) { return !in_array($r[0], ['E-mail', 'Téléphone'], true); })); }
     $out = [];
-    foreach ($rows as [$k, $x]) { $x = trim(preg_replace('/\s*\n\s*/', ' / ', (string)$x)); if ($x !== '') $out[] = "$k : " . ($full ? $x : preg_replace('#\b(https?://|www\.)\S+#i', '[lien retiré]', $x)); }
+    foreach ($rows as [$k, $x]) { $x = trim(preg_replace('/\s*\n\s*/', ' / ', (string)$x)); if ($x !== '') $out[] = "$k : " . ($full ? $x : web_nolink($x)); }
     return $out;
 }
 function web_signature(): string {
@@ -945,13 +967,15 @@ function web_signature(): string {
 /** accusé de réception envoyé au client (même contenu que la réponse « Accusé de réception » de l'outil) */
 function web_ar(array $d): array {
     $c = read_settings(); $v = (array)$d['v'];
-    $emp = ($v['matricule'] ?? '') !== '' ? 'le distributeur n° ' . $v['matricule'] . (($v['emplacement'] ?? '') !== '' ? ' (' . $v['emplacement'] . ')' : '') : 'le distributeur';
+    $emp = ($v['matricule'] ?? '') !== '' ? 'le distributeur n° ' . web_nolink($v['matricule']) . (($v['emplacement'] ?? '') !== '' ? ' (' . web_nolink($v['emplacement']) . ')' : '') : 'le distributeur';
     $tx = trim((($v['tx_date'] ?? '') !== '' ? 'du ' . web_date($v['tx_date']) : '') . (($v['tx_heure'] ?? '') !== '' ? ' vers ' . web_time($v['tx_heure']) : '') . (($v['montant'] ?? '') !== '' ? ' (' . web_money($v['montant']) . ')' : ''));
     $p = ["Bonjour,", "Nous avons bien reçu votre demande de remboursement concernant $emp, et nous vous présentons nos excuses pour la gêne occasionnée.",
           "Votre dossier est enregistré sous la référence {$d['id']}. Nous recherchons à présent votre transaction $tx dans les relevés de paiement du distributeur, et nous vous répondrons sous {$c['delaiTraitement']} jours ouvrés."];
     $t = strtotime((string)($v['tx_date'] ?? ''));
     if ($t !== false && $t < strtotime('-' . (int)$c['delaiReclamation'] . ' days')) $p[] = "Votre demande porte sur une transaction de plus de {$c['delaiReclamation']} jours : nous vérifions qu'elle figure encore dans les relevés du distributeur, sans pouvoir vous le garantir.";
-    if (($v['rb_mode'] ?? '') !== '') $p[] = 'Une fois la transaction retrouvée, le remboursement sera effectué ' . ['especes' => "en espèces, à l'accueil ou auprès de votre référent site", 'compte' => 'sur le compte utilisé pour le paiement', 'virement' => 'par virement bancaire', 'appli' => 'sur votre application Pay4Vend ou Matipay'][$v['rb_mode']] . '.' . ($v['rb_mode'] === 'virement' ? ' Pour cela, merci de nous adresser votre RIB en réponse à ce message.' : '');
+    $modes = ['especes' => "en espèces, à l'accueil ou auprès de votre référent site", 'compte' => 'sur le compte utilisé pour le paiement', 'virement' => 'par virement bancaire', 'appli' => 'sur votre application Pay4Vend ou Matipay'];
+    $rb = (string)($v['rb_mode'] ?? '');
+    if (isset($modes[$rb])) $p[] = 'Une fois la transaction retrouvée, le remboursement sera effectué ' . $modes[$rb] . '.' . ($rb === 'virement' ? ' Pour cela, merci de nous adresser votre RIB en réponse à ce message.' : '');
     if (in_array($v['paiement'] ?? '', ['cb', 'mobile'], true)) $p[] = 'Si vous avez déjà engagé une contestation auprès de votre banque pour ce paiement, merci de nous le signaler : le remboursement serait alors traité par votre banque, ce qui évite un double remboursement.';
     $p[] = "RÉCAPITULATIF DE VOTRE DEMANDE\n" . implode("\n", web_recap($d, false));
     $p[] = 'Pour votre sécurité, ne nous communiquez jamais votre numéro de carte complet ni le cryptogramme au dos : les 4 derniers chiffres suffisent.';
@@ -964,7 +988,9 @@ function web_mails(array &$d, bool $onlyMissing = false): void {
     global $ip;
     $c = read_settings(); $s = mail_cfg();
     $to = filter_var($c['webNotify'], FILTER_VALIDATE_EMAIL) ? $c['webNotify'] : $c['emailMonetique'];
-    $client = (string)($d['v']['email'] ?? '');
+    // lien personnel : l'accusé de réception part à l'adresse à laquelle le lien a été envoyé (pas à une adresse tapée dans le formulaire)
+    $typed = (string)($d['v']['email'] ?? '');
+    $client = (string)($d['web']['arTo'] ?? '') ?: $typed;
     $m = (array)($d['web']['mails'] ?? []);
     $now = date('c');
     if (!mail_ready()) { $d['web']['mails'] = $m + ['notify' => ['ok' => false, 't' => $now, 'err' => 'Envoi des e-mails non réglé (Administration › Sécurité & accès).']]; return; }
@@ -972,6 +998,7 @@ function web_mails(array &$d, bool $onlyMissing = false): void {
         $link = $s['appUrl'] !== '' ? "\n\nOuvrir le dossier dans l'outil Service clients :\n" . app_link('dossier', $d['id']) : '';
         $body = "Nouvelle demande de remboursement reçue par le formulaire en ligne, le " . date('d/m/Y à H:i', strtotime((string)($d['web']['submittedAt'] ?? $now))) . ".\n\n"
             . implode("\n", web_recap($d, true)) . $link . "\n\n"
+            . (strcasecmp($typed, $client) !== 0 && $typed !== '' ? "Attention : le client a saisi l'adresse $typed, différente de celle à laquelle le lien lui a été envoyé ($client).\n\n" : '')
             . (!empty($c['webAR']) ? "Un accusé de réception va être envoyé automatiquement au client ($client) ; vous recevrez une confirmation de cet envoi." : "Accusé de réception automatique désactivé : répondez au client depuis l'outil.")
             . "\n\nRépondre à ce message écrit directement au client.\n";
         $err = send_mail($to, "[Formulaire en ligne] Demande de remboursement {$d['id']} – " . cut((string)($d['v']['nom'] ?? ''), 60), $body, $client);
@@ -1010,14 +1037,11 @@ function web_nonce_ok(string $n, string $key): bool {
     $age = time() - (int)$m[1];
     return $age >= 3 && $age <= 86400 && hash_equals(hash_hmac('sha256', "$m[1]|$key", web_secret()), $m[2]);
 }
-/** lien valide pour ce jeton, ou null (les liens expirés depuis plus de 30 jours sont purgés) */
+/** lien pour ce jeton, ou null (lecture seule : la purge se fait sous verrou, à la création d'un lien) */
 function web_link_find(string $tok): ?array {
     global $WEBL;
-    $all = read_json($WEBL); $keep = [];
-    foreach ($all as $k => $x) if (is_array($x) && (int)($x['exp'] ?? 0) > time() - 30 * 86400) $keep[$k] = $x;
-    if (count($keep) !== count($all)) write_json($WEBL, $keep);
     if (!preg_match('/^[a-f0-9]{32}$/', $tok)) return null;
-    $x = $keep[hash('sha256', $tok)] ?? null;
+    $x = read_json($WEBL)[hash('sha256', $tok)] ?? null;
     return is_array($x) ? $x + ['key' => hash('sha256', $tok)] : null;
 }
 
@@ -1082,6 +1106,10 @@ if ($action === 'form-info' || $action === 'form-submit') {
         $all = read_json($WEBL);
         if (!empty($all[$link['key']]['used'])) { flock($lock, LOCK_UN); out(409, ['error' => 'Ce lien vient d’être utilisé : votre demande a déjà été transmise.']); }
     } else {
+        $nF = "$DATA_DIR/web-nonces.json"; $nh = hash('sha256', (string)$in['nonce']);
+        $used = array_filter(read_json($nF), function ($exp) { return (int)$exp > time(); });
+        if (isset($used[$nh])) { flock($lock, LOCK_UN); throttle_fail($WEBT, $ip, 3600); out(400, ['error' => 'Formulaire déjà envoyé : rechargez la page pour une nouvelle demande.', 'reload' => true]); }
+        $used[$nh] = time() + 86400; write_json($nF, $used);
         $dayF = "$DATA_DIR/web-daily.json"; $day = read_json($dayF);
         if (($day['day'] ?? '') !== date('Y-m-d')) $day = ['day' => date('Y-m-d'), 'n' => 0];
         if ((int)$day['n'] >= $WEB_MAX_PER_DAY) { flock($lock, LOCK_UN); auth_log('web-cap', '', 'limite quotidienne du lien générique atteinte'); out(429, ['error' => 'Trop de demandes aujourd’hui : réessayez demain ou écrivez-nous.']); }
@@ -1101,7 +1129,7 @@ if ($action === 'form-info' || $action === 'form-submit') {
     }
     $d['v']['dossier'] = $d['id'];
     $d['origin'] = 'web';
-    $d['web'] = ['submittedAt' => $now, 'ip' => $ip, 'via' => $link ? 'lien' : 'generique', 'pan' => $pan, 'handled' => false, 'mails' => []];
+    $d['web'] = ['submittedAt' => $now, 'ip' => $ip, 'via' => $link ? 'lien' : 'generique', 'pan' => $pan, 'handled' => false, 'mails' => [], 'arTo' => $link ? (string)($link['email'] ?? '') : ''];
     $d['updatedAt'] = $now; $d['updatedBy'] = 'Client (formulaire en ligne)';
     $f = (string)dossier_file($d['id']);
     if (!write_json($f, $d)) { flock($lock, LOCK_UN); out(500, ['error' => 'Enregistrement impossible : réessayez dans quelques minutes.']); }
@@ -1110,12 +1138,12 @@ if ($action === 'form-info' || $action === 'form-submit') {
     throttle_fail($WEBT, $ip, 3600);                                        // chaque envoi compte dans la limite par adresse IP
     auth_log('web-submit', (string)$v['email'], $d['id'] . ($link ? ' (lien personnel)' : ' (lien générique)'));
     web_mails($d);
-    flock($lock, LOCK_EX); $cur = read_dossier($d['id']) ?? $d; $cur['web'] = $d['web']; write_json($f, $cur); flock($lock, LOCK_UN);
+    flock($lock, LOCK_EX); $cur = read_dossier($d['id']) ?? $d; $cur['web']['mails'] = $d['web']['mails']; write_json($f, $cur); flock($lock, LOCK_UN);
     $ar = !empty($d['web']['mails']['ar']['ok']);
-    out(200, ['ok' => true, 'ref' => $d['id'], 'ar' => $ar, 'email' => $ar ? (string)$v['email'] : '', 'pan' => $pan]);
+    out(200, ['ok' => true, 'ref' => $d['id'], 'ar' => $ar, 'email' => $ar ? (string)$d['web']['mails']['ar']['to'] : '', 'pan' => $pan]);
 }
 
-$me = auth_user($ACC, $SESSION_IDLE, $lock);
+$me = auth_user($ACC, $SESSION_IDLE, $lock, $action !== 'ping');
 $PUBLIC = ['ping', 'me', 'bootstrap-info', 'sa-init', 'invite-check', 'signup', 'login', 'logout', 'forgot', 'reset-check', 'reset-password', 'mfa-verify'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);
 // la session n'est plus modifiée ensuite : on la libère pour ne pas bloquer les requêtes parallèles
@@ -1257,7 +1285,7 @@ if ($action === 'login') {
         out(423, ['auth' => false, 'locked' => true, 'error' => lock_msg($lk, (bool)$sup)]);
     }
     // même coût de calcul que l'identifiant existe ou non (ne révèle pas les identifiants valides)
-    $ok = password_verify($pass, is_array($a) ? (string)$a['hash'] : password_hash('x', PASSWORD_DEFAULT));
+    $ok = password_verify($pass, is_array($a) ? (string)$a['hash'] : DUMMY_HASH);
     if (!is_array($a) || !$ok) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
         auth_log('fail', $login, is_array($a) ? ($sup ? 'mot de passe incorrect (super administrateur)' : 'mot de passe incorrect') : 'identifiant inconnu ou accès non créé');
@@ -1290,7 +1318,8 @@ if ($action === 'login') {
     $u = find_user($doc, (string)$a['userId']);
     if (!$u || ($u['active'] ?? true) === false) { flock($lock, LOCK_UN); auth_log('disabled', $login); out(403, ['error' => 'Ce compte est désactivé. Contactez un administrateur.']); }
     $name = (string)$u['name'];
-    throttle_clear($FAILS, $ip);
+    // les échecs de l'adresse IP ne sont oubliés qu'une fois la connexion complète (double authentification comprise)
+    if (empty($a['mfa']['on']) && !mfa_required($doc, (string)$a['userId'])) throttle_clear($FAILS, $ip);
     if (password_needs_rehash((string)$a['hash'], PASSWORD_DEFAULT)) $acc[$login]['hash'] = password_hash($pass, PASSWORD_DEFAULT);
     $acc[$login]['lastLogin'] = date('c');
     write_json($ACC, $acc);
@@ -1361,6 +1390,12 @@ if ($action === 'mfa-verify') {
     flock($lock, LOCK_EX);
     $acc = read_json($ACC); $login = (string)$p['login']; $a = $acc[$login] ?? null;
     if (!is_array($a)) { unset($_SESSION['mfa_pending']); flock($lock, LOCK_UN); out(401, ['auth' => false, 'restart' => true, 'error' => 'Compte introuvable.']); }
+    // codes erronés comptés par compte, d'une connexion à l'autre
+    $mk = 'mfa:' . $login; $ml = lock_state($LOCKF, $mk, 15);
+    if ($ml && (int)($ml['until'] ?? 0) > time()) {
+        unset($_SESSION['mfa_pending']); flock($lock, LOCK_UN);
+        out(423, ['auth' => false, 'restart' => true, 'error' => 'Trop de codes erronés : double authentification bloquée jusqu’à ' . date('H:i', (int)$ml['until']) . '. Un administrateur peut la débloquer avant (Utilisateurs › Débloquer).']);
+    }
     $ok = false; $usedRecovery = false; $recovery = null;
     if (!empty($p['enroll'])) {                                   // mise en place : on vérifie le code produit par la nouvelle clé
         if ($st = totp_check($p['enroll'], $code)) {
@@ -1377,6 +1412,7 @@ if ($action === 'mfa-verify') {
     }
     if (!$ok) {
         throttle_fail($FAILS, $ip, $FAIL_WINDOW);
+        lock_fail($LOCKF, $mk, $MFA_MAX_FAILS, 15);
         $_SESSION['mfa_pending']['n'] = (int)$p['n'] + 1;
         auth_log('mfa-fail', $login, 'code erroné');
         flock($lock, LOCK_UN);
@@ -1386,7 +1422,9 @@ if ($action === 'mfa-verify') {
             : 'Code incorrect. Vérifiez que l’heure du téléphone est exacte, ou utilisez un code de secours.']);
     }
     write_json($ACC, $acc);
+    lock_clear($LOCKF, $mk);
     flock($lock, LOCK_UN);
+    throttle_clear($FAILS, $ip);
     unset($_SESSION['mfa_pending']);
     auth_log('login', $login, $p['name'] . ' (double authentification)');
     $s = open_session($login, $acc[$login], (string)$p['name']);
@@ -1421,6 +1459,7 @@ if (in_array($action, ['mfa-status', 'mfa-setup', 'mfa-enable', 'mfa-disable', '
         out(200, ['ok' => true, 'recovery' => $codes]);
     }
     // désactiver ou regénérer les codes de secours : mot de passe exigé
+    throttle_check($FAILS, $ip, $MAX_FAILS, $FAIL_WINDOW);
     if (!password_verify((string)($in['password'] ?? ''), (string)($acc[$login]['hash'] ?? ''))) { flock($lock, LOCK_UN); throttle_fail($FAILS, $ip, $FAIL_WINDOW); out(403, ['error' => 'Mot de passe incorrect.']); }
     if (empty($m['on'])) { flock($lock, LOCK_UN); out(409, ['error' => 'La double authentification n’est pas active.']); }
     if ($action === 'mfa-disable') {
@@ -1496,10 +1535,11 @@ if ($action === 'settings-set') {
         if (!array_key_exists($k, $in)) continue;
         if (!$canAll && !in_array($k, WEB_SETTINGS, true)) out(403, ['error' => 'Votre rôle ne permet de modifier que les réglages du formulaire en ligne.']);
         if (is_bool($def)) $new[$k] = !empty($in[$k]);
+        elseif ($k === 'conservation') { $n = (int)$in[$k]; if ($n !== 0 && ($n < 6 || $n > 120)) out(400, ['error' => 'Durée de conservation : 0 (jamais d’effacement) ou de 6 à 120 mois.']); $new[$k] = $n; }
         elseif (is_int($def)) $new[$k] = max(0, min(3650, (int)$in[$k]));
         elseif ($k === 'webPublicUrl') {
             $u = clean_text($in[$k], 300);
-            if ($u !== '' && !preg_match('~^https?://[^\s"<>?#]+$~i', $u)) out(400, ['error' => 'Adresse publique invalide (https://…/service_clients/).']);
+            if ($u !== '' && !preg_match('~^https://[^\s"<>?#]+$~i', $u)) out(400, ['error' => 'L’adresse publique doit commencer par https:// (ex. https://sav.d8.fr/service_clients/).']);
             $new[$k] = $u === '' ? '' : rtrim($u, '/') . '/';
         }
         elseif ($k === 'logo') {
@@ -1637,14 +1677,17 @@ if ($action === 'form-link' || $action === 'web-link-revoke') {
     $email = strtolower(clean_text($in['email'] ?? '', 120));
     if ($email === '' || strpos($email, '@') === false || !filter_var($email, FILTER_VALIDATE_EMAIL)) out(400, ['error' => 'Adresse e-mail du client invalide.']);
     $dossierId = (string)($in['dossierId'] ?? '');
-    if ($dossierId !== '') { $dd = read_dossier($dossierId); if (!$dd || $dd['type'] !== $type) out(400, ['error' => 'Dossier introuvable pour ce lien.']); }
+    if ($dossierId !== '') {
+        if (!has_perm($doc, $uidMe, $type)) out(403, ['error' => 'Rattacher un lien à un dossier existant est réservé aux personnes qui traitent ce type de demande.']);
+        $dd = read_dossier($dossierId); if (!$dd || $dd['type'] !== $type) out(400, ['error' => 'Dossier introuvable pour ce lien.']);
+    }
     [$base, $public] = web_link_base();
     if ($base === '') out(400, ['error' => 'Renseignez l’adresse publique du formulaire (Formulaires en ligne › Réglages) ou l’adresse de l’application (Sécurité & accès).']);
     $c = read_settings();
     $days = max(1, min(90, (int)$c['webLinkDays']));
     $tok = bin2hex(random_bytes(16));
     flock($lock, LOCK_EX);
-    $all = read_json($WEBL);
+    $all = array_filter(read_json($WEBL), function ($x) { return is_array($x) && (int)($x['exp'] ?? 0) > time() - 30 * 86400; });   // liens expirés depuis 30 jours : oubliés
     $all[hash('sha256', $tok)] = ['type' => $type, 'email' => $email, 'nom' => clean_text($in['nom'] ?? '', 80), 'dossierId' => $dossierId, 'by' => $me['name'], 't' => time(), 'exp' => time() + $days * 86400];
     if (!write_json($WEBL, $all)) { flock($lock, LOCK_UN); out(500, ['error' => 'Écriture impossible']); }
     flock($lock, LOCK_UN);
@@ -1701,7 +1744,7 @@ if (in_array($action, ['web-inbox', 'web-resend', 'web-handled', 'web-links'], t
     }
     flock($lock, LOCK_UN);
     if (empty($in['all'])) web_mails($d, true); else { $d['web']['mails'] = []; web_mails($d); }
-    flock($lock, LOCK_EX); $cur = read_dossier($id) ?? $d; $cur['web'] = $d['web']; $cur['history'][] = ['t' => date('c'), 'by' => $me['name'], 'ev' => 'web', 'info' => 'renvoi des e-mails du formulaire en ligne'];
+    flock($lock, LOCK_EX); $cur = read_dossier($id) ?? $d; $cur['web']['mails'] = $d['web']['mails']; $cur['history'][] = ['t' => date('c'), 'by' => $me['name'], 'ev' => 'web', 'info' => 'renvoi des e-mails du formulaire en ligne'];
     write_json((string)dossier_file($id), $cur); flock($lock, LOCK_UN);
     auth_log('web-resend', $me['login'], $id);
     out(200, ['ok' => true, 'mails' => $d['web']['mails']]);
@@ -1927,7 +1970,7 @@ if ($action === 'unlock-login') {
     if ($t && !has_perm($doc, $uidMe, 'super')) out(403, ['error' => 'Seul un super administrateur peut débloquer un super administrateur.']);
     $acL = read_json($ACC)[$l] ?? null;
     if (is_array($acL) && outranks($doc, $uidMe, (string)$acL['userId'])) out(403, ['error' => 'Cette personne a des droits que vous n’avez pas : seul un super administrateur peut la débloquer.']);
-    flock($lock, LOCK_EX); lock_clear($LOCKF, $l); flock($lock, LOCK_UN);
+    flock($lock, LOCK_EX); lock_clear($LOCKF, $l); lock_clear($LOCKF, 'mfa:' . $l); flock($lock, LOCK_UN);
     auth_log('unlock', $me['login'], $l);
     out(200, ['ok' => true]);
 }
@@ -1977,6 +2020,9 @@ if (in_array($action, ['auth-log', 'fails', 'unblock', 'backups', 'backup-get', 
                   'purge' => read_json("$DATA_DIR/purge-state.json"), 'count' => count(glob("$DOS/*.json") ?: []), 'dataDir' => $isSuper ? realpath($DATA_DIR) : null]);
     }
     if ($action === 'backup-get') {
+        // contient les mots de passe hachés, les clés de double authentification et le mot de passe SMTP
+        if (!$isSuper) out(403, ['error' => 'Le téléchargement d’une sauvegarde complète est réservé au super administrateur.']);
+        if (!$saOK) out(403, ['superadmin' => true, 'error' => 'Une sauvegarde complète contient les accès de tout le monde : son téléchargement exige le mot de passe super administrateur.']);
         $name = basename((string)($_GET['f'] ?? ''));
         if (!preg_match('/^complet-[\w-]+\.json$/', $name) || !is_file("$bdir/$name")) out(404, ['error' => 'Sauvegarde introuvable']);
         auth_log('backup-get', $me['login'], $name);
