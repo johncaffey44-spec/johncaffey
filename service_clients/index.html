@@ -332,15 +332,100 @@ table.tbl tr.click{cursor:pointer}table.tbl tr.click:hover td{background:var(--s
 .kpi b{display:block;font-size:22px}.kpi span{font-size:12px;color:var(--text-3)}
 .mailst{display:flex;gap:4px;flex-wrap:wrap}
 @media (max-width:640px){#webView{padding:0 16px 24px}}
+/* tableau de bord (administrateurs) — couleurs des graphiques : une couleur d'accent validée (clair / sombre),
+   un gris de mise en retrait, couleurs d'état réservées aux états et toujours accompagnées d'une icône */
+.dash{--dv-accent:#2a78d6;--dv-muted:#c3c9d2;--dv-grid:#eceef1;--dv-axis:#c9d0d9;--dv-good:#006300;--dv-bad:#c23b3b;
+  --st-good:#0ca30c;--st-warning:#fab219;--st-serious:#ec835a;--st-critical:#d03b3b;--st-info:#6b7585}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .dash{--dv-accent:#3987e5;--dv-muted:#4a5260;--dv-grid:#232933;--dv-axis:#3b434f;--dv-good:#0ca30c;--dv-bad:#ef7b7b;--st-info:#8b95a3}}
+:root[data-theme="dark"] .dash{--dv-accent:#3987e5;--dv-muted:#4a5260;--dv-grid:#232933;--dv-axis:#3b434f;--dv-good:#0ca30c;--dv-bad:#ef7b7b;--st-info:#8b95a3}
+#dashView{padding:0 20px 28px}
+#dashView.loading .dash{opacity:.6;transition:opacity .2s}
+.dash{background:var(--surface);border:1px solid var(--border);border-radius:0 var(--r) var(--r) var(--r);padding:14px 16px 18px}
+.dash-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-bottom:12px}
+.dash-bar .muted{flex:1;font-size:12.5px;min-width:200px}
+.seg-ctl{display:inline-flex;border:1px solid var(--border-2);border-radius:var(--r-sm);overflow:hidden}
+.seg-ctl button{border:none;background:var(--surface);padding:6px 12px;cursor:pointer;font-weight:600;font-size:12.5px;color:var(--text-2)}
+.seg-ctl button+button{border-left:1px solid var(--border-2)}
+.seg-ctl button[aria-checked="true"]{background:var(--primary);color:var(--on-primary)}
+.seg-ctl button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.dtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.dtiles.in{margin:0 0 10px}
+.dtile{position:relative;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.dtile .st-ic{position:absolute;top:10px;right:10px}.dtile.has-st{padding-right:38px}
+.dt-l{font-size:12.5px;color:var(--text-2)}
+.dt-v{font-size:26px;font-weight:650;line-height:1.15;color:var(--text)}
+.dt-d,.dt-n{font-size:12px;color:var(--text-3)}
+.dl{font-weight:650;color:var(--text-2)}.dl.up{color:var(--dv-good)}.dl.down{color:var(--dv-bad)}
+.dgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense;gap:12px}
+.dcard{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px 14px;min-width:0}
+.dcard.wide{grid-column:1/-1}
+.dcard header{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.dcard header>div{flex:1;min-width:0}
+.dcard h3{margin:0;font-size:14.5px}
+.dcard header p{margin:2px 0 0;font-size:12.5px;color:var(--text-3)}
+.dcard h4{margin:12px 0 6px;font-size:12.5px;color:var(--text-2)}
+.dcard.alerts{margin-bottom:0}
+.al,.d-chk,.mini,.ev{list-style:none;margin:0;padding:0}
+.al li,.d-chk li{display:flex;align-items:center;gap:10px;padding:7px 0}
+.al li+li{border-top:1px solid var(--border)}
+.al li{flex-wrap:wrap}.al li .btn{margin-left:auto}
+.al li>span:not(.st-ic){flex:1}
+.d-chk{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));column-gap:24px}
+.d-chk li>span:last-child{display:flex;flex-direction:column;font-size:13px}.d-chk li b{font-weight:600}.d-chk li span span{color:var(--text-3)}
+.mini li{padding:4px 0;font-size:13px}
+.ev li{display:grid;grid-template-columns:auto 1fr;gap:0 10px;padding:6px 0;border-top:1px solid var(--border);font-size:13px}
+.ev li:first-child{border-top:none}.ev li>span:first-child{grid-row:span 2;font-size:12px;white-space:nowrap}.ev li>span:last-child{color:var(--text-3);overflow-wrap:anywhere}
+.st-ic{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;flex:none;color:#fff;vertical-align:middle}
+.st-ic svg{width:13px;height:13px}
+.st-good{background:var(--st-good)}.st-warning{background:var(--st-warning);color:#1b2330}.st-serious{background:var(--st-serious);color:#1b2330}.st-critical{background:var(--st-critical)}.st-info{background:var(--st-info)}
+.cc-box{width:100%;min-height:168px}
+.cc{display:block;outline:none;border-radius:6px}
+.cc:focus-visible{box-shadow:0 0 0 2px var(--primary)}
+.cc .grid{stroke:var(--dv-grid);stroke-width:1}
+.cc .base{stroke:var(--dv-axis);stroke-width:1}
+.cc .tick{fill:var(--text-3);font-size:11px;font-variant-numeric:tabular-nums}
+.cc .bar{fill:var(--dv-accent)}
+.cc .bar.on{filter:brightness(1.18)}
+.cc .cursor{stroke:var(--dv-axis);stroke-width:1}
+.cc .hit{fill:transparent;cursor:crosshair}
+.cc-t{margin:6px 0 0;font-size:12.5px;color:var(--text-2)}
+.lg{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.5px;color:var(--text-2);margin:0 0 8px}
+.lg span{display:inline-flex;align-items:center;gap:6px}
+.d-sw{display:inline-block;width:12px;height:12px;border-radius:3px}.d-sw.s0,.seg.s0{background:var(--dv-accent)}.d-sw.s1,.seg.s1{background:var(--dv-muted)}
+.hb{display:flex;flex-direction:column;gap:6px}
+.hb-row{display:grid;grid-template-columns:minmax(90px,40%) 1fr auto;align-items:center;gap:10px;font-size:13px;border-radius:6px;padding:2px 4px;outline:none}
+.hb-row:hover,.hb-row:focus-visible{background:var(--surface-2)}
+.hb-row:focus-visible{box-shadow:0 0 0 2px var(--primary)}
+.hb-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-2)}
+.hb-t{display:flex;gap:2px;height:16px;align-items:stretch}
+.hb-t .seg{display:block;height:100%;min-width:2px}
+.hb-t .seg:last-child{border-radius:0 4px 4px 0}
+.hb-v{font-variant-numeric:tabular-nums;font-weight:600;min-width:2.5em;text-align:right}
+.kv{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:0 0 12px;font-size:13px}.kv dt{color:var(--text-2)}.kv dd{margin:0;font-weight:600;text-align:right}
+.meter .mt-l{display:flex;justify-content:space-between;font-size:13px;color:var(--text-2);margin-bottom:4px}
+.meter .mt-t{height:8px;border-radius:4px;background:color-mix(in srgb,var(--dv-accent) 18%,var(--surface));overflow:hidden}
+.meter .mt-t i{display:block;height:100%;background:var(--dv-accent);border-radius:4px}
+.dash-tip{position:fixed;z-index:200;pointer-events:none;background:var(--surface);color:var(--text);border:1px solid var(--border-2);box-shadow:var(--sh);border-radius:8px;padding:6px 10px;font-size:12.5px;display:flex;flex-direction:column;max-width:280px}
+.dash-tip b{font-size:14px}.dash-tip span{color:var(--text-3)}
+.top .brand{display:flex;align-items:center;gap:16px;flex:1;min-width:0;color:inherit;text-decoration:none;border-radius:var(--r-sm)}
+.top .brand:hover h1{text-decoration:underline;text-underline-offset:3px}
+.top .brand:focus-visible{outline:2px solid var(--primary);outline-offset:4px}
+@media (max-width:900px){.dgrid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){#dashView{padding:0 16px 24px}.dash{padding:12px}.dtiles{grid-template-columns:repeat(2,minmax(0,1fr))}.dt-v{font-size:22px}
+  .hb-row{grid-template-columns:1fr auto;row-gap:2px}.hb-l{grid-column:1/-1;white-space:normal}.hide-sm{display:none}
+  .al li>span:not(.st-ic){flex-basis:calc(100% - 40px)}.al li .btn{margin-left:30px}}
+@media print{.dash-bar button,[data-tv]{display:none}}
 </style>
 </head>
 <body>
 <header class="top">
-  <img id="topLogo" alt="D8">
-  <div class="ttl">
-    <h1>Service clients D8</h1>
-    <div class="sub" id="topSub">Paiement par carte · Interventions · Remboursements · Commandes</div>
-  </div>
+  <a class="brand" id="brand" href="./" title="Actualiser">
+    <img id="topLogo" alt="D8">
+    <div class="ttl">
+      <h1>Service clients D8</h1>
+      <div class="sub" id="topSub">Paiement par carte · Interventions · Remboursements · Commandes</div>
+    </div>
+  </a>
   <div class="acts">
     <span class="sync" id="sync" title="État de la connexion au serveur"><i></i><span>Connecté</span></span>
     <button class="btn" id="btnImport" title="Importer une fiche PDF remplie par le client (ou glissez-la sur la page)">
@@ -411,6 +496,7 @@ table.tbl tr.click{cursor:pointer}table.tbl tr.click:hover td{background:var(--s
   </aside>
 </main>
 <div id="webView" hidden></div>
+<div id="dashView" hidden></div>
 <div id="noAccess" hidden style="padding:40px 20px;text-align:center" class="muted"></div>
 
 <div class="drop" id="drop"><div>Déposez la fiche PDF remplie<small>Les renseignements seront repris automatiquement</small></div></div>
@@ -1982,6 +2068,7 @@ function renderTabs() {
   const nav = $('#tabs'); nav.innerHTML = '';
   const tabs = allowedTypes().map(t => [t, FORMS[t].label, FORMS[t].sub, FORMS[t].icon]);
   if (can('web')) tabs.push(['web', 'Formulaires en ligne', 'Demandes des clients', WEB_ICON]);
+  if (isAdmin()) tabs.unshift(['dash', 'Tableau de bord', 'Suivi et sécurité', DASH_ICON]);
   for (const [t, label, sub, icon] of tabs) {
     const b = el('button', { class: 'tab', role: 'tab', 'aria-selected': String(t === active), 'data-t': t, onclick: () => switchTab(t) });
     b.innerHTML = `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg></span><span><b>${esc(label)}</b><small>${esc(sub)}</small></span>`;
@@ -1992,8 +2079,10 @@ function switchTab(t) {
   active = t;
   if (editing) { editing = false; $('#paper').classList.remove('editing'); $('#btnEdit').textContent = 'Modifier le texte'; }
   $$('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
-  const web = t === 'web';
-  $('main.layout').hidden = web; $('#webView').hidden = !web; $('#btnImport').hidden = web || !allowedTypes().length;
+  const web = t === 'web', dash = t === 'dash';
+  $('main.layout').hidden = web || dash; $('#webView').hidden = !web; $('#dashView').hidden = !dash; $('#btnImport').hidden = web || dash || !allowedTypes().length;
+  hideTip();
+  if (dash) { renderDash(); saveState(); return; }
   if (web) { renderWebView(); saveState(); return; }
   renderForm(); refresh(); saveState();
 }
@@ -3028,9 +3117,18 @@ async function boot() {
   const s = await api('settings'); if (s.ok) C = Object.assign({}, DEFAULTS, s.body.settings);
   $('#topLogo').src = logoSrc();
   renderTabs();
-  const tabs = [...allowedTypes(), ...(can('web') ? ['web'] : [])];
+  const tabs = [...(isAdmin() ? ['dash'] : []), ...allowedTypes(), ...(can('web') ? ['web'] : [])];
+  // logo et titre : tableau de bord pour les administrateurs (actualisé s'il est déjà affiché), page réactualisée pour les autres
+  $('#brand').title = isAdmin() ? 'Tableau de bord' : 'Actualiser la page';
+  $('#brand').onclick = e => {
+    e.preventDefault();
+    if (!isAdmin()) return location.reload();
+    if (active === 'dash') renderDash(); else switchTab('dash');
+    scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  if (isAdmin()) dashAuto();
   const SUB = { cb: 'Paiement par carte', int: 'Interventions', remb: 'Remboursements', cmd: 'Commandes', web: 'Formulaires en ligne' };
-  if (tabs.length) $('#topSub').textContent = tabs.map(t => SUB[t]).join(' · ');
+  if (tabs.length) $('#topSub').textContent = tabs.map(t => SUB[t]).filter(Boolean).join(' · ');
   if (!tabs.length) {
     $('main.layout').hidden = true; $('#btnImport').hidden = true;
     const na = $('#noAccess'); na.hidden = false;
@@ -3051,6 +3149,320 @@ async function ping() {
   maintenanceBanner(r.body.maintenance);
   if (BUILD && r.body.build && r.body.build !== BUILD) banner('build', 'info', 'Une nouvelle version de l’outil vient d’être installée. <button class="btn sm" onclick="location.reload()">Recharger maintenant</button> (enregistrez d’abord votre saisie).');
 }
+
+/* =============================================================================
+   Tableau de bord des administrateurs et super administrateurs
+   Chiffres agrégés par le serveur (api.php?a=dashboard), filtrés selon les droits.
+   Graphiques en SVG / HTML sans bibliothèque : une couleur d'accent (bleu), un gris
+   de mise en retrait, couleurs d'état toujours accompagnées d'une icône et d'un texte,
+   infobulles au survol et au clavier, vue tableau pour chaque graphique.
+   ========================================================================== */
+const DASH = { data: null, period: 30, timer: null, loading: false, at: null, ro: null };
+const DASH_ICON = '<path d="M3 13h8V3H3z"/><path d="M13 21h8V11h-8z"/><path d="M13 3v6h8V3z"/><path d="M3 21h8v-6H3z"/>';
+const NF = new Intl.NumberFormat('fr-FR');
+const nf = n => NF.format(n || 0);
+const sum = a => a.reduce((s, x) => s + (x || 0), 0);
+const lastN = (arr, n, skip = 0) => arr.slice(Math.max(0, arr.length - n - skip), arr.length - skip);
+/** durée en heures → « 45 min », « 6 h », « 2,5 j » */
+const fdur = h => h == null ? '—' : h < 1 ? Math.max(1, Math.round(h * 60)) + ' min' : h < 24 ? NF.format(Math.round(h * 10) / 10) + ' h' : NF.format(Math.round(h / 24 * 10) / 10) + ' j';
+/** il y a … */
+const fago = iso => { const t = Date.parse(iso || ''); if (isNaN(t)) return '—'; const h = (Date.now() - t) / 36e5; return h < 1 ? 'à l’instant' : h < 24 ? `il y a ${Math.floor(h)} h` : `il y a ${Math.floor(h / 24)} j`; };
+const fday = (d0, i, opts = { weekday: 'short', day: '2-digit', month: '2-digit' }) => { const d = new Date(d0 + 'T12:00:00'); d.setDate(d.getDate() + i); return d.toLocaleDateString('fr-FR', opts); };
+const STATUS = {
+  good: ['Bon', '<path d="m7 12.5 3.2 3.2L17 9"/>'],
+  warning: ['À surveiller', '<path d="M12 8v5"/><path d="M12 16.5v.01"/>'],
+  serious: ['Important', '<path d="M12 7v6"/><path d="M12 16.5v.01"/>'],
+  critical: ['Critique', '<path d="m8.5 8.5 7 7"/><path d="m15.5 8.5-7 7"/>'],
+  info: ['Information', '<path d="M12 11v5"/><path d="M12 8v.01"/>']
+};
+const stIcon = s => `<span class="st-ic st-${s}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">${STATUS[s][1]}</svg></span>`;
+
+/* --- infobulle unique (contenu inséré en texte : les libellés viennent des données) --- */
+function dashTip() {
+  let t = $('#dashTip');
+  if (!t) { t = el('div', { id: 'dashTip', class: 'dash-tip', role: 'tooltip' }); t.hidden = true; document.body.append(t); }
+  return t;
+}
+function showTip(x, y, value, label) {
+  const t = dashTip(); t.textContent = '';
+  t.append(el('b', {}, value), el('span', {}, label));
+  t.hidden = false;
+  const r = t.getBoundingClientRect(), W = innerWidth;
+  t.style.left = Math.min(W - r.width - 8, Math.max(8, x - r.width / 2)) + 'px';
+  t.style.top = Math.max(8, y - r.height - 10) + 'px';
+}
+const hideTip = () => { const t = $('#dashTip'); if (t) t.hidden = true; };
+
+/* --- graphique en colonnes (une série) : barres ≤ 24 px, bout arrondi 4 px, quadrillage fin, axe à zéro --- */
+function niceMax(m) { if (m <= 4) return Math.max(1, m); const p = 10 ** Math.floor(Math.log10(m)); for (const k of [1, 2, 2.5, 5, 10]) if (k * p >= m) return k * p; return 10 * p; }
+function columnChart(box, { values, d0, label, unit }) {
+  box.textContent = '';
+  const W = Math.max(260, box.clientWidth || 600), H = 168, L = 34, R = 8, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
+  const n = values.length, max = niceMax(Math.max(0, ...values)), band = pw / n, bw = Math.min(24, Math.max(2, band - 2));
+  const ticks = max <= 4 ? Array.from({ length: max + 1 }, (_, i) => i) : [0, max / 2, max];
+  const y = v => T + ph - (v / max) * ph;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('class', 'cc'); svg.setAttribute('tabindex', '0'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `${label} : ${nf(sum(values))} au total sur ${n} jours. Flèches gauche et droite pour lire chaque jour.`);
+  let g = '';
+  for (const v of ticks) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${nf(v)}</text>`;
+  g += `<line class="base" x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}"/>`;
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(pw / 64))));
+  for (let i = 0; i < n; i++) {
+    const v = values[i], x = L + i * band + (band - bw) / 2;
+    if (v > 0) {
+      const h = Math.max(2, (v / max) * ph), top = T + ph - h, r = Math.min(4, bw / 2, h);
+      g += `<path class="bar" data-i="${i}" d="M${x},${T + ph}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${T + ph}Z"/>`;
+    }
+    if ((n - 1 - i) % every === 0) {          // libellé de date : jamais coupé par les bords du graphique
+      const cx = L + i * band + band / 2, anc = cx + 18 > W ? 'end' : cx - 18 < 0 ? 'start' : 'middle';
+      g += `<text class="tick" x="${anc === 'end' ? W - 1 : anc === 'start' ? 1 : cx}" y="${H - 6}" text-anchor="${anc}">${esc(fday(d0, i, { day: '2-digit', month: '2-digit' }))}</text>`;
+    }
+  }
+  g += `<line class="cursor" x1="0" x2="0" y1="${T}" y2="${T + ph}" visibility="hidden"/>`;
+  for (let i = 0; i < n; i++) g += `<rect class="hit" data-i="${i}" x="${L + i * band}" y="${T}" width="${band}" height="${ph}"/>`;
+  svg.innerHTML = g;
+  box.append(svg);
+  let cur = -1;
+  const show = (i, cx, cy) => {
+    cur = i;
+    svg.querySelectorAll('.bar.on').forEach(b => b.classList.remove('on'));
+    const bar = svg.querySelector(`.bar[data-i="${i}"]`); if (bar) bar.classList.add('on');
+    const c = svg.querySelector('.cursor'), mx = L + i * band + band / 2; c.setAttribute('x1', mx); c.setAttribute('x2', mx); c.setAttribute('visibility', 'visible');
+    const rb = svg.getBoundingClientRect();
+    showTip(cx ?? rb.left + mx * rb.width / W, cy ?? rb.top + y(values[i]) * rb.height / H, `${nf(values[i])} ${unit}`, fday(d0, i, { weekday: 'long', day: 'numeric', month: 'long' }));
+  };
+  const clear = () => { cur = -1; hideTip(); svg.querySelectorAll('.bar.on').forEach(b => b.classList.remove('on')); svg.querySelector('.cursor').setAttribute('visibility', 'hidden'); };
+  svg.addEventListener('pointermove', e => { const h = e.target.closest('.hit'); if (h) show(+h.dataset.i, e.clientX, e.clientY - 6); });
+  svg.addEventListener('pointerleave', clear);
+  svg.addEventListener('blur', clear);
+  svg.addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const i = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : Math.min(n - 1, Math.max(0, (cur < 0 ? n - 1 : cur) + (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' && cur >= 0 ? 1 : 0)));
+    show(i);
+  });
+}
+
+/* --- barres horizontales (HTML) : une série, ou deux segments empilés avec 2 px d'espace --- */
+function barList(rows, { segs, unit }) {
+  const max = Math.max(1, ...rows.map(r => sum(r.vals)));
+  return `<div class="hb">${rows.map(r => {
+    const tot = sum(r.vals);
+    const parts = r.vals.map((v, k) => v > 0 ? `<i class="seg s${k}" style="width:calc(${(v / max * 100).toFixed(3)}% - ${k ? 2 : 0}px)"></i>` : '').join('');
+    const tip = segs ? r.vals.map((v, k) => `${nf(v)} ${segs[k]}`).join(' · ') : `${nf(tot)} ${unit}`;
+    return `<div class="hb-row" tabindex="0" data-tip="${esc(tip)}" data-lab="${esc(r.label)}"><span class="hb-l">${esc(r.label)}</span><span class="hb-t">${parts}</span><span class="hb-v">${nf(tot)}</span></div>`;
+  }).join('')}</div>`;
+}
+function bindBarTips(root) {
+  root.querySelectorAll('.hb-row').forEach(r => {
+    const on = e => { const b = r.querySelector('.hb-t').getBoundingClientRect(); showTip(e && e.clientX ? e.clientX : b.left + b.width / 2, b.top, r.dataset.tip, r.dataset.lab); };
+    r.addEventListener('pointermove', on); r.addEventListener('focus', () => on()); r.addEventListener('pointerleave', hideTip); r.addEventListener('blur', hideTip);
+  });
+}
+/** carte avec bascule graphique / tableau (la vue tableau est l'équivalent accessible du graphique) */
+function card(title, sub, body, table, cls = '') {
+  return `<section class="dcard ${cls}"><header><div><h3>${esc(title)}</h3>${sub ? `<p>${sub}</p>` : ''}</div>${table ? '<button class="btn sm ghost" data-tv aria-pressed="false">Tableau</button>' : ''}</header>
+    <div class="dc-body">${body}</div>${table ? `<div class="dc-table" hidden>${table}</div>` : ''}</section>`;
+}
+const tbl = (head, rows) => `<div class="tbl-wrap"><table class="tbl"><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${head.length}" class="muted">Aucune donnée</td></tr>`}</tbody></table></div>`;
+/** tuile : libellé, valeur, variation par rapport à la période précédente (couleur = sens × bon/mauvais, toujours avec flèche) */
+function tile(label, value, { delta, good, note, st } = {}) {
+  let d = '';
+  if (delta) {
+    const { cur, prev } = delta;
+    if (prev > 0 || cur > 0) {
+      const diff = cur - prev, pct = prev > 0 ? Math.round(diff / prev * 100) : null;
+      const flat = diff === 0 || pct === 0;                    // écart inférieur à 1 % : stable
+      const cls = flat || good === undefined ? 'flat' : (diff < 0) === (good === 'down') ? 'up' : 'down';
+      d = `<span class="dl ${cls}">${flat ? '= stable' : `${diff > 0 ? '▲' : '▼'} ${pct == null ? '+' + nf(diff) : (pct > 0 ? '+' : '') + nf(pct) + ' %'}`}</span> <span class="muted">vs ${esc(delta.vs)}</span>`;
+    }
+  }
+  return `<div class="dtile${st ? ' has-st' : ''}">${st ? stIcon(st) : ''}<span class="dt-l">${esc(label)}</span><b class="dt-v">${value}</b>${d ? `<span class="dt-d">${d}</span>` : ''}${note ? `<span class="dt-n">${note}</span>` : ''}</div>`;
+}
+
+/* --- vue --- */
+async function renderDash(auto = false) {
+  const box = $('#dashView'); if (!box) return;
+  if (DASH.loading) return;
+  DASH.loading = true; box.classList.add('loading');
+  const r = await api('dashboard', null, auto ? { auto: 1 } : null);
+  DASH.loading = false; box.classList.remove('loading');
+  if (r.status === 401) { if (!auto) relogin().then(ok => ok && renderDash()); return; }
+  if (!r.ok) { if (!auto || !DASH.data) box.innerHTML = `<div class="pane"><div class="bnr2 danger"><span>${esc(r.body.error || 'Tableau de bord indisponible.')}</span></div></div>`; return; }
+  DASH.data = r.body; DASH.at = new Date();
+  drawDash();
+}
+function drawDash() {
+  const box = $('#dashView'), D = DASH.data; if (!D || !box) return;
+  const P = DASH.period, sc = D.scope, d0p = fday(D.day0, D.days - P, { day: '2-digit', month: '2-digit' });
+  const vs = `${P} j précédents`, ds = D.dossiers;
+  const dayStart = D.days - P;     // index du 1er jour de la période dans les séries sur 180 jours
+  const P0 = (() => { const d = new Date(D.day0 + 'T12:00:00'); d.setDate(d.getDate() + dayStart); return d.toISOString().slice(0, 10); })();
+  const createdAll = Array.from({ length: D.days }, (_, i) => sc.types.reduce((s, t) => s + ds.created[t][i], 0));
+  const newCur = sum(lastN(createdAll, P)), newPrev = sum(lastN(createdAll, P, P));
+  const repCur = sum(lastN(ds.replies, P)), repPrev = sum(lastN(ds.replies, P, P));
+  const closedCur = sum(lastN(ds.closed, P)), closedPrev = sum(lastN(ds.closed, P, P));
+  const open = sc.types.reduce((s, t) => s + ds.byType[t].open, 0);
+  const fr = ds.firstReply[String(P)];
+  const alerts = dashAlerts(D);
+
+  let h = `<div class="dash-bar">
+      <div class="seg-ctl" role="radiogroup" aria-label="Période">${[7, 30, 90].map(p => `<button type="button" role="radio" aria-checked="${p === P}" data-p="${p}">${p} jours</button>`).join('')}</div>
+      <span class="muted">Du ${esc(d0p)} à aujourd’hui · mis à jour à ${esc(DASH.at.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))} · actualisation automatique chaque minute</span>
+      <button class="btn sm" data-ref>Actualiser</button></div>`;
+  // à surveiller
+  h += `<section class="dcard alerts" aria-label="À surveiller"><header><div><h3>À surveiller</h3></div></header><ul class="al">${alerts.length ? alerts.map(a =>
+      `<li>${stIcon(a.s)}<span><b>${esc(STATUS[a.s][0])}</b> · ${a.html}</span>${a.go ? `<button class="btn sm" data-go="${esc(a.go)}">${esc(a.goLabel || 'Voir')}</button>` : ''}</li>`).join('')
+    : `<li>${stIcon('good')}<span><b>Rien à signaler</b> · aucun dossier en retard, aucun blocage, ${sc.system ? 'sauvegardes et envois d’e-mails en ordre' : 'tout est en ordre'}.</span></li>`}</ul></section>`;
+  // tuiles
+  h += '<div class="dtiles">';
+  if (sc.types.length) {
+    h += tile('Dossiers en cours', nf(open), { note: ds.waitingCount ? `dont ${nf(ds.waitingCount)} sans aucune réponse` : 'tous ont reçu une réponse' });
+    h += tile('Nouveaux dossiers', nf(newCur), { delta: { cur: newCur, prev: newPrev, vs } });
+    h += tile('Réponses envoyées', nf(repCur), { delta: { cur: repCur, prev: repPrev, vs } });
+    h += tile('Délai médian de 1re réponse', esc(fdur(fr.cur)), fr.cur == null ? { note: 'aucune réponse sur la période' }
+      : { delta: fr.prev == null || fr.prev < 0.05 ? null : { cur: Math.round(fr.cur * 10), prev: Math.round(fr.prev * 10), vs }, good: 'down', note: `sur ${nf(fr.nCur)} dossier${fr.nCur > 1 ? 's' : ''}` });
+    h += tile('Dossiers clos', nf(closedCur), { delta: { cur: closedCur, prev: closedPrev, vs } });
+  }
+  if (sc.web && D.web) h += tile('Demandes en ligne à traiter', nf(D.web.toHandle), { st: D.web.toHandle ? 'warning' : 'good', note: D.web.mailFail ? `${nf(D.web.mailFail)} avec un e-mail en échec` : 'e-mails envoyés' });
+  h += '</div><div class="dgrid">';
+  // dossiers créés par jour
+  if (sc.types.length) {
+    const vals = lastN(createdAll, P);
+    h += card('Nouveaux dossiers par jour', `${nf(newCur)} sur ${P} jours · tous types autorisés`, '<div class="cc-box" data-cc="created"></div>',
+      tbl(['Jour', 'Nouveaux dossiers', ...sc.types.map(t => FORMS[t].label)], vals.map((v, i) => [esc(fday(D.day0, dayStart + i)), nf(v), ...sc.types.map(t => nf(ds.created[t][dayStart + i]))]).reverse()), 'wide');
+    const rows = sc.types.map(t => ({ label: FORMS[t].label, vals: [ds.byType[t].open, ds.byType[t].closed] }));
+    h += card('Dossiers par type', `${nf(ds.total)} dossiers conservés`, `<div class="lg"><span><i class="d-sw s0"></i>En cours</span><span><i class="d-sw s1"></i>Clos</span></div>${barList(rows, { segs: ['en cours', 'clos'] })}`,
+      tbl(['Type', 'En cours', 'dont sans réponse', 'Clos', 'Total'], sc.types.map(t => [esc(FORMS[t].label), nf(ds.byType[t].open), nf(ds.byType[t].noReply), nf(ds.byType[t].closed), nf(ds.byType[t].total)])));
+    const sc0 = Object.entries(ds.scen[String(P)] || {}).map(([k, n]) => { const [t, s] = k.split('|'); return { label: `${SCEN_LABEL(t, s) || 'Réponse'} · ${FORMS[t] ? FORMS[t].label : t}`, n }; }).sort((a, b) => b.n - a.n);
+    const top = sc0.slice(0, 7); if (sc0.length > 7) top.push({ label: 'Autres réponses', n: sum(sc0.slice(7).map(x => x.n)) });
+    h += card('Réponses envoyées par type de réponse', `${nf(repCur)} sur ${P} jours`, top.length ? barList(top.map(x => ({ label: x.label, vals: [x.n] })), { unit: 'réponses' }) : '<p class="muted">Aucune réponse envoyée sur la période.</p>',
+      tbl(['Type de réponse', 'Réponses'], sc0.map(x => [esc(x.label), nf(x.n)])));
+    // dossiers sans réponse
+    h += card('Dossiers sans réponse', ds.waitingCount ? `${nf(ds.waitingCount)} en cours sans aucune réponse envoyée${ds.waitingCount > ds.waiting.length ? ` · les ${ds.waiting.length} plus anciens` : ''}` : 'Tous les dossiers en cours ont reçu une réponse.',
+      ds.waiting.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Dossier</th><th>Client</th><th>Créé</th><th class="hide-sm">Dernière modification</th></tr></thead><tbody>${ds.waiting.map(w => {
+        const old = Date.now() - Date.parse(w.createdAt) > 48 * 36e5;
+        return `<tr><td><button class="linkbtn mono" data-open="${esc(w.id)}">${esc(w.id)}</button>${w.origin === 'web' ? ' <span class="tag info">en ligne</span>' : ''}<br><small class="muted">${esc(FORMS[w.type].label)}</small></td>
+          <td>${esc(w.client || '—')}</td><td>${old ? `${stIcon('warning')} ` : ''}${esc(fago(w.createdAt))}</td><td class="hide-sm">${esc(fdt(w.updatedAt))}<br><small class="muted">${esc(w.updatedBy)}</small></td></tr>`; }).join('')}</tbody></table></div>` : '', null, 'wide');
+  }
+  // formulaires en ligne
+  if (sc.web && D.web) {
+    const W = D.web, recv = sum(lastN(W.received, P)), recvPrev = sum(lastN(W.received, P, P)), lk = W.links[String(P)];
+    h += card('Formulaires en ligne', W.enabled ? `Remboursement en ligne ouvert${W.public ? '' : ' · adresse publique non réglée (liens internes seulement)'}` : 'Remboursement en ligne fermé',
+      `<div class="dtiles in">${tile('Demandes reçues', nf(recv), { delta: { cur: recv, prev: recvPrev, vs } })}${tile('Liens envoyés', nf(lk.sent), { note: lk.sent ? `${nf(lk.used)} utilisé${lk.used > 1 ? 's' : ''} (${nf(Math.round(lk.used / lk.sent * 100))} %)` : '' })}</div>
+       ${W.oldest.length ? `<h4>Les plus anciennes à traiter</h4><ul class="mini">${W.oldest.map(o => `<li><button class="linkbtn mono" data-web="${esc(o.id)}">${esc(o.id)}</button> ${esc(o.client || '')} <span class="muted">· reçue ${esc(fago(o.submittedAt))}</span></li>`).join('')}</ul>` : '<p class="muted">Aucune demande à traiter.</p>'}`,
+      tbl(['Jour', 'Demandes reçues'], lastN(W.received, P).map((v, i) => [esc(fday(D.day0, dayStart + i)), nf(v)]).reverse()));
+  }
+  // activité par personne (super administrateur)
+  if (sc.people && D.people) {
+    const pl = D.people[String(P)] || [];
+    h += card('Activité par personne', `${P} derniers jours · indicateur de charge de l’équipe, pas d’évaluation individuelle`,
+      pl.length ? barList(pl.map(p => ({ label: p.name, vals: [p.replies, p.created + p.updates] })), { segs: ['réponses', 'créations et mises à jour'] }).replace('<div class="hb">', '<div class="lg"><span><i class="d-sw s0"></i>Réponses</span><span><i class="d-sw s1"></i>Créations et mises à jour</span></div><div class="hb">') : '<p class="muted">Aucune activité sur la période.</p>',
+      tbl(['Personne', 'Réponses', 'Créations', 'Mises à jour'], pl.map(p => [esc(p.name), nf(p.replies), nf(p.created), nf(p.updates)])));
+  }
+  // comptes
+  if (sc.accounts && D.accounts) {
+    const A = D.accounts, pct = A.withAccess ? Math.round(A.mfa / A.withAccess * 100) : 0;
+    h += card('Comptes', `${nf(A.active)} personnes actives`,
+      `<dl class="kv"><dt>Accès créés</dt><dd>${nf(A.withAccess)}</dd><dt>Invitations en attente</dt><dd>${nf(A.invites)}</dd><dt>Sans accès ni invitation</dt><dd>${nf(A.noAccess)}</dd><dt>Super administrateurs</dt><dd>${nf(A.supers)}</dd></dl>
+       <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="${A.withAccess}" aria-valuenow="${A.mfa}" aria-label="Double authentification activée"><div class="mt-l"><span>Double authentification activée</span><b>${nf(A.mfa)} / ${nf(A.withAccess)}</b></div><div class="mt-t"><i style="width:${pct}%"></i></div>
+       <small class="muted">dont ${nf(A.supersMfa)} super administrateur${A.supersMfa > 1 ? 's' : ''} sur ${nf(A.supers)}</small></div>
+       ${A.locked.length ? `<h4>Comptes bloqués</h4><ul class="mini">${A.locked.map(l => `<li>${stIcon('warning')} ${esc(l.name)} <span class="muted">${esc(l.login)} · ${l.mfa ? 'double authentification' : 'mot de passe'} · ${l.until ? 'jusqu’à ' + esc(fdt(l.until)) : 'jusqu’au déblocage'}</span></li>`).join('')}</ul>` : ''}`, null);
+  }
+  // sécurité
+  if (sc.security && D.security) {
+    const S2 = D.security, n = Math.min(P, 90), lg = lastN(S2.logins, n), fl = lastN(S2.fails, n), from = Date.parse(S2.logFrom || '');
+    const partial = !isNaN(from) && from > Date.parse(P0 + 'T00:00:00');
+    h += card('Connexions', `${nf(sum(lg))} réussies · ${nf(sum(fl))} échecs sur ${n} jours${S2.blockedIps ? ` · ${nf(S2.blockedIps)} adresse${S2.blockedIps > 1 ? 's' : ''} bloquée${S2.blockedIps > 1 ? 's' : ''}` : ''}${partial ? ` · journal disponible depuis le ${esc(fdt(S2.logFrom))}` : ''}`,
+      `<p class="cc-t">Connexions réussies</p><div class="cc-box" data-cc="logins"></div><p class="cc-t">Échecs (mot de passe, double authentification, mot de passe super administrateur)</p><div class="cc-box" data-cc="fails"></div>`,
+      tbl(['Jour', 'Connexions', 'Échecs'], lg.map((v, i) => [esc(fday(D.day0, D.days - n + i)), nf(v), nf(fl[i])]).reverse()), 'wide');
+    h += card('Événements sensibles récents', 'Extrait du journal (Administration › Journal et blocages)',
+      S2.recent.length ? `<ul class="ev">${S2.recent.map(e => { const m = (typeof AUTH_EV !== 'undefined' && AUTH_EV[e.ev]) || [e.ev, '']; return `<li><span class="muted">${esc(fdt(e.t))}</span><b>${esc(m[0])}</b><span>${esc(e.login)}${e.info ? ' · ' + esc(e.info) : ''}</span></li>`; }).join('')}</ul>` : '<p class="muted">Aucun événement sensible récent.</p>', null);
+  }
+  // système
+  if (sc.system && D.system) {
+    h += card('État du système', `PHP ${esc(D.system.php)} · données ${esc(fbytes(D.system.dataBytes))}`, `<ul class="d-chk">${sysChecks(D).map(c => `<li>${stIcon(c.s)}<span><b>${esc(c.label)}</b><span>${c.html}</span></span></li>`).join('')}</ul>`, null, 'wide');
+  }
+  h += '</div>';
+  box.innerHTML = `<div class="dash">${h}</div>`;
+  // graphiques (mesurés après insertion)
+  const draw = () => {
+    if (sc.types.length) { const b = box.querySelector('[data-cc="created"]'); if (b) columnChart(b, { values: lastN(createdAll, P), d0: P0, label: 'Nouveaux dossiers par jour', unit: 'nouveaux dossiers' }); }
+    if (sc.security && D.security) {
+      const n = Math.min(P, 90), dn = (() => { const d = new Date(D.day0 + 'T12:00:00'); d.setDate(d.getDate() + D.days - n); return d.toISOString().slice(0, 10); })();
+      for (const [k, arr, lab, unit] of [['logins', D.security.logins, 'Connexions réussies par jour', 'connexions'], ['fails', D.security.fails, 'Échecs de connexion par jour', 'échecs']]) {
+        const b = box.querySelector(`[data-cc="${k}"]`); if (b) columnChart(b, { values: lastN(arr, n), d0: dn, label: lab, unit });
+      }
+    }
+  };
+  draw();
+  if (DASH.ro) DASH.ro.disconnect();
+  let rt; DASH.ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(draw, 120); });
+  DASH.ro.observe(box);
+  bindBarTips(box);
+  box.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { DASH.period = +b.dataset.p; store.set('local', 'd8-sc-dash-period', DASH.period); hideTip(); drawDash(); });
+  box.querySelector('[data-ref]').onclick = () => renderDash();
+  box.querySelectorAll('[data-tv]').forEach(b => b.onclick = () => {
+    const c = b.closest('.dcard'), on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Graphique' : 'Tableau';
+    c.querySelector('.dc-body').hidden = on; c.querySelector('.dc-table').hidden = !on;
+  });
+  box.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openDossier(b.dataset.open));
+  box.querySelectorAll('[data-web]').forEach(b => b.onclick = () => can('remb') ? openDossier(b.dataset.web) : switchTab('web'));
+  box.querySelectorAll('[data-go]').forEach(b => b.onclick = () => dashGo(b.dataset.go));
+}
+const fbytes = n => n == null ? '—' : n < 1048576 ? NF.format(Math.max(1, Math.round(n / 1024))) + ' Ko' : NF.format(Math.round(n / 1048576 * 10) / 10) + ' Mo';
+function dashGo(k) {
+  if (k === 'web') return switchTab('web');
+  if (k === 'waiting') { const c = [...$$('#dashView .dcard h3')].find(x => x.textContent === 'Dossiers sans réponse'); if (c) c.closest('.dcard').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (['users', 'security', 'backups', 'journal'].includes(k)) return openAdmin(k);
+}
+/** contrôles de l'état du système (couleur d'état + icône + texte) */
+function sysChecks(D) {
+  const S = D.system, out = [], hrs = iso => (Date.now() - Date.parse(iso)) / 36e5;
+  out.push(S.mailReady ? { s: 'good', label: 'Envoi des e-mails', html: 'réglé' } : { s: 'critical', label: 'Envoi des e-mails', html: 'non réglé : ni invitations, ni mot de passe oublié, ni accusés de réception du formulaire' });
+  out.push(S.https ? { s: 'good', label: 'Connexion', html: 'chiffrée (HTTPS)' } : { s: 'serious', label: 'Connexion', html: 'non chiffrée (HTTP) : les mots de passe circulent en clair sur le réseau' });
+  const b = S.backup;
+  if (!b.last) out.push({ s: 'critical', label: 'Sauvegardes', html: 'aucune sauvegarde complète' });
+  else { const h = hrs(b.last); out.push({ s: h < 26 ? 'good' : h < 72 ? 'warning' : 'critical', label: 'Dernière sauvegarde', html: `${esc(fdt(b.last))} (${esc(fago(b.last))}) · ${nf(b.count)} conservée${b.count > 1 ? 's' : ''}` }); }
+  out.push(b.auto ? { s: 'good', label: 'Sauvegarde automatique', html: b.next ? 'prochaine : ' + esc(fdt(b.next)) : 'programmée' } : { s: 'warning', label: 'Sauvegarde automatique', html: 'désactivée (aucune heure réglée)' });
+  out.push(S.maintenance ? { s: 'warning', label: 'Mode maintenance', html: 'actif : les enregistrements sont suspendus' } : { s: 'good', label: 'Mode maintenance', html: 'inactif' });
+  out.push(S.saDefined ? { s: 'good', label: 'Mot de passe super administrateur', html: 'défini' } : { s: 'critical', label: 'Mot de passe super administrateur', html: 'non défini' });
+  if (D.accounts) { const A = D.accounts; out.push(A.supers && A.supersMfa >= A.supers ? { s: 'good', label: 'Double authentification des super administrateurs', html: `${nf(A.supersMfa)} / ${nf(A.supers)}` } : { s: 'warning', label: 'Double authentification des super administrateurs', html: `${nf(A.supersMfa)} / ${nf(A.supers)} : recommandée pour tous` }); }
+  if (S.superLockAttempts > 0 && S.superLockMinutes === 0) out.push(S.mailReady ? { s: 'info', label: 'Blocage des super administrateurs', html: 'jusqu’au lien reçu par e-mail ou au déblocage par un autre super administrateur' } : { s: 'serious', label: 'Blocage des super administrateurs', html: 'définitif et sans e-mail : quelques mauvais mots de passe peuvent bloquer tous les super administrateurs (fixez une durée dans Sécurité & accès)' });
+  if (D.web) {
+    if (D.web.generic) out.push({ s: 'warning', label: 'Lien générique du formulaire', html: 'actif : n’importe qui peut déposer une demande' });
+    if (D.web.enabled && !D.web.public) out.push({ s: 'info', label: 'Formulaire en ligne', html: 'adresse publique non réglée : les liens ne s’ouvrent que sur le réseau interne' });
+  }
+  out.push({ s: 'info', label: 'Durée de conservation des dossiers', html: S.conservation ? `${nf(S.conservation)} mois${S.purge && S.purge.day ? ` · dernier contrôle le ${esc(S.purge.day)}` : ''}` : 'illimitée (aucun effacement automatique)' });
+  return out;
+}
+/** points à surveiller, du plus grave au moins grave */
+function dashAlerts(D) {
+  const a = [], ds = D.dossiers, rank = { critical: 0, serious: 1, warning: 2, info: 3 };
+  if (ds.waitingOld) a.push({ s: 'warning', html: `${nf(ds.waitingOld)} dossier${ds.waitingOld > 1 ? 's' : ''} sans aucune réponse depuis plus de 2 jours`, go: 'waiting' });
+  if (D.web) {
+    const old = D.web.oldest.filter(o => Date.now() - Date.parse(o.submittedAt) > 48 * 36e5).length;
+    if (old) a.push({ s: 'warning', html: `${nf(old)} demande${old > 1 ? 's' : ''} en ligne non prise${old > 1 ? 's' : ''} en charge depuis plus de 2 jours`, go: 'web', goLabel: 'Formulaires en ligne' });
+    if (D.web.mailFail) a.push({ s: 'serious', html: `${nf(D.web.mailFail)} demande${D.web.mailFail > 1 ? 's' : ''} en ligne avec un e-mail en échec (Monétique ou accusé de réception)`, go: 'web', goLabel: 'Formulaires en ligne' });
+  }
+  if (D.accounts && D.accounts.locked.length) a.push({ s: 'warning', html: `${nf(D.accounts.locked.length)} compte${D.accounts.locked.length > 1 ? 's' : ''} bloqué${D.accounts.locked.length > 1 ? 's' : ''} : ${D.accounts.locked.map(l => esc(l.name)).join(', ')}`, go: 'users', goLabel: 'Utilisateurs' });
+  if (D.security && D.security.blockedIps) a.push({ s: 'warning', html: `${nf(D.security.blockedIps)} adresse${D.security.blockedIps > 1 ? 's' : ''} IP bloquée${D.security.blockedIps > 1 ? 's' : ''} après des échecs de connexion répétés`, go: 'journal', goLabel: 'Journal' });
+  if (D.system) for (const c of sysChecks(D)) if (c.s === 'critical' || c.s === 'serious' || (c.s === 'warning' && /sauvegarde/i.test(c.label))) a.push({ s: c.s, html: `${esc(c.label)} : ${c.html}`, go: /sauvegarde/i.test(c.label) ? 'backups' : 'security', goLabel: /sauvegarde/i.test(c.label) ? 'Sauvegardes' : 'Sécurité & accès' });
+  return a.sort((x, y) => rank[x.s] - rank[y.s]);
+}
+/** actualisation automatique (chaque minute, onglet visible, tableau de bord affiché, aucune fenêtre ouverte) */
+function dashAuto() {
+  clearInterval(DASH.timer);
+  DASH.timer = setInterval(() => {
+    if (active !== 'dash' || document.visibilityState !== 'visible' || RELOGIN || $('#modals').children.length) return;
+    renderDash(true);
+  }, 60000);
+}
+{ const p = store.get('local', 'd8-sc-dash-period'); if ([7, 30, 90].includes(p)) DASH.period = p; }
 
 /* =============================================================================
    Administration : personnes, rôles, réglages de l'outil, sécurité, journal, sauvegardes

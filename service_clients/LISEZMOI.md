@@ -23,7 +23,7 @@ Outil web partagé, installé sur le serveur IIS qui héberge déjà le planning
 | cfernandes@d8.fr, kbutant@d8.fr, sbertrand@d8.fr, nmarchiori@d8.fr | Paiement CB et remboursement | Remboursement, Commande CB |
 | dmalemebe@d8.fr | SAV (carte bancaire et intervention) | SAV · Carte bancaire, SAV · Intervention |
 | monetique@d8.fr | Formulaires en ligne (Monétique) | Formulaires en ligne, et rien d'autre |
-| aneves@d8.fr, mzidani@d8.fr, tmefre@d8.fr, lgasp@d8.fr | Super administrateur | Tous les onglets et l'Administration |
+| aneves@d8.fr, mzidani@d8.fr, tmefre@d8.fr, lgasp@d8.fr | Super administrateur | Tableau de bord, tous les onglets et l'Administration |
 
 Les onglets ne sont qu'un affichage : c'est `api.php` qui refuse la lecture et l'enregistrement d'un type de dossier non autorisé, même si on appelle l'API directement.
 
@@ -83,6 +83,50 @@ Rôles et personnes se modifient dans **Administration › Rôles et droits** et
 - **Dossiers.** Recherche, filtres, export CSV, historique, clôture, suppression (selon les droits).
 - **Modification simultanée.** Si deux personnes modifient le même dossier, la seconde à enregistrer est prévenue. Elle choisit alors de charger la version de l'autre ou de garder la sienne : rien n'est écrasé sans le savoir.
 - **Menu personnel** (nom en haut à droite) : signature des e-mails (fonction, téléphone), mot de passe, double authentification, déconnexion.
+- **Logo et titre en haut à gauche** : ramènent les administrateurs au tableau de bord (et l'actualisent). Pour les autres personnes, ils réactualisent la page ; la saisie en cours est conservée dans l'onglet du navigateur.
+
+## Tableau de bord (administrateurs et super administrateurs)
+
+Premier onglet pour toute personne qui a un droit d'administration (utilisateurs, sécurité, réglages ou super administrateur). C'est l'écran d'arrivée de ces personnes. Il s'actualise seul chaque minute tant qu'il est affiché ; ces actualisations automatiques ne prolongent pas la session (la déconnexion après inactivité s'applique). Période au choix : 7, 30 ou 90 jours, comparée à la période précédente de même durée.
+
+- **À surveiller** : la liste des points à traiter, du plus grave au moins grave, avec un bouton vers l'écran concerné :
+  - dossiers sans réponse depuis plus de 2 jours ;
+  - demandes en ligne non prises en charge, ou dont un e-mail a échoué ;
+  - comptes ou adresses IP bloqués ;
+  - sauvegarde trop ancienne ;
+  - envoi d'e-mails non réglé, connexion non chiffrée.
+- **Indicateurs** :
+  - dossiers en cours ;
+  - nouveaux dossiers ;
+  - réponses envoyées ;
+  - délai médian de première réponse (temps entre la création du dossier et la première réponse envoyée) ;
+  - dossiers clos ;
+  - demandes en ligne à traiter.
+- **Graphiques** :
+  - nouveaux dossiers par jour ;
+  - dossiers par type (en cours / clos) ;
+  - réponses par type de réponse ;
+  - connexions réussies et échecs par jour.
+
+  Chaque graphique se lit au survol ou au clavier (flèches gauche / droite) et dispose d'une vue « Tableau ».
+- **Listes** :
+  - dossiers en cours sans aucune réponse (les plus anciens d'abord, cliquer pour ouvrir) ;
+  - demandes en ligne les plus anciennes à traiter ;
+  - événements sensibles récents du journal ;
+  - comptes : accès, invitations, double authentification, comptes bloqués.
+- **État du système** : envoi des e-mails, HTTPS, dernière et prochaine sauvegarde, maintenance, mot de passe super administrateur, double authentification des super administrateurs, formulaire public, durée de conservation, taille des données.
+
+Chacun ne voit que ce que ses droits permettent, et c'est le serveur qui filtre :
+
+| Partie du tableau de bord | Visible si la personne a… |
+|---|---|
+| Statistiques des dossiers | le droit sur ce type de dossier |
+| Formulaires en ligne | le droit « Formulaires en ligne » ou « Remboursement » |
+| Comptes | le droit « Utilisateurs » ou « Sécurité » |
+| Connexions, événements sensibles, état du système | le droit « Sécurité » |
+| Activité par personne | super administrateur uniquement |
+
+**Activité par personne.** C'est un indicateur de charge de l'équipe : réponses, créations et mises à jour de dossiers par personne. Ce n'est pas un outil d'évaluation individuelle. Avant de l'utiliser, informez le personnel, et le CSE s'il en existe un (Code du travail, art. L1222-4 et L2312-38). Un dispositif qui permet de suivre l'activité de chacun doit être porté à sa connaissance.
 
 ## Formulaire de remboursement en ligne
 

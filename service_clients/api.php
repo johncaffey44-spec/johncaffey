@@ -1143,7 +1143,8 @@ if ($action === 'form-info' || $action === 'form-submit') {
     out(200, ['ok' => true, 'ref' => $d['id'], 'ar' => $ar, 'email' => $ar ? (string)$d['web']['mails']['ar']['to'] : '', 'pan' => $pan]);
 }
 
-$me = auth_user($ACC, $SESSION_IDLE, $lock, $action !== 'ping');
+// appels automatiques (ping toutes les 30 s, actualisation du tableau de bord) : pas une activité, la déconnexion après inactivité s'applique
+$me = auth_user($ACC, $SESSION_IDLE, $lock, $action !== 'ping' && !($action === 'dashboard' && !empty($_GET['auto'])));
 $PUBLIC = ['ping', 'me', 'bootstrap-info', 'sa-init', 'invite-check', 'signup', 'login', 'logout', 'forgot', 'reset-check', 'reset-password', 'mfa-verify'];
 if (!$me && !in_array($action, $PUBLIC, true)) out(401, ['auth' => false, 'error' => 'Connexion requise']);
 // la session n'est plus modifiée ensuite : on la libère pour ne pas bloquer les requêtes parallèles
@@ -1656,6 +1657,169 @@ if ($action === 'dossier-delete') {
     out(200, ['ok' => true]);
 }
 
+
+/* =============================================================================
+   Tableau de bord des administrateurs : chiffres agrégés, filtrés par les droits
+   (aucune donnée nominative de client hors des dossiers « en attente » des types autorisés)
+   ========================================================================== */
+/** médiane d'une liste de nombres (null si vide) */
+function median(array $a): ?float { if (!$a) return null; sort($a); $n = count($a); $m = intdiv($n, 2); return $n % 2 ? (float)$a[$m] : ($a[$m - 1] + $a[$m]) / 2; }
+/** taille totale d'un dossier (octets) */
+function dir_bytes(string $dir): int {
+    $n = 0;
+    try { foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)) as $f) if ($f->isFile()) $n += (int)$f->getSize(); } catch (Throwable $e) { }
+    return $n;
+}
+if ($action === 'dashboard') {
+    if (!has_any($doc, $uidMe, ['users', 'security', 'settings', 'super'])) out(403, ['error' => 'Tableau de bord réservé aux administrateurs.']);
+    $isSup = has_perm($doc, $uidMe, 'super'); $canSec = has_perm($doc, $uidMe, 'security'); $canUsers = has_perm($doc, $uidMe, 'users');
+    $T = array_values(array_filter(TYPES, function ($t) use ($doc, $uidMe) { return has_perm($doc, $uidMe, $t); }));
+    $canWeb = has_any($doc, $uidMe, ['web', 'remb']);
+    $DAYS = 180; $now = time();
+    $d0 = date('Y-m-d', strtotime('-' . ($DAYS - 1) . ' days', strtotime('today')));
+    $idx = []; for ($i = 0; $i < $DAYS; $i++) $idx[date('Y-m-d', strtotime("$d0 +$i day"))] = $i;
+    $di = function ($iso) use ($idx) { $t = is_string($iso) ? strtotime($iso) : false; return $t === false ? null : ($idx[date('Y-m-d', $t)] ?? null); };
+    $zeros = array_fill(0, $DAYS, 0);
+    $W = [7, 30, 90];
+    $inWin = function (?int $i, int $w, bool $prev = false) use ($DAYS) { if ($i === null) return false; $hi = $DAYS - 1 - ($prev ? $w : 0); return $i <= $hi && $i > $hi - $w; };
+
+    // --- dossiers (types autorisés) et demandes en ligne
+    $by = []; $created = []; foreach ($T as $t) { $by[$t] = ['open' => 0, 'closed' => 0, 'noReply' => 0, 'total' => 0]; $created[$t] = $zeros; }
+    $replies = $zeros; $closedDay = $zeros; $scen = ['7' => [], '30' => [], '90' => []]; $delays = []; $waiting = [];
+    $people = []; foreach ($W as $w) $people[(string)$w] = [];
+    $web = ['received' => $zeros, 'toHandle' => 0, 'mailFail' => 0, 'oldest' => []];
+    $count = 0;
+    flock($lock, LOCK_SH);
+    foreach (glob("$DOS/*.json") ?: [] as $f) {
+        $d = json_decode((string)@file_get_contents($f), true);
+        if (!is_array($d) || !in_array($d['type'] ?? '', TYPES, true)) continue;
+        $t = (string)$d['type']; $isWeb = ($d['origin'] ?? '') === 'web';
+        if ($canWeb && $isWeb && $t === 'remb') {
+            $w = (array)($d['web'] ?? []);
+            if (($i = $di($w['submittedAt'] ?? null)) !== null) $web['received'][$i]++;
+            if (empty($w['handled'])) { $web['toHandle']++; $web['oldest'][] = ['id' => (string)$d['id'], 'client' => cut((string)($d['v']['nom'] ?? ''), 80), 'submittedAt' => $w['submittedAt'] ?? null]; }
+            $m = (array)($w['mails'] ?? []);
+            if (empty($m['notify']['ok']) || (isset($m['ar']) && empty($m['ar']['ok'])) || (isset($m['confirm']) && empty($m['confirm']['ok']))) $web['mailFail']++;
+        }
+        if (!isset($by[$t])) continue;
+        $count++;
+        $closed = !empty($d['closed']); $hist = (array)($d['history'] ?? []);
+        $by[$t]['total']++; $by[$t][$closed ? 'closed' : 'open']++;
+        $ci = $di($d['createdAt'] ?? null);
+        if ($ci !== null) $created[$t][$ci]++;
+        $first = null;
+        foreach ($hist as $h) {
+            if (!is_array($h)) continue;
+            $ev = (string)($h['ev'] ?? ''); $hi = $di($h['t'] ?? null); $who = cut((string)($h['by'] ?? ''), 80);
+            if ($ev === 'reply') {
+                if ($first === null) $first = strtotime((string)$h['t']);
+                if ($hi !== null) {
+                    $replies[$hi]++;
+                    foreach ($W as $w) if ($inWin($hi, $w)) { $k = $t . '|' . (string)($h['scen'] ?? ''); $scen[(string)$w][$k] = ($scen[(string)$w][$k] ?? 0) + 1; }
+                }
+            }
+            if ($ev === 'close' && $hi !== null) $closedDay[$hi]++;
+            // activité par personne (super administrateur seulement) : réponses, créations, enregistrements
+            if ($isSup && $hi !== null && $who !== '' && $who !== 'Client (formulaire en ligne)' && in_array($ev, ['reply', 'create', 'save', 'import', 'close'], true))
+                foreach ($W as $w) if ($inWin($hi, $w)) {
+                    $p = &$people[(string)$w][$who];
+                    if (!$p) $p = ['name' => $who, 'replies' => 0, 'created' => 0, 'updates' => 0];
+                    $p[$ev === 'reply' ? 'replies' : ($ev === 'create' ? 'created' : 'updates')]++;
+                    unset($p);
+                }
+        }
+        $ct = strtotime((string)($d['createdAt'] ?? ''));
+        if ($first !== null && $ct !== false && $ci !== null) $delays[] = [$ci, max(0, ($first - $ct) / 3600)];
+        if (!$closed && $first === null) {
+            $by[$t]['noReply']++;
+            $waiting[] = ['id' => (string)$d['id'], 'type' => $t, 'client' => cut((string)(dossier_summary($d)['client']), 80), 'origin' => $isWeb ? 'web' : '',
+                          'createdAt' => $d['createdAt'] ?? null, 'updatedAt' => $d['updatedAt'] ?? null, 'updatedBy' => cut((string)($d['updatedBy'] ?? ''), 80)];
+        }
+    }
+    flock($lock, LOCK_UN);
+    usort($waiting, function ($a, $b) { return strcmp((string)$a['createdAt'], (string)$b['createdAt']); });
+    $first = [];
+    foreach ($W as $w) {
+        $cur = []; $prev = [];
+        foreach ($delays as [$i, $h]) { if ($inWin($i, $w)) $cur[] = $h; elseif ($inWin($i, $w, true)) $prev[] = $h; }
+        $first[(string)$w] = ['cur' => median($cur), 'prev' => median($prev), 'nCur' => count($cur), 'nPrev' => count($prev)];
+    }
+    foreach ($people as $w => $list) { $list = array_values($list); usort($list, function ($a, $b) { return ($b['replies'] + $b['created'] + $b['updates']) <=> ($a['replies'] + $a['created'] + $a['updates']); }); $people[$w] = array_slice($list, 0, 15); }
+    $out = ['now' => date('c'), 'day0' => $d0, 'days' => $DAYS,
+            'scope' => ['types' => $T, 'web' => $canWeb, 'people' => $isSup, 'accounts' => $canUsers || $canSec, 'security' => $canSec, 'system' => $canSec],
+            'dossiers' => ['total' => $count, 'byType' => (object)$by, 'created' => (object)$created, 'replies' => $replies, 'closed' => $closedDay, 'scen' => $scen,
+                           'firstReply' => $first, 'waitingCount' => count($waiting), 'waitingOld' => count(array_filter($waiting, function ($x) use ($now) { return strtotime((string)$x['createdAt']) < $now - 172800; })),
+                           'waiting' => array_slice($waiting, 0, 12)]];
+    if ($isSup) $out['people'] = $people;
+
+    // --- formulaire en ligne : demandes reçues, à traiter, liens envoyés et utilisés
+    if ($canWeb) {
+        usort($web['oldest'], function ($a, $b) { return strcmp((string)$a['submittedAt'], (string)$b['submittedAt']); });
+        $web['oldest'] = array_slice($web['oldest'], 0, 6);
+        $links = []; foreach ($W as $w) $links[(string)$w] = ['sent' => 0, 'used' => 0];
+        foreach (read_json($WEBL) as $x) {
+            if (!is_array($x)) continue;
+            $i = $di(date('c', (int)($x['t'] ?? 0)));
+            foreach ($W as $w) if ($inWin($i, $w)) { $links[(string)$w]['sent']++; if (!empty($x['used'])) $links[(string)$w]['used']++; }
+        }
+        $c = read_settings();
+        $out['web'] = $web + ['links' => $links, 'enabled' => !empty($c['webRemb']), 'generic' => !empty($c['webGeneric']), 'public' => (string)$c['webPublicUrl'] !== '', 'ar' => !empty($c['webAR'])];
+    }
+
+    // --- comptes : accès, invitations, double authentification, blocages
+    if ($canUsers || $canSec) {
+        $acc = read_json($ACC); $inv = read_json($INV);
+        $withAcc = []; $mfa = 0; foreach ($acc as $l => $a) { $withAcc[(string)($a['userId'] ?? '')] = true; if (!empty($a['mfa']['on'])) $mfa++; }
+        $pending = []; foreach ($inv as $v) if (is_array($v) && (int)($v['exp'] ?? 0) > $now) $pending[(string)($v['userId'] ?? '')] = true;
+        $active = 0; $noAccess = 0; $supers = 0; $supersMfa = 0; $names = [];
+        foreach ($doc['users'] as $u) {
+            $uid = (string)$u['id']; $names[clean_login($u['login'] ?? '')] = (string)$u['name'];
+            if (($u['active'] ?? true) === false) continue;
+            $active++;
+            if (empty($withAcc[$uid]) && empty($pending[$uid])) $noAccess++;
+            if (has_perm($doc, $uid, 'super')) { $supers++; foreach ($acc as $a) if ((string)($a['userId'] ?? '') === $uid && !empty($a['mfa']['on'])) $supersMfa++; }
+        }
+        $locked = [];
+        foreach (array_keys(read_json($LOCKF)) as $l) {
+            $l = (string)$l; $e = lock_state($LOCKF, $l, strpos($l, 'mfa:') === 0 ? 15 : null);
+            if (!$e || (int)($e['until'] ?? 0) <= $now) continue;
+            $login = strpos($l, 'mfa:') === 0 ? substr($l, 4) : $l;
+            if (!isset($names[$login])) continue;                       // identifiant inconnu (essais au hasard) : seulement dans le journal
+            $locked[] = ['login' => $login, 'name' => $names[$login], 'mfa' => strpos($l, 'mfa:') === 0, 'until' => (int)$e['until'] >= PHP_INT_MAX - 1 ? null : date('c', (int)$e['until'])];
+        }
+        $out['accounts'] = ['users' => count($doc['users']), 'active' => $active, 'withAccess' => count($acc), 'invites' => count($pending), 'noAccess' => $noAccess,
+                            'mfa' => $mfa, 'supers' => $supers, 'supersMfa' => $supersMfa, 'locked' => $locked];
+    }
+
+    // --- sécurité : connexions et échecs par jour (90 jours), adresses bloquées, derniers événements sensibles
+    if ($canSec) {
+        $logins = array_fill(0, 90, 0); $fails = array_fill(0, 90, 0); $o = $DAYS - 90; $oldest = null; $recent = [];
+        $notable = ['locked', 'blocked', 'restore', 'sec-set', 'settings', 'user-delete', 'mfa-reset', 'reset', 'sa-fail', 'sa-change', 'dossier-delete', 'purge', 'unblock', 'unlock', 'mfa-off', 'backup-get', 'web-cap', 'kick'];
+        foreach (read_json("$DATA_DIR/auth-log.json") as $e) {
+            if (!is_array($e)) continue;
+            $oldest = $e['t'] ?? $oldest;
+            $i = $di($e['t'] ?? null); $ev = (string)($e['ev'] ?? '');
+            if ($i !== null && $i >= $o) {
+                if (in_array($ev, ['login', 'signup'], true)) $logins[$i - $o]++;
+                elseif (in_array($ev, ['fail', 'mfa-fail', 'sa-fail'], true)) $fails[$i - $o]++;
+            }
+            if (count($recent) < 8 && in_array($ev, $notable, true)) $recent[] = ['t' => $e['t'] ?? null, 'ev' => $ev, 'login' => cut((string)($e['login'] ?? ''), 80), 'info' => cut((string)($e['info'] ?? ''), 160)];
+        }
+        $ips = 0; foreach (read_json($FAILS) as $e) if (is_array($e) && (int)($e['n'] ?? 0) >= $MAX_FAILS && $now - (int)($e['t'] ?? 0) < $FAIL_WINDOW) $ips++;
+        $out['security'] = ['logins' => $logins, 'fails' => $fails, 'logFrom' => $oldest, 'blockedIps' => $ips, 'recent' => $recent];
+
+        // --- état du système
+        $files = glob("$DATA_DIR/backups/complet-*.json") ?: [];
+        $last = null; foreach ($files as $f) if (!$last || filemtime($f) > filemtime($last)) $last = $f;
+        [, $next] = backup_slots();
+        $out['system'] = ['mailReady' => mail_ready(), 'https' => $https, 'maintenance' => $MAINTENANCE, 'saDefined' => superadmin_hash() !== '',
+            'mfaRequired' => $MFA_REQUIRED, 'resetFor' => $RESET_FOR, 'superLockAttempts' => $SUPER_LOCK_ATTEMPTS, 'superLockMinutes' => $SUPER_LOCK_MINUTES,
+            'backup' => ['count' => count($files), 'last' => $last ? date('c', filemtime($last)) : null, 'next' => $AUTO_BACKUP_TIMES && $next ? date('c', $next) : null, 'auto' => (bool)$AUTO_BACKUP_TIMES],
+            'purge' => read_json("$DATA_DIR/purge-state.json"), 'conservation' => (int)(read_settings()['conservation'] ?? 0),
+            'dataBytes' => dir_bytes($DATA_DIR), 'php' => PHP_VERSION, 'build' => page_build()];
+    }
+    out(200, $out);
+}
 
 /* =============================================================================
    Formulaire en ligne : liens envoyés aux clients, demandes reçues (droit « web », ou droit du type pour envoyer un lien)
