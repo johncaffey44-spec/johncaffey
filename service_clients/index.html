@@ -3,30 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Réponses SAV D8</title>
+<title>Service clients D8</title>
 <!--
-  D8 · Générateur de réponses et de fiches SAV
+  D8 · Service clients — outil partagé sur le serveur IIS (dossier service_clients)
   ----------------------------------------------------------------------------
-  Fichier autonome : aucune installation, aucun serveur, rien n'est envoyé sur
-  Internet. Double-cliquez dessus, ou déposez-le à côté de planning-d8.html.
-
-  Quatre types de demande :
-    - SAV · problème de paiement par carte bancaire sur un distributeur
-    - SAV · demande d'intervention
-    - Remboursement (reprend la fiche FORM-REMB-01)
-    - Commande réglée par carte bancaire
-
-  Pour chacun :
-    - un e-mail de réponse rédigé automatiquement selon les renseignements
-      saisis (accusé de réception, demande de compléments, intervention
-      programmée, remboursement accepté ou refusé, paiement…) ;
-    - une fiche PDF à champs remplissables, vierge ou pré-remplie ;
-    - l'import d'une fiche PDF remplie par le client (y compris l'ancienne
-      fiche Canva FORM-REMB-01) pour pré-remplir la saisie.
-
-  Les coordonnées, adresses de retour, délais et la signature se règlent dans
-  « Paramètres » (enregistrés dans ce navigateur). Les valeurs par défaut sont
-  dans DEFAULTS, au début du script.
+  Page de l'outil ; elle dialogue avec api.php (même dossier) :
+    - connexion par adresse e-mail, double authentification, invitations ;
+    - onglets selon le rôle (SAV carte bancaire, SAV intervention,
+      remboursement, commande par carte, formulaires en ligne) ;
+    - e-mails de réponse rédigés selon les renseignements saisis, fiches PDF
+      remplissables, import des fiches PDF renvoyées par les clients ;
+    - dossiers enregistrés sur le serveur (numérotation, historique) ;
+    - administration : personnes, rôles, réglages, sécurité, journal, sauvegardes.
+  Les droits sont contrôlés par le serveur : masquer un onglet ici ne fait que
+  refléter ce que le serveur autorise.
 
   Bibliothèque PDF : pdf-lib 1.17.1 (licence MIT), incluse en fin de fichier.
   ----------------------------------------------------------------------------
@@ -66,6 +56,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--text);font:14px/1.45 var(--font);-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -91,6 +82,8 @@ a{color:var(--primary)}
 .btn.ghost{border-color:transparent;background:transparent}
 .btn.ghost:hover{background:var(--surface-3)}
 .btn.sm{padding:5px 9px;font-size:12.5px}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.sm.danger{background:transparent;color:var(--danger);border-color:var(--danger)}
 .btn svg{width:16px;height:16px;flex:none}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
 
@@ -249,24 +242,117 @@ dialog::backdrop{background:rgba(10,14,20,.5)}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:#1b2330;color:#fff;padding:10px 16px;border-radius:10px;box-shadow:var(--sh-lg);opacity:0;pointer-events:none;transition:.2s;z-index:120;max-width:calc(100vw - 32px);font-size:13.5px}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.err{background:#9b2c2c}
+
+/* ---------- mode serveur : connexion, menus, fenêtres, administration ---------- */
+.who{gap:8px;padding:5px 10px 5px 5px}
+.av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary);font-weight:700;font-size:12px;flex:none}
+.sync{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-3)}
+.sync i{width:9px;height:9px;border-radius:50%;background:var(--ok);display:inline-block}
+.sync.warn i{background:var(--warn)}.sync.err i{background:var(--danger)}
+#banner .bnr{display:flex;gap:10px;align-items:center;padding:9px 20px;font-size:13.5px;border-bottom:1px solid var(--border)}
+#banner .bnr.warn{background:var(--warn-soft)}#banner .bnr.info{background:var(--info-soft)}#banner .bnr.danger{background:var(--danger-soft)}
+#banner .bnr span{flex:1}
+.bar .tag{font-size:11.5px}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}.tag.warn{background:var(--warn-soft);color:var(--warn)}.tag.danger{background:var(--danger-soft);color:var(--danger)}.tag.info{background:var(--info-soft);color:var(--info)}.tag.gold{background:var(--gold-soft);color:var(--gold)}
+.pop{position:fixed;z-index:60;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh-lg);padding:6px;min-width:230px;max-width:calc(100vw - 16px)}
+.pop .pi{display:flex;gap:9px;align-items:center;width:100%;border:none;background:none;padding:9px 10px;border-radius:7px;cursor:pointer;text-align:left;font-size:13.5px;color:var(--text)}
+.pop .pi:hover{background:var(--surface-3)}.pop .pi.dgr{color:var(--danger)}
+.pop .ph{padding:8px 10px 10px;border-bottom:1px solid var(--border);margin-bottom:4px}
+.pop .ph b{display:block}.pop .ph small{color:var(--text-3)}
+#modals .mw{position:fixed;inset:0;z-index:70;background:rgba(10,14,20,.5);display:grid;place-items:center;padding:12px}
+#modals .md{background:var(--surface);color:var(--text);border-radius:14px;box-shadow:var(--sh-lg);width:min(560px,100%);max-height:calc(100vh - 24px);display:flex;flex-direction:column}
+#modals .md.sm{width:min(430px,100%)}#modals .md.lg{width:min(860px,100%)}#modals .md.xl{width:min(1180px,100%);height:calc(100vh - 24px)}
+#modals .md>header{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+#modals .md>header h3{margin:0;font-size:16px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#modals .md>.mb{padding:14px 18px;overflow:auto;flex:1}
+#modals .md>footer{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--border)}
+.spacer{flex:1}
+.bnr2{display:flex;gap:8px;padding:9px 12px;border-radius:var(--r-sm);font-size:13px;margin:0 0 10px}
+.bnr2.info{background:var(--info-soft)}.bnr2.warn{background:var(--warn-soft)}.bnr2.danger{background:var(--danger-soft);color:var(--danger)}.bnr2.ok{background:var(--ok-soft)}
+.bnr2[hidden]{display:none}
+.tbl-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm)}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+table.tbl th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-weight:600;color:var(--text-2);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.tbl td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+table.tbl tr:last-child td{border-bottom:none}
+table.tbl tr.click{cursor:pointer}table.tbl tr.click:hover td{background:var(--surface-2)}
+.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace}
+.rowacts{display:flex;gap:4px;flex-wrap:wrap}
+.ibtn{border:1px solid var(--border-2);background:var(--surface);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;color:var(--text-2);white-space:nowrap}
+.ibtn:hover{background:var(--surface-3)}.ibtn.dgr{color:var(--danger)}
+.pills{display:flex;flex-wrap:wrap;gap:4px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.toolbar .inp{width:auto;min-width:200px;flex:1}
+.adm{display:grid;grid-template-columns:210px 1fr;height:100%;min-height:0}
+.adm nav{border-right:1px solid var(--border);padding:10px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.adm nav button{border:none;background:none;text-align:left;padding:9px 10px;border-radius:7px;cursor:pointer;font-size:13.5px;color:var(--text-2)}
+.adm nav button[aria-current="true"]{background:var(--primary-soft);color:var(--primary);font-weight:700}
+.adm section{padding:14px 18px;overflow:auto;min-height:0}
+.adm h4{margin:16px 0 8px;font-size:13px;color:var(--gold);text-transform:uppercase;letter-spacing:.4px}
+.adm h4:first-child{margin-top:0}
+@media (max-width:760px){.adm{grid-template-columns:1fr;grid-template-rows:auto 1fr}.adm nav{flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--border)}.adm nav button{white-space:nowrap}}
+.sw{display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13.5px}
+.sw input{width:16px;height:16px;margin:2px 0 0;accent-color:var(--navy);flex:none}
+.permgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 16px}
+.permgrid .grp{grid-column:1/-1;font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;margin-top:8px}
+/* écran de connexion */
+#auth{position:fixed;inset:0;z-index:90;background:var(--bg);overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:6vh 14px 24px}
+#auth[hidden]{display:none}
+.auth-box{width:min(440px,100%);background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--sh);overflow:hidden}
+.auth-box.wide{width:min(560px,100%)}
+.auth-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:3px solid var(--gold)}
+.auth-head img{height:40px;background:#fff;border-radius:6px;padding:2px}
+.auth-head b{display:block;font-size:17px;color:var(--navy)}
+:root[data-theme="dark"] .auth-head b{color:var(--text)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .auth-head b{color:var(--text)}}
+.auth-head small{color:var(--text-3)}
+.auth-body{padding:18px 20px 20px}
+.auth-body h3{margin:0 0 12px;font-size:16px}
+.auth-body form{display:flex;flex-direction:column;gap:12px}
+.auth-body .fld{grid-column:auto}
+.auth-tabs{display:flex;border-bottom:1px solid var(--border)}
+.auth-tabs button{flex:1;border:none;background:none;padding:12px;cursor:pointer;font-weight:600;color:var(--text-3);border-bottom:2px solid transparent}
+.auth-tabs button[aria-selected="true"]{color:var(--primary);border-bottom-color:var(--primary)}
+.auth-foot{font-size:12px;color:var(--text-3);padding:0 20px 16px}
+.linkbtn{border:none;background:none;color:var(--primary);cursor:pointer;padding:0;font:inherit;text-decoration:underline}
+.pw-rules{list-style:none;margin:4px 0 0;padding:0;font-size:12px;color:var(--text-3);display:flex;flex-wrap:wrap;gap:4px 12px}
+.pw-rules li::before{content:"○ "}.pw-rules li.ok{color:var(--ok)}.pw-rules li.ok::before{content:"✓ "}
+.pw-wrap{position:relative;display:block}
+.pw-wrap .inp{padding-right:40px}
+.pw-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:none;background:none;cursor:pointer;color:var(--text-3);padding:6px;border-radius:6px}
+.pw-eye svg{width:18px;height:18px;display:block}
+.qr{display:block;margin:6px auto;background:#fff;border-radius:10px;padding:4px}
+.otp{font:600 20px/1 ui-monospace,Consolas,monospace;letter-spacing:.3em;text-align:center}
+.rec-codes{display:grid;grid-template-columns:1fr 1fr;gap:6px;font:600 15px/1.4 ui-monospace,Consolas,monospace;user-select:all;background:var(--surface-2);padding:10px;border-radius:8px}
+/* formulaires en ligne */
+#webView{padding:0 20px 28px}
+#webView .pane{border-radius:0 var(--r) var(--r) var(--r);padding:16px 18px}
+.kpis{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.kpi{flex:1;min-width:140px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px}
+.kpi b{display:block;font-size:22px}.kpi span{font-size:12px;color:var(--text-3)}
+.mailst{display:flex;gap:4px;flex-wrap:wrap}
+@media (max-width:640px){#webView{padding:0 16px 24px}}
 </style>
 </head>
 <body>
 <header class="top">
   <img id="topLogo" alt="D8">
   <div class="ttl">
-    <h1>Réponses &amp; fiches SAV</h1>
-    <div class="sub">Paiement par carte · Interventions · Remboursements · Commandes</div>
+    <h1>Service clients D8</h1>
+    <div class="sub" id="topSub">Paiement par carte · Interventions · Remboursements · Commandes</div>
   </div>
   <div class="acts">
+    <span class="sync" id="sync" title="État de la connexion au serveur"><i></i><span>Connecté</span></span>
     <button class="btn" id="btnImport" title="Importer une fiche PDF remplie par le client (ou glissez-la sur la page)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Importer une fiche PDF</button>
-    <button class="btn" id="btnSettings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Paramètres</button>
+    <button class="btn" id="btnAdmin" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6z"/></svg>Administration</button>
+    <button class="btn who" id="btnWho" aria-haspopup="menu"><span class="av" id="av">?</span><span id="whoName">…</span></button>
     <input type="file" id="fileImport" accept="application/pdf,.pdf" class="sr">
   </div>
 </header>
 <div class="rule"></div>
+<div id="banner"></div>
 
 <nav class="tabs" role="tablist" id="tabs"></nav>
 
@@ -274,8 +360,14 @@ dialog::backdrop{background:rgba(10,14,20,.5)}
   <section class="pane form-pane" aria-label="Renseignements">
     <div class="bar">
       <span class="muted">Dossier</span><span class="ref" id="refView">—</span>
+      <span class="tag warn" id="dirtyTag" hidden>non enregistré</span>
+      <span class="tag info" id="webTag" hidden>reçu en ligne</span>
+      <span class="tag" id="closedTag" hidden>clôturé</span>
       <span class="grow"></span>
-      <button class="btn sm ghost" id="btnReset" title="Vider la saisie et attribuer un nouveau numéro de dossier">
+      <button class="btn sm primary" id="btnSave" title="Enregistrer le dossier sur le serveur">Enregistrer</button>
+      <button class="btn sm" id="btnList" title="Retrouver un dossier">Dossiers</button>
+      <button class="btn sm ghost" id="btnMore" aria-haspopup="menu" title="Autres actions">Plus ▾</button>
+      <button class="btn sm ghost" id="btnReset" title="Vider la saisie et commencer une nouvelle demande">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Nouvelle demande</button>
     </div>
     <form id="form" autocomplete="off" novalidate></form>
@@ -318,6 +410,8 @@ dialog::backdrop{background:rgba(10,14,20,.5)}
     </section>
   </aside>
 </main>
+<div id="webView" hidden></div>
+<div id="noAccess" hidden style="padding:40px 20px;text-align:center" class="muted"></div>
 
 <div class="drop" id="drop"><div>Déposez la fiche PDF remplie<small>Les renseignements seront repris automatiquement</small></div></div>
 <div class="toast" id="toast" role="status"></div>
@@ -327,45 +421,20 @@ dialog::backdrop{background:rgba(10,14,20,.5)}
   <iframe id="pdfFrame" title="Aperçu de la fiche PDF"></iframe>
 </dialog>
 
-<dialog id="dlgSettings">
-  <div class="dlg-h"><h3>Paramètres</h3><button class="btn sm ghost" data-close>Fermer</button></div>
-  <div class="dlg-b" id="setBody"></div>
-  <div class="dlg-f">
-    <button class="btn sm ghost" id="setExport">Exporter (.json)</button>
-    <button class="btn sm ghost" id="setImport">Importer</button>
-    <button class="btn sm ghost" id="setReset">Valeurs par défaut</button>
-    <span class="grow"></span>
-    <button class="btn" data-close>Annuler</button>
-    <button class="btn primary" id="setSave">Enregistrer</button>
-    <input type="file" id="setFile" accept="application/json,.json" class="sr">
-    <input type="file" id="logoFile" accept="image/png,image/jpeg" class="sr">
-  </div>
-</dialog>
+<div id="modals"></div>
+<div id="auth" hidden></div>
 
 <script>
 'use strict';
 /* =============================================================================
-   Réglages par défaut — à adapter. Chaque poste peut les modifier dans
-   « Paramètres » (enregistrés dans le navigateur) et les partager par export.
+   Réglages : valeurs par défaut, remplacées par celles du serveur (settings)
    ========================================================================== */
 const DEFAULTS = {
-  societe: 'D8 S.A.S.U.',
-  adresse: '7/9 rue Léon Geffroy – 94408 Vitry-sur-Seine Cedex',
-  telephone: '01 47 18 38 38',
-  emailGeneral: 'comd8@d8.fr',
-  emailMonetique: 'Monetique@d8.fr',   // SAV carte bancaire + remboursements
-  emailSav: 'comd8@d8.fr',             // demandes d'intervention
-  emailCommandes: 'comd8@d8.fr',       // commandes
-  expediteur: '',                      // « De : » des brouillons .eml (boîte partagée, facultatif)
-  sigNom: '', sigFonction: '', sigService: '', sigTel: '',
-  politesse: 'Cordialement',
-  delaiReclamation: 30,                // jours après l'incident
-  delaiTraitement: 5,                  // jours ouvrés
-  delaiIntervention: '',               // ex. « sous 48 heures ouvrées » ; vide = aucun engagement écrit
-  delaiLivraison: '',                  // ex. « sous 5 jours ouvrés » ; vide = date confirmée au cas par cas
-  horairesTel: '',                     // ex. « du lundi au vendredi, de 9 h à 17 h »
-  conservation: 12,                    // mois (fiches SAV et remboursement)
-  logo: ''                             // data:URI ; vide = logo D8 intégré
+  societe: 'D8 S.A.S.U.', adresse: '7/9 rue Léon Geffroy – 94408 Vitry-sur-Seine Cedex', telephone: '01 47 18 38 38',
+  emailGeneral: 'comd8@d8.fr', emailMonetique: 'Monetique@d8.fr', emailSav: 'comd8@d8.fr', emailCommandes: 'comd8@d8.fr',
+  expediteur: '', politesse: 'Cordialement', delaiReclamation: 30, delaiTraitement: 5, delaiIntervention: '', delaiLivraison: '',
+  horairesTel: '', conservation: 12, logo: '',
+  webRemb: true, webNotify: 'Monetique@d8.fr', webAR: true, webPublicUrl: '', webLinkDays: 30, webGeneric: false
 };
 const LOGO_D8 = 'data:image/png;base64,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';
 
@@ -448,10 +517,6 @@ function randRef(n) {
   const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', a = new Uint32Array(n);
   crypto.getRandomValues(a); return [...a].map(x => A[x % A.length]).join('');
 }
-function newDossier(type) {
-  const d = new Date();
-  return `${FORMS[type].code}-${String(d.getFullYear()).slice(2)}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${randRef(4)}`;
-}
 function dataUriToBytes(uri) {
   const b = atob(uri.split(',')[1] || ''); const u = new Uint8Array(b.length);
   for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u;
@@ -476,8 +541,8 @@ function toast(msg, err) {
 /* =============================================================================
    Paramètres
    ========================================================================== */
-const SETTINGS_KEY = 'd8-sav-parametres-v1', STATE_KEY = 'd8-sav-saisie-v1';
-let C = Object.assign({}, DEFAULTS, store.get('local', SETTINGS_KEY) || {});
+const STATE_KEY = 'd8-service-clients-saisie-v1';
+let C = Object.assign({}, DEFAULTS);
 const logoSrc = () => C.logo || LOGO_D8;
 const replyMail = def => C[def.service] || C.emailGeneral;
 
@@ -525,7 +590,6 @@ const fEmail = () => ({ id: 'email', label: 'E-mail', type: 'email', req: true, 
 const fTel = req => ({ id: 'tel', label: 'Téléphone', hint: req ? '' : 'Facultatif', type: 'tel', req: !!req, ask: 'un numéro de téléphone pour vous joindre', half: true });
 const fMatricule = () => ({ id: 'matricule', label: 'Matricule du distributeur', hint: "Numéro à 6 chiffres figurant sur l'étiquette collée sur la façade du distributeur D8", type: 'comb', n: 6, req: true, ask: "le matricule du distributeur : numéro à 6 chiffres figurant sur l'étiquette collée sur la façade du distributeur", check: checkMatricule, half: true });
 const fEmplacement = () => ({ id: 'emplacement', label: 'Emplacement précis', hint: 'Bâtiment, étage, cafétéria…', type: 'text', req: true, ask: "l'emplacement précis du distributeur (bâtiment, étage, cafétéria…)", half: true });
-const fDossier = (label = 'N° de dossier') => ({ id: 'dossier', label, hint: 'Généré automatiquement ; vous pouvez saisir un n° de ticket existant', type: 'text', half: true });
 const fInterv = () => [
   { id: 'interv_date', label: "Date d'intervention prévue", type: 'date', half: true },
   { id: 'interv_creneau', label: 'Créneau', hint: 'ex. entre 9 h et 12 h', type: 'text', half: true },
@@ -590,7 +654,7 @@ const FORMS = {
         ]
       },
       {
-        title: 'Traitement D8', internal: true, fields: [fDossier(), ...fInterv(),
+        title: 'Traitement D8', internal: true, fields: [...fInterv(),
           { id: 'resolution', label: 'Action réalisée / compte rendu', hint: 'Renseigné : la réponse « Problème résolu » est proposée', type: 'textarea', rows: 3 }]
       }
     ],
@@ -664,7 +728,7 @@ const FORMS = {
         ]
       },
       {
-        title: 'Traitement D8', internal: true, fields: [fDossier(), ...fInterv(),
+        title: 'Traitement D8', internal: true, fields: [...fInterv(),
           { id: 'compte_rendu', label: "Compte rendu d'intervention", hint: "Renseigné : la réponse « Intervention réalisée » est proposée", type: 'textarea', rows: 3 },
           { id: 'remis', label: 'Résultat', type: 'radio', show: v => !blank(v.compte_rendu), opts: [{ v: 'oui', l: 'Distributeur remis en service' }, { v: 'non', l: 'Intervention complémentaire nécessaire' }] }]
       }
@@ -769,7 +833,7 @@ const FORMS = {
       },
       { title: 'Attestation et signature', pdfSign: true, fields: [{ id: 'attestation', label: 'Fiche datée et signée (le client atteste ne pas avoir engagé de contestation bancaire)', type: 'check', pdf: false }] },
       {
-        title: 'Traitement D8', internal: true, fields: [fDossier(),
+        title: 'Traitement D8', internal: true, fields: [
           { id: 'decision', label: 'Décision', type: 'radio', opts: [{ v: '', l: "En cours d'analyse" }, { v: 'accepte', l: 'Remboursement accepté' }, { v: 'refuse', l: 'Remboursement refusé' }] },
           { id: 'montant_rb', label: 'Montant remboursé', hint: 'Vide = montant débité', type: 'money', half: true, show: v => v.decision === 'accepte' },
           { id: 'date_rb', label: 'Remboursement effectué le', hint: "Vide s'il reste à effectuer", type: 'date', half: true, show: v => v.decision === 'accepte' },
@@ -844,7 +908,7 @@ const FORMS = {
       },
       { title: 'Bon pour commande', pdfSign: true, fields: [{ id: 'bon_signe', label: 'Bon de commande daté et signé', type: 'check', pdf: false }] },
       {
-        title: 'Traitement D8', internal: true, fields: [fDossier('N° de commande'),
+        title: 'Traitement D8', internal: true, fields: [
           { id: 'pay_statut', label: 'Paiement', type: 'radio', opts: [{ v: '', l: 'En attente' }, { v: 'paye', l: 'Payé' }, { v: 'refuse', l: 'Refusé / lien expiré' }] },
           { id: 'pay_lien', label: 'Lien de paiement', hint: 'Généré depuis votre solution de paiement (https://…)', type: 'url', check: checkUrl, show: v => v.pay_mode === 'lien' || blank(v.pay_mode) },
           { id: 'pay_validite', label: "Lien valable jusqu'au", type: 'date', half: true, show: v => v.pay_mode === 'lien' || blank(v.pay_mode) },
@@ -886,19 +950,22 @@ const visible = (f, v) => !f.show || f.show(v);
    fermeture de l'onglet — les données personnelles ne restent pas sur le poste)
    ========================================================================== */
 function blankState(type) {
-  const v = { dossier: newDossier(type) };
+  const v = {};
   if (type === 'cmd') v.items = [blankItem()];
-  return { v, scen: 'auto', edited: null, attach: {}, attachOv: null, pan: false };
+  // id / rev : dossier enregistré sur le serveur ; dirty : saisie non encore enregistrée
+  return { v, scen: 'auto', edited: null, attach: {}, attachOv: null, pan: false, id: null, rev: 0, dirty: false, meta: null, lastReply: null };
 }
 const blankItem = () => ({ ref: '', des: '', qte: '', pu: '', tva: '20' });
-let S = {}, active = 'remb';
-(function loadState() {
+let S = {}, active = null;
+/** saisie en cours : conservée au rechargement de l'onglet, propre à la personne connectée, effacée à la déconnexion */
+function loadState(login) {
   const saved = store.get('session', STATE_KEY);
-  for (const t of TYPES) S[t] = (saved && saved.S && saved.S[t]) ? Object.assign(blankState(t), saved.S[t]) : blankState(t);
-  if (saved && FORMS[saved.active]) active = saved.active;
-})();
+  const mine = saved && saved.login === login ? saved : null;
+  for (const t of TYPES) S[t] = (mine && mine.S && mine.S[t]) ? Object.assign(blankState(t), mine.S[t]) : blankState(t);
+  if (mine && mine.active) active = mine.active;
+}
 let saveT;
-function saveState() { clearTimeout(saveT); saveT = setTimeout(() => store.set('session', STATE_KEY, { active, S }), 250); }
+function saveState() { clearTimeout(saveT); saveT = setTimeout(() => { if (ME) store.set('session', STATE_KEY, { login: ME.login, active, S }); }, 250); }
 
 /* =============================================================================
    Contrôles
@@ -1002,11 +1069,13 @@ function M() {
 function greet(v) { return v.civ ? `Bonjour ${v.civ},` : 'Bonjour,'; }
 function signature(def) {
   const lines = [];
-  if (!blank(C.sigNom)) lines.push(C.sigNom, [C.sigFonction, C.sigService].filter(x => !blank(x)).join(' – '));
+  if (ME && !blank(ME.name)) lines.push(ME.name, ME.sigFonction || '');
   else lines.push(def.team);
-  lines.push(C.societe, C.adresse, `Tél. ${C.sigTel || C.telephone} · ${replyMail(def)}`);
+  lines.push(C.societe, C.adresse, `Tél. ${(ME && ME.sigTel) || C.telephone} · ${replyMail(def)}`);
   return lines.filter(x => !blank(x)).join('\n');
 }
+/** tant que le dossier n'est pas enregistré, l'e-mail porte ce repère ; il est remplacé par le numéro attribué par le serveur */
+const REF_PH = '[n° de dossier]';
 const distrib = v => blank(v.matricule) ? 'le distributeur' : `le distributeur n° ${v.matricule}`;
 const distribEmp = v => distrib(v) + (blank(v.emplacement) ? '' : ` (${v.emplacement.trim()})`);
 const subj = (...parts) => parts.filter(x => !blank(x)).join(' – ');
@@ -1043,7 +1112,7 @@ const prevenir = v => !blank(v.contact_site) ? `Merci de prévenir votre contact
 
 const MAILS = {
   cb(scen, v, st, val) {
-    const def = FORMS.cb, m = M(), ref = v.dossier;
+    const def = FORMS.cb, m = M(), ref = v.dossier || REF_PH;
     const recap = () => {
       m.h('Récapitulatif de votre signalement');
       m.kv([
@@ -1101,7 +1170,7 @@ const MAILS = {
   },
 
   int(scen, v, st, val) {
-    const def = FORMS.int, m = M(), ref = v.dossier, prio = priority('int', v);
+    const def = FORMS.int, m = M(), ref = v.dossier || REF_PH, prio = priority('int', v);
     const recap = () => {
       m.h('Récapitulatif de votre demande');
       m.kv([
@@ -1162,7 +1231,7 @@ const MAILS = {
   },
 
   remb(scen, v, st, val) {
-    const def = FORMS.remb, m = M(), ref = v.dossier;
+    const def = FORMS.remb, m = M(), ref = v.dossier || REF_PH;
     const montantRb = !blank(v.montant_rb) ? fm(v.montant_rb) : fm(v.montant);
     const tx = () => [blank(v.tx_date) ? '' : `du ${fd(v.tx_date)}`, blank(v.tx_heure) ? '' : `vers ${ft(v.tx_heure)}`, blank(v.montant) ? '' : `(${fm(v.montant)})`].filter(Boolean).join(' ');
     const carte = v.paiement === 'cb' || v.paiement === 'mobile';
@@ -1244,7 +1313,7 @@ const MAILS = {
   },
 
   cmd(scen, v, st, val) {
-    const m = M(), ref = v.dossier, t = cmdTotals(v), def = FORMS.cmd;
+    const m = M(), ref = v.dossier || REF_PH, t = cmdTotals(v), def = FORMS.cmd;
     const lines = () => {
       m.h('Récapitulatif de votre commande');
       m.ul(t.items.map(it => {
@@ -1866,11 +1935,26 @@ async function importPdf(file) {
   const { v, notes } = importValues(det.type, res.raw, det.legacy);
   let pan = false;
   for (const k of Object.keys(v)) if (typeof v[k] === 'string') { const r = sanitizeValue(det.type, k, v[k]); v[k] = r.value; pan = pan || r.pan; }
+  if (!can(det.type)) { toast(`Fiche « ${FORMS[det.type].label} » : ce type de demande n'est pas autorisé pour votre rôle.`, true); return; }
   const count = Object.keys(v).filter(k => k !== 'dossier' && !blank(v[k])).length;
+  if (S[det.type].dirty && !await ask(`La saisie en cours de l'onglet « ${FORMS[det.type].label} » n'est pas enregistrée : elle sera remplacée par la fiche importée. Continuer ?`, { ok: 'Remplacer' })) return;
   const st = blankState(det.type);
-  Object.assign(st.v, v); st.pan = pan; st.imported = { name: file.name, notes, legacy: !!det.legacy };
+  // la fiche porte un numéro de dossier connu du serveur : on complète ce dossier au lieu d'en créer un autre
+  let linked = null;
+  if (!blank(v.dossier)) {
+    const r = await api('dossier-get', null, { id: v.dossier });
+    if (r.ok && r.body.dossier && r.body.dossier.type === det.type) {
+      linked = r.body.dossier;
+      Object.assign(st.v, linked.v);
+      notes.unshift(`Dossier ${linked.id} retrouvé sur le serveur : la fiche le complète (les renseignements de la fiche remplacent ceux du dossier).`);
+    } else notes.unshift(`Référence « ${v.dossier} » inconnue sur le serveur : un nouveau dossier sera créé à l'enregistrement.`);
+  }
+  delete v.dossier;
+  for (const [k, x] of Object.entries(v)) if (!blank(x)) st.v[k] = x;
+  if (linked) { st.id = linked.id; st.rev = linked.rev; st.meta = dossierMeta(linked); st.v.dossier = linked.id; }
+  st.pan = pan; st.dirty = true; st.imported = { name: file.name, notes, legacy: !!det.legacy };
   S[det.type] = st; switchTab(det.type);
-  toast(`${det.legacy ? 'Ancienne fiche FORM-REMB-01' : FORMS[det.type].pdf.ref} importée : ${count} renseignement${count > 1 ? 's' : ''} repris.`);
+  toast(`${det.legacy ? 'Ancienne fiche FORM-REMB-01' : FORMS[det.type].pdf.ref} importée : ${count} renseignement${count > 1 ? 's' : ''} repris. Vérifiez puis enregistrez.`);
 }
 /** Nettoyage à la saisie : masque les n° de carte complets, garde 4 chiffres. */
 function sanitizeValue(type, id, value) {
@@ -1887,12 +1971,14 @@ function sanitizeValue(type, id, value) {
 /* =============================================================================
    Interface
    ========================================================================== */
+const WEB_ICON = '<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>';
 function renderTabs() {
   const nav = $('#tabs'); nav.innerHTML = '';
-  for (const t of TYPES) {
-    const d = FORMS[t];
+  const tabs = allowedTypes().map(t => [t, FORMS[t].label, FORMS[t].sub, FORMS[t].icon]);
+  if (can('web')) tabs.push(['web', 'Formulaires en ligne', 'Demandes des clients', WEB_ICON]);
+  for (const [t, label, sub, icon] of tabs) {
     const b = el('button', { class: 'tab', role: 'tab', 'aria-selected': String(t === active), 'data-t': t, onclick: () => switchTab(t) });
-    b.innerHTML = `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d.icon}</svg></span><span><b>${esc(d.label)}</b><small>${esc(d.sub)}</small></span>`;
+    b.innerHTML = `<span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg></span><span><b>${esc(label)}</b><small>${esc(sub)}</small></span>`;
     nav.append(b);
   }
 }
@@ -1900,6 +1986,9 @@ function switchTab(t) {
   active = t;
   if (editing) { editing = false; $('#paper').classList.remove('editing'); $('#btnEdit').textContent = 'Modifier le texte'; }
   $$('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
+  const web = t === 'web';
+  $('main.layout').hidden = web; $('#webView').hidden = !web; $('#btnImport').hidden = web || !allowedTypes().length;
+  if (web) { renderWebView(); saveState(); return; }
   renderForm(); refresh(); saveState();
 }
 function fieldInput(type, f) {
@@ -2010,11 +2099,13 @@ function itemsEditor(type) {
 let refreshT;
 function setVal(type, id, val) {
   S[type].v[id] = val;
+  S[type].dirty = true;
   saveState();
   clearTimeout(refreshT); refreshT = setTimeout(() => refresh(), 120);
 }
 let last = null;
 function refresh() {
+  if (!FORMS[active]) return;
   const type = active, def = FORMS[type], st = S[type], v = st.v;
   // visibilité et obligation des champs
   const val = validate(type);
@@ -2025,7 +2116,10 @@ function refresh() {
     const msg = w.querySelector('.msg'), bad = val.bad[f.id];
     w.classList.toggle('bad', !!bad); msg.hidden = !bad; msg.textContent = bad || '';
   }
-  $('#refView').textContent = v.dossier || '—';
+  $('#refView').textContent = st.id || 'nouveau';
+  $('#dirtyTag').hidden = !st.dirty;
+  $('#webTag').hidden = !(st.meta && st.meta.origin === 'web');
+  $('#closedTag').hidden = !(st.meta && st.meta.closed);
   // contrôles
   const ul = $('#checks'); ul.innerHTML = '';
   if (val.missing.length) ul.append(el('li', { class: 'miss' }, el('span', {}, `À compléter (${val.missing.length}) : `, ...val.missing.flatMap((x, i) => [i ? ', ' : '', el('a', { onclick: () => focusField(x.id) }, x.label)]))));
@@ -2128,69 +2222,29 @@ async function buildEml(type) {
 }
 
 /* Paramètres */
-const SET_FIELDS = [
-  ['Entreprise (pied de page des fiches et signature)', [['societe', 'Raison sociale'], ['adresse', 'Adresse'], ['telephone', 'Téléphone'], ['emailGeneral', 'E-mail général']]],
-  ['Adresses de retour des fiches et des réponses', [['emailMonetique', 'SAV carte bancaire et remboursements'], ['emailSav', "Demandes d'intervention"], ['emailCommandes', 'Commandes']]],
-  ['Signature des e-mails', [['sigNom', 'Prénom et nom', 'Vide = signature d\'équipe'], ['sigFonction', 'Fonction'], ['sigService', 'Service'], ['sigTel', 'Téléphone direct', 'Vide = téléphone de l\'entreprise'], ['politesse', 'Formule de politesse', '', ['Cordialement', 'Bien cordialement', 'Sincères salutations']]]],
-  ['Délais et engagements écrits', [['delaiReclamation', 'Délai de réclamation (jours)', 'Remboursements'], ['delaiTraitement', 'Délai de réponse (jours ouvrés)', 'Remboursements'], ['delaiIntervention', "Délai d'intervention", 'ex. « sous 48 heures ouvrées » ; vide = « dans les meilleurs délais »'], ['delaiLivraison', 'Délai de livraison', 'ex. « sous 5 jours ouvrés » ; vide = date confirmée au cas par cas'], ['horairesTel', 'Horaires téléphoniques', 'ex. « du lundi au vendredi, de 9 h à 17 h »'], ['conservation', 'Conservation des données (mois)', 'Fiches SAV et remboursement']]],
-  ['Brouillon Outlook', [['expediteur', 'Expéditeur (« De : »)', 'ex. Monetique@d8.fr si vous avez accès à la boîte partagée ; vide = votre compte']]]
-];
-let draftLogo = null;
-function openSettings() {
-  const b = $('#setBody'); b.innerHTML = ''; draftLogo = C.logo;
-  for (const [title, fields] of SET_FIELDS) {
-    const sec = el('div', { class: 'set-sec' }, el('h4', {}, title)), g = el('div', { class: 'fgrid' });
-    for (const [k, label, hint, choices] of fields) {
-      const id = 's_' + k; let inp;
-      if (choices) { inp = el('select', { class: 'inp', id }); choices.forEach(c => inp.append(el('option', { value: c }, c))); }
-      else inp = el('input', { class: 'inp', id, type: /^(delaiRe|delaiTr|conservation)/.test(k) ? 'number' : 'text', min: 0 });
-      inp.value = C[k] ?? '';
-      g.append(el('div', { class: 'fld half' }, el('label', { for: id }, label), hint ? el('div', { class: 'hint' }, hint) : null, inp));
-    }
-    sec.append(g); b.append(sec);
-  }
-  const prev = el('img', { class: 'logo-prev', src: logoSrc(), alt: 'Logo' });
-  b.append(el('div', { class: 'set-sec' }, el('h4', {}, 'Logo (fiches PDF et en-tête)'), el('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap' }, prev,
-    el('button', { class: 'btn sm', type: 'button', onclick: () => $('#logoFile').click() }, 'Changer (PNG ou JPEG)'),
-    el('button', { class: 'btn sm ghost', type: 'button', onclick: () => { draftLogo = ''; prev.src = LOGO_D8; } }, 'Logo D8 d\'origine'))));
-  $('#logoFile').onchange = e => { const f = e.target.files[0]; if (!f) return; if (f.size > 400000) { toast('Logo trop lourd (400 Ko maximum).', true); return; } const r = new FileReader(); r.onload = () => { draftLogo = r.result; prev.src = r.result; }; r.readAsDataURL(f); e.target.value = ''; };
-  $('#dlgSettings').showModal();
-}
-function saveSettings() {
-  const n = {};
-  for (const [, fields] of SET_FIELDS) for (const [k] of fields) { const e = $('#s_' + k); n[k] = e.type === 'number' ? (e.value === '' ? DEFAULTS[k] : +e.value) : e.value.trim(); }
-  n.logo = draftLogo || '';
-  C = Object.assign({}, DEFAULTS, n);
-  if (!store.set('local', SETTINGS_KEY, C)) toast('Paramètres appliqués, mais non enregistrés (stockage du navigateur indisponible).', true); else toast('Paramètres enregistrés.');
-  $('#topLogo').src = logoSrc();
-  $('#dlgSettings').close(); refresh();
-}
-
 /* Initialisation */
-function init() {
+function bindGenerator() {
   if (typeof PDFLib === 'undefined') toast('Bibliothèque PDF absente : fichier incomplet, les fiches PDF ne peuvent pas être créées.', true);
-  $('#topLogo').src = logoSrc();
-  renderTabs(); renderForm(); refresh();
-  $('#btnReset').onclick = () => {
-    if (!confirm('Vider la saisie de cet onglet et commencer une nouvelle demande ?')) return;
-    S[active] = blankState(active); setEditing(false); renderForm(); refresh(); saveState();
-  };
   $('#mTo').addEventListener('input', e => { S[active].v.email = e.target.value; const f = $('#f_email'); if (f) f.value = e.target.value; saveState(); clearTimeout(refreshT); refreshT = setTimeout(refresh, 300); });
   $('#mSubject').addEventListener('input', e => { const st = S[active]; st.edited = Object.assign({}, st.edited, { subject: e.target.value }); last.subject = e.target.value; saveState(); $('#editedBar').hidden = false; });
   $('#btnRegen').onclick = () => { S[active].edited = null; saveState(); if (editing) setEditing(false); else refresh(); };
   $('#btnEdit').onclick = () => setEditing(!editing);
   $('#btnCopySubject').onclick = async () => toast(await copyText(last.subject) ? 'Objet copié.' : 'Copie impossible : sélectionnez l\'objet à la main.', false);
+  // avant chaque réponse, le dossier est enregistré (numéro attribué par le serveur, réponse inscrite à l'historique)
   $('#btnCopy').onclick = async () => {
+    if (!await ensureSaved('copie')) return;
     const ok = await copyRich(blocksToHtml(textToBlocks(last.text)), last.text);
-    toast(ok ? `E-mail copié (mis en forme) : collez-le dans votre message.${attachReminder(active)}` : 'Copie impossible : passez par « Modifier le texte ».', !ok);
+    toast(ok ? `E-mail copié (mis en forme) : collez-le dans votre message.${attachReminder(active)}` : 'Le dossier est enregistré ; cliquez de nouveau sur « Copier l\'e-mail » pour le copier.', !ok);
   };
-  $('#btnMailto').onclick = () => {
+  $('#btnMailto').onclick = async () => {
+    if (!await ensureSaved('mailto')) return;
     const url = `mailto:${encodeURIComponent(($('#mTo').value || '').trim())}?subject=${encodeURIComponent(last.subject)}&body=${encodeURIComponent(last.text)}`;
     if (url.length > 1900) toast('Message long : certaines messageries le tronquent. Préférez « Brouillon Outlook » ou « Copier ».' + attachReminder(active), true);
     else if (attachReminder(active)) toast(attachReminder(active).trim());
     location.href = url;
   };
   $('#btnEml').onclick = async () => {
+    if (!await ensureSaved('eml')) return;
     try { const b = await buildEml(active); download(b, `${S[active].v.dossier || 'reponse'}.eml`); toast('Brouillon téléchargé : ouvrez-le, il s\'affiche dans Outlook comme un nouveau message prêt à envoyer.'); }
     catch (e) { console.error(e); toast('Création du brouillon impossible : ' + e.message, true); }
   };
@@ -2209,12 +2263,6 @@ function init() {
   $('#btnPdfFilled').onclick = () => showPdf(true);
   $$('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
   $('#dlgPdf').addEventListener('close', () => { const fr = $('#pdfFrame'); fr.src = 'about:blank'; });
-  $('#btnSettings').onclick = openSettings;
-  $('#setSave').onclick = saveSettings;
-  $('#setExport').onclick = () => download(new Blob([JSON.stringify(Object.assign({}, C, { logo: C.logo ? C.logo : '' }), null, 2)], { type: 'application/json' }), 'parametres-reponses-sav-d8.json');
-  $('#setImport').onclick = () => $('#setFile').click();
-  $('#setFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { const o = JSON.parse(await f.text()); const n = {}; for (const k of Object.keys(DEFAULTS)) if (k in o) n[k] = o[k]; C = Object.assign({}, DEFAULTS, n); store.set('local', SETTINGS_KEY, C); $('#topLogo').src = logoSrc(); openSettings(); refresh(); toast('Paramètres importés.'); } catch (err) { toast('Fichier de paramètres illisible.', true); } };
-  $('#setReset').onclick = () => { if (!confirm('Revenir aux paramètres par défaut ?')) return; C = Object.assign({}, DEFAULTS); store.del('local', SETTINGS_KEY); $('#topLogo').src = logoSrc(); openSettings(); refresh(); };
   $('#btnImport').onclick = () => $('#fileImport').click();
   $('#fileImport').onchange = e => { importPdf(e.target.files[0]); e.target.value = ''; };
   let dragN = 0; const drop = $('#drop');
@@ -2223,9 +2271,1136 @@ function init() {
   addEventListener('dragleave', () => { if (--dragN <= 0) { dragN = 0; drop.classList.remove('on'); } });
   addEventListener('drop', e => { e.preventDefault(); dragN = 0; drop.classList.remove('on'); const f = e.dataTransfer?.files?.[0]; if (f) importPdf(f); });
 }
+</script>
+<script>
+/* ---------- QR code (mode octets, correction M), sans librairie : clé de la double authentification ---------- */
+const QR = (() => {
+  const ECC = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28];
+  const BLK = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49];
+  const rawModules = v => { let r = (16 * v + 128) * v + 64; if (v >= 2) { const n = Math.floor(v / 7) + 2; r -= (25 * n - 10) * n - 55; if (v >= 7) r -= 36; } return r; };
+  const dataCodewords = v => Math.floor(rawModules(v) / 8) - ECC[v] * BLK[v];
+  const mul = (x, y) => { let z = 0; for (let i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11D); z ^= ((y >>> i) & 1) * x; } return z & 0xFF; };
+  const divisor = deg => { const r = new Array(deg).fill(0); r[deg - 1] = 1; let root = 1;
+    for (let i = 0; i < deg; i++) { for (let j = 0; j < r.length; j++) { r[j] = mul(r[j], root); if (j + 1 < r.length) r[j] ^= r[j + 1]; } root = mul(root, 2); } return r; };
+  const remainder = (data, div) => { const r = div.map(() => 0); for (const b of data) { const f = b ^ r.shift(); r.push(0); div.forEach((c, i) => { r[i] ^= mul(c, f); }); } return r; };
+  const alignPos = v => { if (v === 1) return []; const n = Math.floor(v / 7) + 2, step = v === 32 ? 26 : Math.ceil((v * 4 + 4) / (n * 2 - 2)) * 2, r = [6];
+    for (let p = v * 4 + 10; r.length < n; p -= step) r.splice(1, 0, p); return r; };
+  function encode(text) {
+    const bytes = [...new TextEncoder().encode(text)];
+    let v = 1; for (; v <= 40; v++) if (4 + (v < 10 ? 8 : 16) + bytes.length * 8 <= dataCodewords(v) * 8) break;
+    if (v > 40) throw new Error('texte trop long');
+    const bits = []; const put = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+    put(4, 4); put(bytes.length, v < 10 ? 8 : 16); bytes.forEach(b => put(b, 8));
+    const cap = dataCodewords(v) * 8;
+    put(0, Math.min(4, cap - bits.length)); put(0, (8 - bits.length % 8) % 8);
+    for (let pad = 0xEC; bits.length < cap; pad ^= 0xEC ^ 0x11) put(pad, 8);
+    const data = []; for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(''), 2));
+    // blocs de correction d'erreurs puis entrelacement
+    const nb = BLK[v], el = ECC[v], raw = Math.floor(rawModules(v) / 8), nShort = nb - raw % nb, shortLen = Math.floor(raw / nb), div = divisor(el), blocks = [];
+    for (let i = 0, k = 0; i < nb; i++) { const d = data.slice(k, k + shortLen - el + (i < nShort ? 0 : 1)); k += d.length; const e = remainder(d, div); if (i < nShort) d.push(0); blocks.push(d.concat(e)); }
+    const cw = []; for (let i = 0; i < blocks[0].length; i++) blocks.forEach((b, j) => { if (i !== shortLen - el || j >= nShort) cw.push(b[i]); });
+    // matrice
+    const size = v * 4 + 17, M = Array.from({ length: size }, () => new Array(size).fill(false)), F = Array.from({ length: size }, () => new Array(size).fill(false));
+    const fn = (x, y, d) => { M[y][x] = d; F[y][x] = true; };
+    for (let i = 0; i < size; i++) { fn(6, i, i % 2 === 0); fn(i, 6, i % 2 === 0); }
+    const finder = (x, y) => { for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const d = Math.max(Math.abs(dx), Math.abs(dy)), xx = x + dx, yy = y + dy; if (xx >= 0 && xx < size && yy >= 0 && yy < size) fn(xx, yy, d !== 2 && d !== 4); } };
+    finder(3, 3); finder(size - 4, 3); finder(3, size - 4);
+    const ap = alignPos(v), na = ap.length;
+    for (let i = 0; i < na; i++) for (let j = 0; j < na; j++) {
+      if ((i === 0 && j === 0) || (i === 0 && j === na - 1) || (i === na - 1 && j === 0)) continue;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) fn(ap[i] + dx, ap[j] + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+    }
+    const format = mask => { const d = (0 << 3) | mask; let r = d; for (let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537);   // M = 00
+      const b = ((d << 10) | r) ^ 0x5412, g = i => ((b >>> i) & 1) === 1;
+      for (let i = 0; i <= 5; i++) fn(8, i, g(i));
+      fn(8, 7, g(6)); fn(8, 8, g(7)); fn(7, 8, g(8));
+      for (let i = 9; i < 15; i++) fn(14 - i, 8, g(i));
+      for (let i = 0; i < 8; i++) fn(size - 1 - i, 8, g(i));
+      for (let i = 8; i < 15; i++) fn(8, size - 15 + i, g(i));
+      fn(8, size - 8, true); };
+    format(0);
+    if (v >= 7) { let r = v; for (let i = 0; i < 12; i++) r = (r << 1) ^ ((r >>> 11) * 0x1F25); const b = (v << 12) | r;
+      for (let i = 0; i < 18; i++) { const d = ((b >>> i) & 1) === 1, a = size - 11 + i % 3, c = Math.floor(i / 3); fn(a, c, d); fn(c, a, d); } }
+    let bi = 0;
+    for (let right = size - 1; right >= 1; right -= 2) { if (right === 6) right = 5;
+      for (let vert = 0; vert < size; vert++) for (let j = 0; j < 2; j++) { const x = right - j, up = ((right + 1) & 2) === 0, y = up ? size - 1 - vert : vert;
+        if (!F[y][x] && bi < cw.length * 8) { M[y][x] = ((cw[bi >>> 3] >>> (7 - (bi & 7))) & 1) === 1; bi++; } } }
+    const maskFn = [(x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, x => x % 3 === 0, (x, y) => (x + y) % 3 === 0, (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0,
+      (x, y) => x * y % 2 + x * y % 3 === 0, (x, y) => (x * y % 2 + x * y % 3) % 2 === 0, (x, y) => ((x + y) % 2 + x * y % 3) % 2 === 0];
+    const apply = m => { for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (!F[y][x] && maskFn[m](x, y)) M[y][x] = !M[y][x]; };
+    const penalty = () => { let p = 0, dark = 0;
+      for (let a = 0; a < size; a++) for (const row of [true, false]) { let run = 1;
+        for (let b = 1; b < size; b++) { const c = row ? M[a][b] : M[b][a], pr = row ? M[a][b - 1] : M[b - 1][a]; if (c === pr) { run++; if (run === 5) p += 3; else if (run > 5) p++; } else run = 1; } }
+      for (let y = 0; y < size - 1; y++) for (let x = 0; x < size - 1; x++) { const c = M[y][x]; if (c === M[y][x + 1] && c === M[y + 1][x] && c === M[y + 1][x + 1]) p += 3; }
+      M.forEach(r => r.forEach(c => { if (c) dark++; }));
+      return p + Math.floor(Math.abs(dark * 20 - size * size * 10) / (size * size)) * 10; };
+    let best = 0, bestP = Infinity;
+    for (let m = 0; m < 8; m++) { apply(m); format(m); const p = penalty(); if (p < bestP) { bestP = p; best = m; } apply(m); }
+    apply(best); format(best);
+    return M;
+  }
+  /** QR code en SVG (marge de 4 modules) */
+  function svg(text, px = 220) {
+    const M = encode(text), n = M.length, q = 4, s = n + q * 2; let d = '';
+    M.forEach((row, y) => row.forEach((c, x) => { if (c) d += `M${x + q},${y + q}h1v1h-1z`; }));
+    return `<svg class="qr" viewBox="0 0 ${s} ${s}" width="${px}" height="${px}" shape-rendering="crispEdges" role="img" aria-label="QR code"><rect width="${s}" height="${s}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  }
+  return { encode, svg };
+})();
+
+/* =============================================================================
+   Mode serveur : API, connexion, droits, dossiers, formulaires en ligne
+   (l'administration est plus bas, dans « Administration »)
+   ========================================================================== */
+let ME = null;                       // personne connectée : réponse de api.php?a=me
+let BUILD = null;                    // empreinte de la page servie (nouvelle version installée ?)
+const can = p => !!ME && Array.isArray(ME.perms) && (ME.perms.includes(p) || ME.perms.includes('super'));
+const allowedTypes = () => TYPES.filter(t => can(t));
+const isAdmin = () => ['users', 'security', 'settings', 'super'].some(can);
+const initials = n => String(n || '?').split(/[\s.\-]+/).filter(Boolean).slice(0, 2).map(x => x[0].toUpperCase()).join('') || '?';
+const fdt = iso => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? String(iso) : d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+
+/* --- appels à api.php (même dossier) --- */
+async function api(a, body, q, opts = {}) {
+  const qs = q ? '&' + new URLSearchParams(q).toString() : '';
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), opts.ms || 30000);
+  try {
+    const init = { cache: 'no-store', credentials: 'same-origin', signal: ctl.signal };
+    if (body !== undefined && body !== null) Object.assign(init, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+    const r = await fetch('api.php?a=' + encodeURIComponent(a) + qs, init);
+    const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (e) { }
+    return { status: r.status, ok: r.ok && j !== null, body: j || {}, json: j !== null };
+  } catch (e) { return { status: 0, ok: false, body: { error: e.name === 'AbortError' ? 'Le serveur met trop de temps à répondre.' : 'Serveur injoignable : vérifiez la connexion au réseau.' }, json: false }; }
+  finally { clearTimeout(tm); }
+}
+/** appel avec gestion commune : session expirée (reconnexion puis nouvel essai), mot de passe super administrateur, erreurs affichées */
+async function call(a, body, q, opts = {}) {
+  let r = await api(a, body, q, opts);
+  if (r.status === 401 && ME) { if (await relogin()) r = await api(a, body, q, opts); }
+  if (r.status === 403 && r.body.superadmin) { if (await superAdmin(r.body.error)) r = await api(a, body, q, opts); else return null; }
+  if (!r.ok) { if (!opts.quiet) toast(r.body.error || `Erreur du serveur (${r.status}).`, true); return opts.raw ? r : null; }
+  return opts.raw ? r : r.body;
+}
+
+/* --- petites fenêtres, menus, confirmations --- */
+function modal({ title = '', body = '', foot = '', size = '', closable = true, onClose } = {}) {
+  const w = el('div', { class: 'mw' }), d = el('div', { class: 'md ' + size, role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
+  d.innerHTML = `<header><h3>${esc(title)}</h3>${closable ? '<button class="btn sm ghost" data-x aria-label="Fermer">✕</button>' : ''}</header><div class="mb"></div>${foot !== null ? '<footer></footer>' : ''}`;
+  const mb = d.querySelector('.mb'); if (typeof body === 'string') mb.innerHTML = body; else mb.append(body);
+  const ft = d.querySelector('footer'); if (ft) { if (typeof foot === 'string') ft.innerHTML = foot; else ft.append(foot); if (!ft.childNodes.length) ft.remove(); }
+  w.append(d); $('#modals').append(w);
+  let done = false;
+  const close = (v) => { if (done) return; done = true; w.remove(); onClose && onClose(v); };
+  if (closable) { d.querySelector('[data-x]').onclick = () => close(); w.addEventListener('mousedown', e => { if (e.target === w) close(); }); }
+  w._close = closable ? close : null;
+  pwEyes(d);
+  setTimeout(() => { const f = d.querySelector('[autofocus],input:not([type=hidden]):not([disabled]),select,textarea,button.primary'); if (f) f.focus(); }, 30);
+  return { el: d, body: mb, close };
+}
+addEventListener('keydown', e => { if (e.key === 'Escape') { const ws = $$('#modals .mw'); const top = ws[ws.length - 1]; if (top && top._close) { top._close(); e.preventDefault(); } else closePop(); } });
+function ask(msg, { title = 'Confirmer', ok = 'Confirmer', cancel = 'Annuler', danger = false } = {}) {
+  return new Promise(res => {
+    const m = modal({ title, size: 'sm', body: `<p style="margin:0">${msg}</p>`, foot: `<button class="btn" data-c>${esc(cancel)}</button><button class="btn ${danger ? 'danger' : 'primary'}" data-ok>${esc(ok)}</button>`, onClose: v => res(!!v) });
+    m.el.querySelector('[data-c]').onclick = () => m.close(false);
+    m.el.querySelector('[data-ok]').onclick = () => m.close(true);
+  });
+}
+let POP = null;
+function closePop() { if (POP) { POP.remove(); POP = null; } }
+function popMenu(anchor, items, head) {
+  closePop();
+  const p = el('div', { class: 'pop', role: 'menu' });
+  if (head) p.append(head);
+  for (const it of items.filter(Boolean)) {
+    const b = el('button', { class: 'pi' + (it.danger ? ' dgr' : ''), role: 'menuitem', type: 'button' }, it.label);
+    b.onclick = () => { closePop(); it.fn(); };
+    p.append(b);
+  }
+  document.body.append(p); POP = p;
+  const r = anchor.getBoundingClientRect(), w = p.offsetWidth;
+  p.style.top = Math.min(r.bottom + 6, innerHeight - p.offsetHeight - 8) + 'px';
+  p.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
+  setTimeout(() => addEventListener('mousedown', function h(e) { if (POP && !POP.contains(e.target)) { closePop(); removeEventListener('mousedown', h); } }), 0);
+}
+function banner(id, type, html) {
+  const b = $('#banner'); let x = b.querySelector(`[data-b="${id}"]`);
+  if (!html) { if (x) x.remove(); return; }
+  if (!x) { x = el('div', { class: 'bnr ' + type, 'data-b': id }); b.append(x); }
+  x.className = 'bnr ' + type; x.innerHTML = `<span>${html}</span>`;
+}
+function setSync(cls, txt) { const s = $('#sync'); s.className = 'sync ' + cls; s.lastChild.textContent = txt; }
+
+/* --- mots de passe : règles du serveur, œil pour afficher la saisie --- */
+let PWP = { min: 8, digit: true, special: true, upper: false };
+const setPolicy = p => { if (p && typeof p === 'object') PWP = Object.assign({}, PWP, p); };
+const PW_RULES = () => [[`${PWP.min} caractères minimum`, p => [...p].length >= PWP.min], PWP.digit && ['1 chiffre', p => /\d/.test(p)],
+  PWP.special && ['1 caractère spécial (! ? @ # % & * - _ …)', p => /[^\p{L}\p{N}]/u.test(p)], PWP.upper && ['1 majuscule', p => /\p{Lu}/u.test(p)]].filter(Boolean);
+const pwCheck = (p, login) => { const bad = PW_RULES().find(r => !r[1](p)); if (bad) return 'Mot de passe : ' + bad[0] + ' requis.'; const l = String(login || '').toLowerCase(); return l && (p.toLowerCase() === l || p.toLowerCase() === l.split('@')[0]) ? 'Le mot de passe doit être différent de l’identifiant.' : ''; };
+const pwRulesHTML = () => `<ul class="pw-rules" data-rules>${PW_RULES().map(r => `<li>${esc(r[0])}</li>`).join('')}</ul>`;
+function pwLive(root, sel) {
+  const i = root.querySelector(sel), ul = root.querySelector('[data-rules]'); if (!i || !ul) return;
+  i.addEventListener('input', () => [...ul.children].forEach((li, k) => li.classList.toggle('ok', PW_RULES()[k][1](i.value))));
+}
+const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+function pwEyes(root) {
+  for (const i of root.querySelectorAll('input[type=password]:not([data-eye])')) {
+    i.dataset.eye = '1';
+    const w = el('span', { class: 'pw-wrap' }); i.replaceWith(w); w.append(i);
+    const b = el('button', { type: 'button', class: 'pw-eye', 'aria-label': 'Afficher le mot de passe', title: 'Afficher le mot de passe' }); b.innerHTML = EYE;
+    b.onclick = () => { const show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.title = show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'; b.setAttribute('aria-label', b.title); i.focus(); };
+    w.append(b);
+  }
+}
+
+/* --- double authentification : codes de secours, mise en place --- */
+const otpKey = s => String(s || '').replace(/(.{4})/g, '$1 ').trim();
+function recoveryBlock(codes, login) {
+  const txt = `Codes de secours – double authentification de l'outil Service clients D8\r\nCompte : ${login || ''} · générés le ${new Date().toLocaleString('fr-FR')}\r\nChaque code ne sert qu'une fois.\r\n\r\n${codes.join('\r\n')}\r\n`;
+  const box = el('div', {});
+  box.innerHTML = `<div class="bnr2 warn"><span><b>Codes de secours</b> : chacun sert une seule fois si vous n’avez plus votre téléphone. Imprimez-les ou rangez-les en lieu sûr (pas sur le téléphone) : ils ne seront plus affichés.</span></div>
+    <div class="rec-codes">${codes.map(c => `<span>${esc(c)}</span>`).join('')}</div>
+    <div class="actions"><button class="btn sm" type="button" data-cp>Copier</button><button class="btn sm" type="button" data-dl>Télécharger (.txt)</button></div>`;
+  box.querySelector('[data-cp]').onclick = () => copyText(txt).then(ok => toast(ok ? 'Codes copiés.' : 'Copie impossible.', !ok));
+  box.querySelector('[data-dl]').onclick = () => download(new Blob([txt], { type: 'text/plain' }), 'codes-secours-service-clients.txt');
+  return box;
+}
+const mfaSetupHTML = (uri, secret) => `<ol style="margin:0 0 6px;padding-left:20px;font-size:13.5px">
+    <li>Installez <b>Microsoft Authenticator</b> ou <b>Google Authenticator</b> sur votre téléphone.</li>
+    <li>Dans l’application : <b>+</b> › « Autre compte » (ou « Scanner un code QR »), puis scannez :</li></ol>
+  ${QR.svg(uri, 196)}
+  <p class="muted" style="text-align:center;margin:4px 0 8px">Pas d’appareil photo ? Clé à saisir : <b class="mono">${esc(otpKey(secret))}</b><br><a href="${esc(uri)}">Ouvrir l’application</a> (sur le téléphone lui-même)</p>
+  <ol start="3" style="margin:0;padding-left:20px;font-size:13.5px"><li>Saisissez le code à 6 chiffres affiché par l’application :</li></ol>`;
+
+/* =============================================================================
+   Écran de connexion : connexion, double authentification, invitation,
+   mise en service, mot de passe oublié, lien de réinitialisation
+   ========================================================================== */
+function authScreen(info = {}) {
+  return new Promise(resolve => {
+    const A = $('#auth'); A.hidden = false;
+    const qp = new URLSearchParams(location.search);
+    let mode = info.expired ? 'login' : qp.get('reinit') ? 'reset' : info.bootstrap ? 'boot' : qp.get('invitation') ? 'invite' : 'login';
+    let mfa = null, err = '', note = '', tried = info.login || '';
+    setPolicy(info.policy);
+    const dropParams = () => { if (location.search) history.replaceState(null, '', location.pathname + location.hash); };
+    const finish = me => { A.hidden = true; A.innerHTML = ''; resolve(me); };
+    const after = async (r) => {           // réponse de login / signup / reset-password / mfa-verify
+      if (r.body.mfa) { mfa = r.body; mode = 'mfa'; err = ''; return draw(); }
+      if (r.ok && r.body.auth) {
+        dropParams();
+        if (r.body.recovery && r.body.recovery.length) { mode = 'codes'; mfa = { codes: r.body.recovery, me: r.body }; return draw(); }
+        if (r.body.usedRecovery) toast(`Code de secours utilisé : il vous en reste ${r.body.recoveryLeft}. Pensez à en générer de nouveaux (menu › Double authentification).`, r.body.recoveryLeft < 3);
+        return finish(r.body);
+      }
+      if (r.body.restart) { mode = 'login'; mfa = null; }
+      err = r.body.error || 'Serveur injoignable. Réessayez.';
+      if (r.body.restart || mode === 'login') draw(); else showErr(err);
+    };
+    // erreur affichée sans redessiner l'écran (les saisies sont gardées)
+    const showErr = t => { const b = A.querySelector('.bnr2.danger[role=alert]'); if (!b) return draw(); b.hidden = false; b.textContent = t; b.scrollIntoView({ block: 'nearest' }); };
+    const head = (sub) => `<div class="auth-head"><img src="${esc(logoSrc())}" alt="D8"><div><b>Service clients D8</b><small>${esc(sub || 'Réponses SAV · remboursements · commandes')}</small></div></div>`;
+    const errHTML = () => `<div class="bnr2 danger" ${err ? '' : 'hidden'} role="alert">${esc(err)}</div>${note ? `<div class="bnr2 info">${note}</div>` : ''}`;
+    const pw2 = (login) => `<div class="fld"><label for="au-p1">Nouveau mot de passe</label><input class="inp" id="au-p1" type="password" autocomplete="new-password" required>${pwRulesHTML()}</div>
+      <div class="fld"><label for="au-p2">Confirmation</label><input class="inp" id="au-p2" type="password" autocomplete="new-password" required></div>`;
+    const checkPw2 = (login) => { const a = $('#au-p1').value, b = $('#au-p2').value; return pwCheck(a, login) || (a !== b ? 'Les deux mots de passe ne correspondent pas.' : ''); };
+    async function draw() {
+      let html = '';
+      if (mode === 'login') {
+        html = `<div class="auth-box">${head(info.expired ? 'Session expirée : reconnectez-vous' : '')}
+          ${!info.expired ? `<div class="auth-tabs"><button type="button" aria-selected="true">Se connecter</button><button type="button" data-m="invite" aria-selected="false">J’ai une invitation</button></div>` : ''}
+          <div class="auth-body">${errHTML()}<form data-f="login" novalidate>
+            <div class="fld"><label for="au-l">Adresse e-mail</label><input class="inp" id="au-l" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" value="${esc(tried)}" ${info.expired ? 'readonly' : ''} placeholder="prenom.nom@d8.fr"></div>
+            <div class="fld"><label for="au-p">Mot de passe</label><input class="inp" id="au-p" type="password" autocomplete="current-password"></div>
+            <button class="btn primary" type="submit">Se connecter</button>
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:13px">
+              ${info.resetFor !== 'none' ? '<button type="button" class="linkbtn" data-m="forgot">Mot de passe oublié ?</button>' : '<span class="muted">Mot de passe oublié : demandez à un administrateur de réinitialiser votre accès.</span>'}
+              ${info.expired ? '<button type="button" class="linkbtn" data-other>Changer de compte</button>' : ''}</div>
+            ${!info.expired ? '<p class="muted" style="margin:0">Première connexion ? Ouvrez le lien d’invitation reçu par e-mail, ou choisissez « J’ai une invitation ».</p>' : ''}
+          </form></div>
+          <div class="auth-foot">La session se ferme à la fermeture du navigateur ou après une longue inactivité.${location.protocol === 'http:' && !/^(localhost|127\.)/.test(location.hostname) ? '<br>Connexion non chiffrée (http) : n’utilisez pas un mot de passe qui sert ailleurs.' : ''}</div></div>`;
+      } else if (mode === 'mfa') {
+        const enroll = mfa.mfa === 'enroll';
+        html = `<div class="auth-box ${enroll ? 'wide' : ''}">${head(enroll ? 'Mise en place de la double authentification' : 'Double authentification')}<div class="auth-body">${errHTML()}
+          ${enroll ? `<div class="bnr2 info"><span>Bonjour ${esc(mfa.name)} : la double authentification est <b>obligatoire</b> pour votre compte. Mise en place en 3 étapes (2 minutes).</span></div>${mfaSetupHTML(mfa.uri, mfa.secret)}`
+                   : `<p style="margin:0 0 8px">Ouvrez votre application d’authentification et saisissez le code à 6 chiffres affiché pour « Service clients D8 ».</p>`}
+          <form data-f="mfa" novalidate><input class="inp otp" id="au-o" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123 456" aria-label="Code">
+            <button class="btn primary" type="submit">${enroll ? 'Activer et me connecter' : 'Valider'}</button>
+            ${enroll ? '' : '<p class="muted" style="margin:0">Téléphone perdu ? Saisissez un de vos codes de secours (XXXX-XXXX), ou demandez à un administrateur de réinitialiser votre double authentification.</p>'}
+            <button type="button" class="linkbtn" data-m="login">Annuler</button></form></div></div>`;
+      } else if (mode === 'codes') {
+        html = `<div class="auth-box wide">${head('Double authentification activée')}<div class="auth-body"><div data-codes></div><div class="actions"><button class="btn primary" type="button" data-go>J’ai noté mes codes, continuer</button></div></div></div>`;
+      } else if (mode === 'forgot') {
+        html = `<div class="auth-box">${head('Mot de passe oublié ou compte bloqué')}<div class="auth-body">${errHTML()}
+          <form data-f="forgot" novalidate><p class="muted" style="margin:0">Un lien pour choisir un nouveau mot de passe est envoyé à votre adresse e-mail. Il débloque aussi le compte.</p>
+            <div class="fld"><label for="au-l">Adresse e-mail</label><input class="inp" id="au-l" type="email" value="${esc(tried)}" autocomplete="username"></div>
+            <button class="btn primary" type="submit">Recevoir le lien par e-mail</button><button type="button" class="linkbtn" data-m="login">Revenir à la connexion</button></form></div></div>`;
+      } else if (mode === 'invite' || mode === 'reset') {
+        const isInv = mode === 'invite';
+        const key = isInv ? (qp.get('invitation') || '') : (qp.get('reinit') || '');
+        html = `<div class="auth-box">${head(isInv ? 'Création de votre accès' : 'Nouveau mot de passe')}<div class="auth-body">${errHTML()}
+          <form data-f="${mode}" novalidate>
+            ${isInv ? `<div class="fld"><label for="au-c">Code d’invitation</label><input class="inp mono" id="au-c" value="${esc(key)}" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters"></div>` : ''}
+            <div data-who class="muted">Vérification…</div>
+            <div data-pw hidden>${pw2()}<button class="btn primary" type="submit">${isInv ? 'Créer mon accès' : 'Enregistrer le nouveau mot de passe'}</button></div>
+            <button type="button" class="linkbtn" data-m="login">Revenir à la connexion</button></form></div></div>`;
+      } else if (mode === 'boot') {
+        html = `<div class="auth-box wide">${head('Mise en service')}<div class="auth-body">${errHTML()}<div data-boot class="muted">Chargement…</div></div></div>`;
+      }
+      A.innerHTML = html;
+      pwEyes(A);
+      A.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mode = b.dataset.m; err = ''; note = ''; if (mode === 'login' && mfa) { api('logout', {}); mfa = null; } draw(); });
+      const other = A.querySelector('[data-other]'); if (other) other.onclick = async () => { await api('logout', {}); location.reload(); };
+      const f = A.querySelector('form');
+      if (mode === 'login') { (info.expired ? $('#au-p') : (tried ? $('#au-p') : $('#au-l'))).focus(); }
+      if (mode === 'mfa') $('#au-o').focus();
+      if (mode === 'codes') { A.querySelector('[data-codes]').append(recoveryBlock(mfa.codes, mfa.me.login)); A.querySelector('[data-go]').onclick = () => finish(mfa.me); return; }
+      if (mode === 'invite' || mode === 'reset') {
+        const isInv = mode === 'invite', who = A.querySelector('[data-who]'), pwb = A.querySelector('[data-pw]');
+        let target = null;
+        const check = async () => {
+          const key = isInv ? $('#au-c').value.trim() : (qp.get('reinit') || '');
+          if (isInv && key.replace(/[^A-Za-z0-9]/g, '').length !== 16) { who.textContent = 'Saisissez le code d’invitation (16 caractères) reçu par e-mail.'; pwb.hidden = true; return; }
+          const r = await api(isInv ? 'invite-check' : 'reset-check', null, isInv ? { code: key } : { token: key.toLowerCase() });
+          if (!r.ok) { who.innerHTML = `<div class="bnr2 danger">${esc(r.body.error || 'Serveur injoignable.')}</div>${isInv ? '' : '<button type="button" class="btn sm" data-m2="forgot">Refaire une demande</button>'}`; pwb.hidden = true;
+            const b2 = who.querySelector('[data-m2]'); if (b2) b2.onclick = () => { mode = 'forgot'; draw(); }; return; }
+          target = r.body; setPolicy(r.body.policy);
+          who.innerHTML = `<div class="bnr2 info"><span>Accès de <b>${esc(r.body.name)}</b> · identifiant <b>${esc(r.body.login)}</b>${r.body.expires ? `<br>Valable jusqu’au ${esc(fdt(r.body.expires))}` : ''}</span></div>`;
+          pwb.hidden = false; pwb.querySelector('[data-rules]').outerHTML = pwRulesHTML(); pwLive(A, '#au-p1'); $('#au-p1').focus();
+        };
+        if (isInv) $('#au-c').addEventListener('input', () => { if ($('#au-c').value.replace(/[^A-Za-z0-9]/g, '').length === 16) check(); });
+        check();
+        f.onsubmit = async e => {
+          e.preventDefault(); if (!target) return;
+          const bad = checkPw2(target.login); if (bad) return showErr(bad);
+          const r = isInv ? await api('signup', { invite: $('#au-c').value.trim(), password: $('#au-p1').value }) : await api('reset-password', { token: (qp.get('reinit') || '').toLowerCase(), password: $('#au-p1').value });
+          after(r);
+        };
+        return;
+      }
+      if (mode === 'boot') { drawBoot(A.querySelector('[data-boot]')); return; }
+      if (!f) return;
+      f.onsubmit = async e => {
+        e.preventDefault();
+        const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
+        try {
+          if (mode === 'login') {
+            const login = $('#au-l').value.trim().toLowerCase(), password = $('#au-p').value;
+            if (!login || !password) { err = 'Renseignez l’adresse e-mail et le mot de passe.'; return draw(); }
+            tried = login;
+            after(await api('login', { login, password }));
+          } else if (mode === 'mfa') {
+            const code = $('#au-o').value.replace(/[\s-]/g, '');
+            if (!code) { err = 'Saisissez le code.'; return draw(); }
+            after(await api('mfa-verify', { code }));
+          } else if (mode === 'forgot') {
+            const login = $('#au-l').value.trim().toLowerCase();
+            if (!login) { err = 'Saisissez votre adresse e-mail.'; return draw(); }
+            const r = await api('forgot', { login }, null, { ms: 20000 });
+            err = r.ok ? '' : (r.body.error || 'Serveur injoignable.'); note = r.ok ? esc(r.body.message) : ''; mode = r.ok ? 'login' : 'forgot'; tried = login; draw();
+          }
+        } finally { btn.disabled = false; }
+      };
+    }
+    async function drawBoot(box) {
+      const r = await api('bootstrap-info');
+      if (!r.ok) { box.innerHTML = `<div class="bnr2 danger">${esc(r.body.error || 'Serveur injoignable.')}</div>`; return; }
+      const b = r.body; setPolicy(b.policy);
+      if (!b.bootstrap) { mode = 'login'; return draw(); }
+      if (!b.saDefined) {
+        if (!b.local) { box.innerHTML = `<div class="bnr2 warn"><span>Le mot de passe super administrateur n’est pas encore défini. Lancez <b>installer-service-clients.ps1</b> sur le serveur, ou ouvrez cette page <b>depuis le serveur lui-même</b> (http://localhost/service_clients/).</span></div>`; return; }
+        box.innerHTML = `<p style="margin:0 0 10px">Première ouverture : choisissez le <b>mot de passe super administrateur</b>. Il sert à créer le premier accès, à restaurer une sauvegarde et aux opérations sensibles. Notez-le en lieu sûr (12 caractères minimum).</p>
+          <form novalidate><div class="fld"><label for="sa1">Mot de passe super administrateur</label><input class="inp" id="sa1" type="password" autocomplete="new-password"></div>
+          <div class="fld"><label for="sa2">Confirmation</label><input class="inp" id="sa2" type="password" autocomplete="new-password"></div>
+          <button class="btn primary" type="submit">Définir</button></form>`;
+        pwEyes(box);
+        box.querySelector('form').onsubmit = async e => {
+          e.preventDefault(); const a = $('#sa1').value, c = $('#sa2').value;
+          if (a.length < 12) return showErr('12 caractères minimum.');
+          if (a !== c) return showErr('Les deux saisies diffèrent.');
+          const x = await api('sa-init', { next: a }); if (!x.ok) return showErr(x.body.error || 'Serveur injoignable.');
+          toast('Mot de passe super administrateur défini.'); err = ''; draw();
+        };
+        return;
+      }
+      box.classList.remove('muted');
+      box.innerHTML = `<p style="margin:0 0 10px">Aucun accès n’existe encore. Le premier super administrateur crée le sien avec le mot de passe super administrateur, puis invite les autres personnes.</p>
+        <form novalidate><div class="fld"><label for="bt-u">Vous êtes</label><select class="inp" id="bt-u">${b.supers.map(u => `<option value="${esc(u.id)}" data-l="${esc(u.login)}">${esc(u.name)} – ${esc(u.login)}</option>`).join('')}</select></div>
+        <div class="fld"><label for="bt-sa">Mot de passe super administrateur</label><input class="inp" id="bt-sa" type="password" autocomplete="off"></div>
+        ${pw2()}<button class="btn primary" type="submit">Créer mon accès</button></form>`;
+      pwEyes(box); pwLive(box, '#au-p1');
+      box.querySelector('form').onsubmit = async e => {
+        e.preventDefault();
+        const opt = $('#bt-u').selectedOptions[0];
+        const bad = !$('#bt-sa').value ? 'Saisissez le mot de passe super administrateur.' : checkPw2(opt && opt.dataset.l); if (bad) return showErr(bad);
+        after(await api('signup', { sa: $('#bt-sa').value, userId: $('#bt-u').value, password: $('#au-p1').value }));
+      };
+    }
+    draw();
+  });
+}
+let RELOGIN = null;
+/** session expirée en cours d'utilisation : on se reconnecte sans perdre la saisie */
+function relogin() {
+  if (RELOGIN) return RELOGIN;
+  setSync('warn', 'Session expirée');
+  RELOGIN = authScreen({ expired: true, login: ME && ME.login, policy: PWP }).then(me => {
+    RELOGIN = null;
+    if (ME && me.userId !== ME.userId) { location.reload(); return false; }
+    setMe(me); setSync('ok', 'Connecté'); return true;
+  });
+  return RELOGIN;
+}
+function setMe(me) {
+  ME = me; setPolicy(me.policy);
+  if (!BUILD) BUILD = me.build;
+  $('#av').textContent = initials(me.name); $('#whoName').textContent = me.name;
+  $('#btnAdmin').hidden = !isAdmin();
+  maintenanceBanner(me.maintenance);
+}
+function maintenanceBanner(on) { banner('maint', 'warn', on ? 'Mode maintenance : les enregistrements sont suspendus (sauf administrateurs).' : ''); }
+
+/* --- menu personnel : signature, mot de passe, double authentification, déconnexion --- */
+function whoMenu() {
+  const head = el('div', { class: 'ph' }); head.innerHTML = `<b>${esc(ME.name)}</b><small>${esc(ME.login)}<br>${esc(ME.role)}</small>`;
+  popMenu($('#btnWho'), [
+    { label: 'Ma signature', fn: profileDialog },
+    { label: 'Changer mon mot de passe', fn: () => changePassword(false) },
+    { label: 'Double authentification', fn: mfaDialog },
+    { label: 'Se déconnecter', danger: true, fn: logout }
+  ], head);
+}
+function profileDialog() {
+  const m = modal({ title: 'Ma signature', size: 'sm', body: `<p class="muted" style="margin:0 0 10px">Ajoutée sous votre nom en bas des e-mails de réponse. Votre nom est géré par un administrateur.</p>
+    <div class="fld"><label>Nom</label><input class="inp" value="${esc(ME.name)}" disabled></div>
+    <div class="fld"><label for="pf-f">Fonction</label><input class="inp" id="pf-f" maxlength="80" value="${esc(ME.sigFonction || '')}" placeholder="ex. Technicien informatique"></div>
+    <div class="fld"><label for="pf-t">Téléphone direct</label><input class="inp" id="pf-t" maxlength="40" value="${esc(ME.sigTel || '')}" placeholder="Vide = ${esc(C.telephone)}"></div>`,
+    foot: '<button class="btn" data-c>Annuler</button><button class="btn primary" data-ok>Enregistrer</button>' });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const b = { sigFonction: $('#pf-f').value.trim(), sigTel: $('#pf-t').value.trim() };
+    if (await call('profile-set', b)) { Object.assign(ME, b); m.close(); toast('Signature enregistrée.'); refresh(); }
+  };
+}
+function changePassword(forced) {
+  const m = modal({ title: forced ? 'Nouveau mot de passe obligatoire' : 'Changer mon mot de passe', size: 'sm', closable: !forced,
+    body: `${forced ? '<div class="bnr2 warn"><span>Votre mot de passe ne respecte plus les règles de sécurité. Choisissez-en un nouveau pour continuer.</span></div>' : ''}
+      <form id="pwf" novalidate><input type="hidden" autocomplete="username" value="${esc(ME.login)}">
+      <div class="fld"><label for="pw-c">Mot de passe actuel</label><input class="inp" id="pw-c" type="password" autocomplete="current-password"></div>
+      <div class="fld"><label for="pw-n">Nouveau mot de passe</label><input class="inp" id="pw-n" type="password" autocomplete="new-password">${pwRulesHTML()}</div>
+      <div class="fld"><label for="pw-k">Confirmation</label><input class="inp" id="pw-k" type="password" autocomplete="new-password"></div>
+      <p class="muted" style="margin:6px 0 0">Vos autres sessions ouvertes (autres postes) seront déconnectées.</p></form>`,
+    foot: `${forced ? '<button class="btn" data-lo>Se déconnecter</button>' : '<button class="btn" data-c>Annuler</button>'}<button class="btn primary" data-ok>Enregistrer</button>` });
+  pwLive(m.el, '#pw-n');
+  const c = m.el.querySelector('[data-c]'); if (c) c.onclick = () => m.close();
+  const lo = m.el.querySelector('[data-lo]'); if (lo) lo.onclick = logout;
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const cur = $('#pw-c').value, nx = $('#pw-n').value;
+    if (!cur || !nx) return toast('Renseignez les deux mots de passe.', true);
+    const bad = pwCheck(nx, ME.login) || (nx !== $('#pw-k').value ? 'Les deux nouveaux mots de passe ne correspondent pas.' : ''); if (bad) return toast(bad, true);
+    if (await call('password', { current: cur, next: nx })) { ME.mustChange = false; m.close(); toast('Mot de passe changé.'); }
+  };
+}
+async function mfaDialog() {
+  const s = await call('mfa-status'); if (!s) return;
+  const m = modal({ title: 'Double authentification', body: '<div data-b></div>', foot: '<button class="btn" data-c>Fermer</button>' });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  const b = m.el.querySelector('[data-b]');
+  const view = () => {
+    if (s.on) {
+      b.innerHTML = `<div class="bnr2 ok"><span>Active depuis le ${esc(fdt(s.since))} · ${s.recoveryLeft} code(s) de secours restant(s).</span></div>
+        <p>À chaque connexion, le code de votre application est demandé après le mot de passe.</p>
+        <div class="fld"><label for="mf-p">Mot de passe (pour les actions ci-dessous)</label><input class="inp" id="mf-p" type="password" autocomplete="current-password"></div>
+        <div class="actions"><button class="btn sm" data-rc>Nouveaux codes de secours</button>${s.required ? '<span class="muted">Obligatoire pour votre rôle : elle ne peut pas être désactivée.</span>' : '<button class="btn sm danger" data-off>Désactiver</button>'}</div>`;
+      pwEyes(b);
+      b.querySelector('[data-rc]').onclick = async () => { const r = await call('mfa-recovery', { password: $('#mf-p').value }); if (r) { b.innerHTML = ''; b.append(recoveryBlock(r.recovery, ME.login)); s.recoveryLeft = r.recovery.length; } };
+      const off = b.querySelector('[data-off]'); if (off) off.onclick = async () => { if (await call('mfa-disable', { password: $('#mf-p').value })) { s.on = false; toast('Double authentification désactivée.'); view(); } };
+    } else {
+      b.innerHTML = `<p>Protégez votre compte : en plus du mot de passe, un code à 6 chiffres affiché par une application de votre téléphone sera demandé à chaque connexion.</p><button class="btn primary" data-on>Activer la double authentification</button>`;
+      b.querySelector('[data-on]').onclick = async () => {
+        const r = await call('mfa-setup', {}); if (!r) return;
+        b.innerHTML = mfaSetupHTML(r.uri, r.secret) + '<div class="actions"><input class="inp otp" id="mf-o" inputmode="numeric" maxlength="7" placeholder="123 456" style="max-width:200px"><button class="btn primary" data-v>Activer</button></div>';
+        $('#mf-o').focus();
+        b.querySelector('[data-v]').onclick = async () => { const x = await call('mfa-enable', { code: $('#mf-o').value.replace(/\s/g, '') }); if (x) { s.on = true; b.innerHTML = ''; b.append(recoveryBlock(x.recovery, ME.login)); toast('Double authentification activée.'); } };
+      };
+    }
+  };
+  view();
+}
+/** confirmation par le mot de passe super administrateur (valable 5 minutes sur le serveur) */
+function superAdmin(msg, change = false) {
+  return new Promise(res => {
+    const m = modal({ title: change ? 'Changer le mot de passe super administrateur' : 'Mot de passe super administrateur', size: 'sm', onClose: v => res(!!v),
+      body: `<p style="margin:0 0 10px">${esc(msg || 'Cette opération exige le mot de passe super administrateur.')}</p><form novalidate><input type="hidden" autocomplete="username" value="superadmin">
+        <div class="fld"><label for="sa-p">Mot de passe super administrateur${change ? ' actuel' : ''}</label><input class="inp" id="sa-p" type="password" autocomplete="off"></div>
+        ${change ? '<div class="fld"><label for="sa-n">Nouveau (12 caractères minimum)</label><input class="inp" id="sa-n" type="password" autocomplete="new-password"></div><div class="fld"><label for="sa-k">Confirmation</label><input class="inp" id="sa-k" type="password" autocomplete="new-password"></div>' : ''}
+        <div class="bnr2 danger" data-e hidden></div></form>`,
+      foot: '<button class="btn" data-c>Annuler</button><button class="btn primary" data-ok>Confirmer</button>' });
+    const e = m.el.querySelector('[data-e]'), fail = t => { e.hidden = false; e.textContent = t; };
+    m.el.querySelector('[data-c]').onclick = () => m.close(false);
+    const go = async () => {
+      const p = $('#sa-p').value; if (!p) return fail('Saisissez le mot de passe.');
+      let body = { password: p };
+      if (change) { const n = $('#sa-n').value; if (n.length < 12) return fail('Le nouveau mot de passe doit faire au moins 12 caractères.'); if (n !== $('#sa-k').value) return fail('Les deux nouveaux mots de passe ne correspondent pas.'); body.next = n; }
+      const r = await api(change ? 'sa-change' : 'sa-check', body);
+      if (!r.ok) return fail(r.body.error || 'Serveur injoignable.');
+      m.close(true);
+    };
+    m.el.querySelector('[data-ok]').onclick = go;
+    m.el.querySelector('form').onsubmit = ev => { ev.preventDefault(); go(); };
+  });
+}
+async function logout() {
+  if (TYPES.some(t => S[t] && S[t].dirty) && !await ask('Des saisies ne sont pas enregistrées : elles seront perdues. Se déconnecter quand même ?', { ok: 'Se déconnecter', danger: true })) return;
+  await api('logout', {});
+  store.del('session', STATE_KEY);
+  location.href = location.pathname;
+}
+
+/* =============================================================================
+   Dossiers enregistrés sur le serveur
+   ========================================================================== */
+const dossierMeta = d => ({ origin: d.origin || '', closed: !!d.closed, history: d.history || [], lastMail: d.lastMail || null, web: d.web || null,
+  createdAt: d.createdAt, createdBy: d.createdBy, updatedAt: d.updatedAt, updatedBy: d.updatedBy, lastScen: d.lastScen || '' });
+function applyDossier(type, d) {
+  const st = S[type];
+  st.id = d.id; st.rev = d.rev; st.meta = dossierMeta(d); st.dirty = false;
+  st.v = Object.assign({}, d.v);
+  if (type === 'cmd' && !(st.v.items && st.v.items.length)) st.v.items = [blankItem()];
+  // réponse modifiée à la main avant l'attribution du numéro : le repère prend le numéro
+  if (st.edited) for (const k of ['subject', 'body']) if (typeof st.edited[k] === 'string') st.edited[k] = st.edited[k].split(REF_PH).join(d.id);
+}
+/** enregistre le dossier de l'onglet ; event : réponse envoyée (inscrite à l'historique) */
+async function saveDossier(event, extra = {}) {
+  const type = active, st = S[type]; if (!FORMS[type]) return null;
+  const body = Object.assign({ id: st.id || '', rev: st.rev, type, v: st.v, event: event || null, origin: st.imported ? 'fiche PDF importée (' + st.imported.name + ')' : '' }, extra);
+  setSync('', 'Enregistrement…');
+  const r = await call('dossier-save', body, null, { raw: true, quiet: true });
+  setSync('', 'Connecté');
+  if (!r) return null;
+  if (r.status === 409 && r.body.conflict) {
+    const d = r.body.dossier;
+    const take = await ask(`Ce dossier a été modifié par <b>${esc(d.updatedBy || '?')}</b> le ${esc(fdt(d.updatedAt))} pendant que vous le complétiez.<br><br>
+      <b>Charger sa version</b> remplace votre saisie. <b>Garder ma saisie</b> l’enregistrera par-dessus la sienne au prochain enregistrement.`, { title: 'Modification simultanée', ok: 'Charger sa version', cancel: 'Garder ma saisie' });
+    if (take) { applyDossier(type, d); st.imported = null; renderForm(); refresh(); saveState(); toast('Version du serveur chargée.'); }
+    else { st.rev = d.rev; st.meta = dossierMeta(d); toast('Votre saisie est gardée : enregistrez de nouveau pour remplacer sa version.'); }
+    return null;
+  }
+  if (!r.ok) { toast(r.body.error || `Enregistrement impossible (${r.status}).`, true); return null; }
+  const d = r.body.dossier, isNew = !st.id;
+  applyDossier(type, d); st.imported = null;
+  if (event && event.ev === 'reply') st.lastReply = replyKey();
+  renderForm(); refresh(); saveState();
+  if (isNew) toast(`Dossier ${d.id} créé.`);
+  return d;
+}
+const replyKey = () => last ? [active, S[active].id, last.scen, last.subject, last.text].join('¤') : '';
+/** avant une réponse : enregistre le dossier et inscrit la réponse à l'historique (une seule fois par réponse identique) */
+async function ensureSaved(via) {
+  const st = S[active]; if (!FORMS[active] || !last) return false;
+  if (!blank($('#mTo').value) && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test($('#mTo').value.trim())) { toast('Adresse du destinataire invalide.', true); return false; }
+  if (!st.dirty && st.id && st.lastReply === replyKey()) return true;
+  const d = await saveDossier({ ev: 'reply', scen: last.scen, via, subject: last.subject, text: last.text, to: $('#mTo').value.trim() });
+  if (!d) return false;
+  st.lastReply = replyKey();
+  return true;
+}
+async function openDossier(id) {
+  const r = await call('dossier-get', null, { id }); if (!r) return;
+  const d = r.dossier;
+  if (S[d.type].dirty && S[d.type].id !== d.id && !await ask(`La saisie en cours de l'onglet « ${esc(FORMS[d.type].label)} » n'est pas enregistrée : elle sera perdue. Ouvrir quand même le dossier ${esc(d.id)} ?`, { ok: 'Ouvrir', danger: true })) return;
+  S[d.type] = blankState(d.type); applyDossier(d.type, d);
+  switchTab(d.type);
+  toast(`Dossier ${d.id} ouvert.`);
+}
+const SCEN_LABEL = (type, v) => ((FORMS[type] || {}).scenarios || []).find(s => s.v === v)?.l || v || '';
+async function dossierList() {
+  const types = allowedTypes(); if (!types.length) return;
+  const m = modal({ title: 'Dossiers', size: 'xl', foot: null, body: `<div class="toolbar">
+      <select class="inp" id="dl-t" style="max-width:220px"><option value="">Tous les types autorisés</option>${types.map(t => `<option value="${t}" ${t === active ? 'selected' : ''}>${esc(FORMS[t].label)}</option>`).join('')}</select>
+      <select class="inp" id="dl-s" style="max-width:160px"><option value="open">Ouverts</option><option value="closed">Clôturés</option><option value="all">Tous</option></select>
+      <input class="inp" id="dl-q" placeholder="Rechercher : n°, client, site, e-mail, matricule">
+      ${can('export') ? '<button class="btn sm" id="dl-x">Exporter (CSV)</button>' : ''}</div>
+    <div class="muted" id="dl-n" style="margin-bottom:6px"></div><div class="tbl-wrap" style="max-height:calc(100vh - 220px)"><table class="tbl"><thead><tr><th>N°</th><th>Type</th><th>Client</th><th>Site / distributeur</th><th>Dernière réponse</th><th>Modifié</th><th></th></tr></thead><tbody id="dl-b"></tbody></table></div>` });
+  let rows = [];
+  const load = async () => {
+    const r = await call('dossiers', null, { type: $('#dl-t').value, status: $('#dl-s').value, q: $('#dl-q').value.trim() }); if (!r) return;
+    rows = r.dossiers;
+    $('#dl-n').textContent = `${r.total} dossier${r.total > 1 ? 's' : ''}${r.total > rows.length ? ` (${rows.length} affichés)` : ''}`;
+    const tb = $('#dl-b'); tb.innerHTML = '';
+    if (!rows.length) tb.innerHTML = '<tr><td colspan="7" class="muted">Aucun dossier.</td></tr>';
+    for (const d of rows) {
+      const tr = el('tr', { class: 'click' });
+      tr.innerHTML = `<td class="mono">${esc(d.id)}</td><td>${esc(FORMS[d.type].label)}${d.origin === 'web' ? ' <span class="tag info">en ligne</span>' : ''}${d.closed ? ' <span class="tag">clôturé</span>' : ''}</td>
+        <td>${esc(d.client || '—')}<br><small class="muted">${esc(d.email)}</small></td><td>${esc(d.site || '')}${d.matricule ? `<br><small class="muted">n° ${esc(d.matricule)}</small>` : ''}</td>
+        <td>${d.lastScen ? esc(SCEN_LABEL(d.type, d.lastScen)) + `<br><small class="muted">${esc(fdt(d.lastAt))}</small>` : '<span class="muted">aucune</span>'}</td>
+        <td>${esc(fdt(d.updatedAt))}<br><small class="muted">${esc(d.updatedBy)}</small></td><td><button class="ibtn">Ouvrir</button></td>`;
+      tr.onclick = () => { m.close(); openDossier(d.id); };
+      tb.append(tr);
+    }
+  };
+  let t; $('#dl-q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(load, 300); });
+  $('#dl-t').onchange = load; $('#dl-s').onchange = load;
+  const x = $('#dl-x'); if (x) x.onclick = () => {
+    const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const csv = ['N°;Type;Origine;Client;E-mail;Site;Matricule;Dernière réponse;Date de la réponse;Clôturé;Créé le;Créé par;Modifié le;Modifié par',
+      ...rows.map(d => [d.id, FORMS[d.type].label, d.origin === 'web' ? 'formulaire en ligne' : 'outil', d.client, d.email, d.site, d.matricule, SCEN_LABEL(d.type, d.lastScen), fdt(d.lastAt), d.closed ? 'oui' : 'non', fdt(d.createdAt), d.createdBy, fdt(d.updatedAt), d.updatedBy].map(q).join(';'))].join('\r\n');
+    download(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), 'dossiers-service-clients.csv');
+  };
+  load();
+}
+const HIST_EV = { create: 'Création', save: 'Enregistrement', reply: 'Réponse', import: 'Fiche PDF importée', close: 'Clôture', reopen: 'Réouverture', web: 'Formulaire en ligne' };
+const VIA = { copie: 'copiée', eml: 'brouillon Outlook', mailto: 'messagerie' };
+function historyDialog() {
+  const st = S[active]; if (!st.id) return toast('Ce dossier n’est pas encore enregistré.', true);
+  const h = (st.meta && st.meta.history) || [];
+  const lm = st.meta && st.meta.lastMail;
+  const m = modal({ title: `Historique · ${st.id}`, size: 'lg', foot: '<button class="btn" data-c>Fermer</button>', body: `
+    <p class="muted" style="margin:0 0 8px">Créé le ${esc(fdt(st.meta.createdAt))} par ${esc(st.meta.createdBy || '?')} · modifié le ${esc(fdt(st.meta.updatedAt))} par ${esc(st.meta.updatedBy || '?')}</p>
+    <div class="tbl-wrap" style="max-height:300px"><table class="tbl"><thead><tr><th>Date</th><th>Par</th><th>Événement</th><th>Détail</th></tr></thead><tbody>
+    ${h.slice().reverse().map(x => `<tr><td>${esc(fdt(x.t))}</td><td>${esc(x.by)}</td><td>${esc(HIST_EV[x.ev] || x.ev)}${x.scen ? ' : ' + esc(SCEN_LABEL(active, x.scen)) : ''}${x.via ? ` <small class="muted">(${esc(VIA[x.via] || x.via)})</small>` : ''}</td><td>${esc(x.info || '')}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${lm ? `<h4 style="margin:14px 0 6px">Dernière réponse (${esc(SCEN_LABEL(active, lm.scen))}, ${esc(fdt(lm.at))}, ${esc(lm.by)})</h4><div class="muted">À : ${esc(lm.to || '—')} · Objet : ${esc(lm.subject)}</div><div class="paper" style="margin-top:6px">${blocksToHtml(textToBlocks(lm.text || ''))}</div>` : ''}` });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+}
+async function toggleClosed() {
+  const st = S[active]; if (!st.id) return toast('Enregistrez d’abord le dossier.', true);
+  const closed = !(st.meta && st.meta.closed);
+  if (await saveDossier(null, { closed })) toast(closed ? 'Dossier clôturé.' : 'Dossier rouvert.');
+}
+async function deleteDossier() {
+  const st = S[active]; if (!st.id) return;
+  if (!await ask(`Supprimer définitivement le dossier <b>${esc(st.id)}</b> ? Son historique est perdu (la suppression est inscrite au journal).`, { ok: 'Supprimer', danger: true })) return;
+  if (await call('dossier-delete', { id: st.id })) { S[active] = blankState(active); renderForm(); refresh(); saveState(); toast('Dossier supprimé.'); }
+}
+async function newRequest() {
+  if (S[active].dirty && !await ask('La saisie en cours n’est pas enregistrée : elle sera perdue. Commencer une nouvelle demande ?', { ok: 'Nouvelle demande', danger: true })) return;
+  S[active] = blankState(active); setEditing(false); renderForm(); refresh(); saveState();
+}
+function moreMenu() {
+  const st = S[active], type = active;
+  popMenu($('#btnMore'), [
+    st.id && { label: 'Historique du dossier', fn: historyDialog },
+    type === 'remb' && C.webRemb && { label: 'Envoyer le formulaire en ligne au client…', fn: () => formLinkDialog({ email: st.v.email, nom: st.v.nom, dossierId: st.id || '' }) },
+    st.id && { label: st.meta && st.meta.closed ? 'Rouvrir le dossier' : 'Clôturer le dossier', fn: toggleClosed },
+    st.id && can('delete') && { label: 'Supprimer le dossier', danger: true, fn: deleteDossier },
+    !st.id && { label: 'Historique : enregistrez d’abord le dossier', fn: () => { } }
+  ]);
+}
+
+/* =============================================================================
+   Formulaires en ligne : lien envoyé au client, demandes reçues
+   ========================================================================== */
+function formLinkDialog(pre = {}) {
+  const m = modal({ title: 'Envoyer le formulaire en ligne', size: 'sm', body: `
+    <p class="muted" style="margin:0 0 10px">Le client reçoit un lien personnel (valable ${esc(C.webLinkDays)} jours, une seule utilisation) vers la demande de remboursement en ligne. À l’envoi : la demande arrive à ${esc(C.webNotify || C.emailMonetique)}, le client reçoit un accusé de réception, puis une confirmation de cet envoi revient à ${esc(C.webNotify || C.emailMonetique)}.</p>
+    <div class="fld"><label for="fl-e">E-mail du client</label><input class="inp" id="fl-e" type="email" value="${esc(pre.email || '')}" placeholder="client@exemple.fr"></div>
+    <div class="fld"><label for="fl-n">Nom du client</label><input class="inp" id="fl-n" maxlength="80" value="${esc(pre.nom || '')}" placeholder="Facultatif"></div>
+    ${pre.dossierId ? `<p class="muted" style="margin:6px 0">La demande complétera le dossier <b>${esc(pre.dossierId)}</b>.</p>` : ''}
+    <label class="sw" style="margin-top:8px"><input type="checkbox" id="fl-s" checked><span>Envoyer le lien par e-mail depuis le serveur</span></label>
+    <div data-res></div>`, foot: '<button class="btn" data-c>Fermer</button><button class="btn primary" data-ok>Créer le lien</button>' });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const email = $('#fl-e').value.trim().toLowerCase();
+    if (!email.includes('@') || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return toast('Adresse e-mail du client invalide.', true);
+    const r = await call('form-link', { type: 'remb', email, nom: $('#fl-n').value.trim(), dossierId: pre.dossierId || '', send: $('#fl-s').checked }); if (!r) return;
+    const res = m.el.querySelector('[data-res]');
+    res.innerHTML = `<div class="bnr2 ${r.sent ? 'ok' : 'info'}" style="margin-top:12px"><span>${r.sent ? `Lien envoyé à <b>${esc(r.sent)}</b>.` : r.mailError ? esc(r.mailError) : 'Lien créé : copiez-le dans votre message au client.'}
+      ${r.public ? '' : '<br><b>Attention :</b> adresse publique non réglée, ce lien ne s’ouvre que sur le réseau interne (Formulaires en ligne › Réglages).'}</span></div>
+      <div class="fld"><label>Lien (valable jusqu’au ${esc(fdt(r.expires))})</label><input class="inp mono" readonly value="${esc(r.link)}"></div>
+      <button class="btn sm" data-cp>Copier le lien</button>`;
+    res.querySelector('[data-cp]').onclick = () => copyText(r.link).then(ok => toast(ok ? 'Lien copié.' : 'Copie impossible.', !ok));
+    m.el.querySelector('[data-ok]').remove();
+  };
+}
+const MAIL_STEPS = [['notify', 'Monétique'], ['ar', 'Accusé client'], ['confirm', 'Confirmation']];
+const mailTags = w => `<span class="mailst">${MAIL_STEPS.map(([k, l]) => { const x = ((w || {}).mails || {})[k]; return `<span class="tag ${!x ? '' : x.ok ? 'ok' : 'danger'}" title="${esc(x ? (x.ok ? 'Envoyé le ' + fdt(x.t) + ' à ' + (x.to || '') : x.err || 'échec') : 'pas encore envoyé')}">${x ? (x.ok ? '✓' : '✕') : '·'} ${l}</span>`; }).join('')}</span>`;
+let WEBDATA = null;
+async function renderWebView() {
+  const box = $('#webView');
+  box.innerHTML = '<div class="pane"><p class="muted">Chargement…</p></div>';
+  const r = await call('web-inbox'); if (!r) { box.innerHTML = '<div class="pane"><p class="muted">Impossible de charger les demandes.</p></div>'; return; }
+  WEBDATA = r;
+  const items = r.items, todo = items.filter(x => !x.web.handled).length, fails = items.filter(x => MAIL_STEPS.some(([k]) => x.web.mails && x.web.mails[k] && !x.web.mails[k].ok) || !(x.web.mails && x.web.mails.notify)).length;
+  const s = r.settings;
+  box.innerHTML = `<div class="pane">
+    <div class="toolbar"><h2 style="margin:0;font-size:17px;flex:1">Formulaires en ligne</h2>
+      <button class="btn sm primary" data-link>Envoyer un lien à un client</button><button class="btn sm" data-links>Liens envoyés</button><button class="btn sm" data-set>Réglages</button><button class="btn sm ghost" data-ref>Actualiser</button></div>
+    ${!s.webRemb ? '<div class="bnr2 warn"><span>Le formulaire de remboursement en ligne est <b>désactivé</b> : les liens ne s’ouvrent plus (Réglages).</span></div>' : ''}
+    ${!r.mailReady ? '<div class="bnr2 danger"><span>Envoi des e-mails non réglé (Administration › Sécurité & accès) : les demandes sont enregistrées mais ni la Monétique ni le client ne sont prévenus.</span></div>' : ''}
+    ${!r.public ? '<div class="bnr2 warn"><span>Adresse publique du formulaire non réglée : les liens envoyés ne s’ouvrent que sur le réseau interne (Réglages).</span></div>' : ''}
+    <div class="kpis"><div class="kpi"><b>${todo}</b><span>à traiter</span></div><div class="kpi"><b>${items.length - todo}</b><span>prises en charge</span></div><div class="kpi"><b>${fails}</b><span>envois d’e-mail à vérifier</span></div></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Reçue le</th><th>Dossier</th><th>Client</th><th>Distributeur · montant</th><th>E-mails</th><th>Statut</th><th></th></tr></thead><tbody>
+    ${items.length ? items.map((x, i) => `<tr><td>${esc(fdt(x.web.submittedAt))}</td><td class="mono">${esc(x.id)}</td><td>${esc(x.client)}<br><small class="muted">${esc(x.email)}</small></td>
+      <td>${x.matricule ? 'n° ' + esc(x.matricule) : ''}${x.v.montant ? ' · ' + esc(fm(x.v.montant)) : ''}</td><td>${mailTags(x.web)}</td>
+      <td>${x.web.handled ? `<span class="tag ok">pris en charge</span><br><small class="muted">${esc(x.web.handled.by || '')}</small>` : '<span class="tag warn">à traiter</span>'}</td>
+      <td><div class="rowacts"><button class="ibtn" data-d="${i}">Détails</button>${can('remb') ? `<button class="ibtn" data-o="${i}">Ouvrir le dossier</button>` : ''}</div></td></tr>`).join('') : '<tr><td colspan="7" class="muted">Aucune demande reçue pour l’instant.</td></tr>'}
+    </tbody></table></div></div>`;
+  box.querySelector('[data-link]').onclick = () => formLinkDialog({});
+  box.querySelector('[data-links]').onclick = linksDialog;
+  box.querySelector('[data-set]').onclick = webSettingsDialog;
+  box.querySelector('[data-ref]').onclick = renderWebView;
+  box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => webDetails(items[+b.dataset.d]));
+  box.querySelectorAll('[data-o]').forEach(b => b.onclick = () => openDossier(items[+b.dataset.o].id));
+}
+function webDetails(x) {
+  const m = modal({ title: `Demande en ligne · ${x.id}`, size: 'lg', body: `
+    <p class="muted" style="margin:0 0 8px">Reçue le ${esc(fdt(x.web.submittedAt))} · ${x.web.via === 'lien' ? 'lien personnel' : 'lien générique'} · adresse ${esc(x.web.ip || '?')}${x.web.pan ? ' · <b>numéro de carte complet saisi puis masqué</b>' : ''}</p>
+    <div class="paper">${blocksToHtml([{ t: 'kv', rows: x.recap.map(l => { const i = l.indexOf(' : '); return [l.slice(0, i), l.slice(i + 3)]; }) }])}</div>
+    <h4 style="margin:14px 0 6px">E-mails</h4>
+    <table class="tbl"><tbody>${MAIL_STEPS.map(([k, l]) => { const e = (x.web.mails || {})[k]; return `<tr><td>${l}</td><td>${e ? (e.ok ? `<span class="tag ok">envoyé</span> à ${esc(e.to || '')} le ${esc(fdt(e.t))}` : `<span class="tag danger">échec</span> ${esc(e.err || '')}`) : '<span class="muted">non envoyé</span>'}</td></tr>`; }).join('')}</tbody></table>`,
+    foot: `<button class="btn" data-r>Renvoyer les e-mails manquants</button><button class="btn" data-h>${x.web.handled ? 'Remettre à traiter' : 'Marquer comme pris en charge'}</button><button class="btn primary" data-c>Fermer</button>` });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  m.el.querySelector('[data-r]').onclick = async () => { const r = await call('web-resend', { id: x.id }, null, { ms: 90000 }); if (r) { toast('Envois relancés.'); m.close(); renderWebView(); } };
+  m.el.querySelector('[data-h]').onclick = async () => { if (await call('web-handled', { id: x.id, handled: !x.web.handled })) { m.close(); renderWebView(); } };
+}
+async function linksDialog() {
+  const r = await call('web-links'); if (!r) return;
+  const m = modal({ title: 'Liens envoyés aux clients', size: 'lg', foot: '<button class="btn" data-c>Fermer</button>', body: `<div class="tbl-wrap" style="max-height:60vh"><table class="tbl"><thead><tr><th>Client</th><th>Créé le</th><th>Par</th><th>Valable jusqu’au</th><th>État</th><th></th></tr></thead><tbody>
+    ${r.links.length ? r.links.map((l, i) => `<tr><td>${esc(l.email)}${l.nom ? `<br><small class="muted">${esc(l.nom)}</small>` : ''}</td><td>${esc(fdt(l.created))}</td><td>${esc(l.by)}</td><td>${esc(fdt(l.expires))}</td>
+      <td>${l.used ? `<span class="tag ok">utilisé</span> ${esc(l.dossierId)}` : l.active ? '<span class="tag info">en attente</span>' : '<span class="tag">expiré</span>'}</td><td>${l.active ? `<button class="ibtn dgr" data-x="${i}">Annuler</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="6" class="muted">Aucun lien.</td></tr>'}</tbody></table></div>` });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  m.el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (await call('web-link-revoke', { type: 'remb', key: r.links[+b.dataset.x].key })) { m.close(); linksDialog(); } });
+}
+function webSettingsDialog() {
+  const s = Object.assign({}, C, (WEBDATA && WEBDATA.settings) || {});
+  const gen = WEBDATA && WEBDATA.genericUrl;
+  const m = modal({ title: 'Réglages des formulaires en ligne', size: 'lg', body: `
+    <label class="sw"><input type="checkbox" id="ws-on" ${s.webRemb ? 'checked' : ''}><span><b>Demande de remboursement en ligne ouverte</b></span></label>
+    <div class="fgrid" style="margin-top:12px">
+      <div class="fld half"><label for="ws-n">Adresse qui reçoit les demandes</label><div class="hint">Reçoit chaque demande, puis la confirmation de l’accusé de réception</div><input class="inp" id="ws-n" type="email" value="${esc(s.webNotify)}"></div>
+      <div class="fld half"><label for="ws-d">Validité d’un lien (jours)</label><div class="hint">1 à 90</div><input class="inp" id="ws-d" type="number" min="1" max="90" value="${esc(s.webLinkDays)}"></div>
+      <div class="fld"><label for="ws-u">Adresse publique de l’outil</label><div class="hint">Adresse du dossier service_clients vue depuis Internet, en https (ex. https://sav.d8.fr/service_clients/). Vide = adresse interne : les liens ne s’ouvriront que sur le réseau de l’entreprise.</div><input class="inp" id="ws-u" value="${esc(s.webPublicUrl)}" placeholder="https://…/service_clients/"></div>
+    </div>
+    <label class="sw" style="margin-top:10px"><input type="checkbox" id="ws-ar" ${s.webAR ? 'checked' : ''}><span>Accusé de réception automatique au client (après l’arrivée de la demande à la Monétique), puis confirmation de son envoi</span></label>
+    <label class="sw" style="margin-top:10px"><input type="checkbox" id="ws-g" ${s.webGeneric ? 'checked' : ''}><span>Lien générique, sans invitation (affichette ou QR code sur les distributeurs) — <b>déconseillé</b> : n’importe qui peut alors déposer une demande ; limité à ${'300'} par jour et 10 par heure et par adresse.</span></label>
+    ${gen && s.webGeneric ? `<div style="margin-top:10px"><div class="muted">Lien générique : <span class="mono">${esc(gen)}</span></div>${QR.svg(gen, 170)}</div>` : ''}`,
+    foot: '<button class="btn" data-c>Annuler</button><button class="btn primary" data-ok>Enregistrer</button>' });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const b = { webRemb: $('#ws-on').checked, webNotify: $('#ws-n').value.trim(), webLinkDays: +$('#ws-d').value || 30, webPublicUrl: $('#ws-u').value.trim(), webAR: $('#ws-ar').checked, webGeneric: $('#ws-g').checked };
+    if (b.webPublicUrl && !/^https:\/\//i.test(b.webPublicUrl) && !await ask('L’adresse publique ne commence pas par https:// : le formulaire refusera les clients venant d’Internet (connexion non chiffrée). Enregistrer quand même ?')) return;
+    const r = await call('settings-set', b); if (!r) return;
+    C = Object.assign({}, DEFAULTS, r.settings); m.close(); toast('Réglages enregistrés.'); renderWebView();
+  };
+}
+
+/* =============================================================================
+   Démarrage
+   ========================================================================== */
+function fatal(msg) {
+  const A = $('#auth'); A.hidden = false;
+  A.innerHTML = `<div class="auth-box wide"><div class="auth-head"><img src="${esc(LOGO_D8)}" alt="D8"><div><b>Service clients D8</b><small>Démarrage impossible</small></div></div>
+    <div class="auth-body"><div class="bnr2 danger"><span>${msg}</span></div><button class="btn" onclick="location.reload()">Réessayer</button></div></div>`;
+}
+async function boot() {
+  bindGenerator();
+  $('#btnWho').onclick = whoMenu;
+  $('#btnSave').onclick = () => saveDossier(null);
+  $('#btnList').onclick = dossierList;
+  $('#btnMore').onclick = moreMenu;
+  $('#btnReset').onclick = newRequest;
+  $('#btnAdmin').onclick = () => openAdmin();
+  $('#topLogo').src = logoSrc();
+  if (location.protocol === 'file:') return fatal('Cet outil s’utilise depuis le serveur : ouvrez <b>http://&lt;serveur&gt;/service_clients/</b> (et non le fichier en double-clic).');
+  const r = await api('me');
+  if (!r.json) return fatal(r.status === 0 ? esc(r.body.error) : `Le serveur ne répond pas comme prévu (réponse ${r.status} non JSON) : PHP n’est sans doute pas activé pour le dossier service_clients. Lancez <b>installer-service-clients.ps1</b> sur le serveur.`);
+  if (r.status === 403) return fatal(esc(r.body.error || 'Accès refusé.'));
+  const me = r.body.auth ? r.body : await authScreen(r.body);
+  setMe(me);
+  loadState(me.login);
+  const s = await api('settings'); if (s.ok) C = Object.assign({}, DEFAULTS, s.body.settings);
+  $('#topLogo').src = logoSrc();
+  renderTabs();
+  const tabs = [...allowedTypes(), ...(can('web') ? ['web'] : [])];
+  const SUB = { cb: 'Paiement par carte', int: 'Interventions', remb: 'Remboursements', cmd: 'Commandes', web: 'Formulaires en ligne' };
+  if (tabs.length) $('#topSub').textContent = tabs.map(t => SUB[t]).join(' · ');
+  if (!tabs.length) {
+    $('main.layout').hidden = true; $('#btnImport').hidden = true;
+    const na = $('#noAccess'); na.hidden = false;
+    na.innerHTML = isAdmin() ? 'Votre rôle ne donne accès à aucun type de demande : utilisez le bouton « Administration ».' : 'Votre rôle ne donne accès à aucun type de demande. Demandez à un administrateur.';
+  } else switchTab(tabs.includes(active) ? active : tabs[0]);
+  const q = new URLSearchParams(location.search), dos = q.get('dossier');
+  if (dos) { history.replaceState(null, '', location.pathname); if (allowedTypes().length) openDossier(dos); else if (can('web')) switchTab('web'); }
+  if (me.mustChange) setTimeout(() => changePassword(true), 300);
+  setInterval(ping, 30000);
+  addEventListener('beforeunload', e => { if (TYPES.some(t => S[t] && S[t].dirty)) { e.preventDefault(); e.returnValue = ''; } });
+}
+async function ping() {
+  if (RELOGIN) return;
+  const r = await api('ping');
+  if (!r.json) return setSync('err', 'Serveur injoignable');
+  if (!r.body.auth) { relogin(); return; }
+  setSync('ok', 'Connecté');
+  maintenanceBanner(r.body.maintenance);
+  if (BUILD && r.body.build && r.body.build !== BUILD) banner('build', 'info', 'Une nouvelle version de l’outil vient d’être installée. <button class="btn sm" onclick="location.reload()">Recharger maintenant</button> (enregistrez d’abord votre saisie).');
+}
+
+/* =============================================================================
+   Administration : personnes, rôles, réglages de l'outil, sécurité, journal, sauvegardes
+   (chaque action est de nouveau contrôlée par le serveur)
+   ========================================================================== */
+const PERMS = [
+  ['cb', 'SAV · Carte bancaire', 'Onglet « SAV · Carte bancaire » et ses dossiers', 'Onglets'],
+  ['int', 'SAV · Intervention', 'Onglet « SAV · Intervention » et ses dossiers', 'Onglets'],
+  ['remb', 'Remboursement', 'Onglet « Remboursement », ses dossiers et l’envoi du formulaire en ligne', 'Onglets'],
+  ['cmd', 'Commande CB', 'Onglet « Commande CB » et ses dossiers', 'Onglets'],
+  ['web', 'Formulaires en ligne', 'Demandes envoyées par les clients, liens envoyés, réglages des formulaires en ligne', 'Onglets'],
+  ['delete', 'Supprimer des dossiers', 'Supprimer définitivement un dossier (des types autorisés)', 'Dossiers'],
+  ['export', 'Exporter', 'Exporter la liste des dossiers (CSV)', 'Dossiers'],
+  ['settings', 'Réglages de l’outil', 'Coordonnées, adresses de retour, délais, logo', 'Administration'],
+  ['users', 'Utilisateurs et rôles', 'Ajouter des personnes, inviter, réinitialiser les accès, rôles', 'Administration'],
+  ['security', 'Sécurité', 'Journal des connexions, blocages, sauvegardes ; réglages de sécurité (modifiables par un super administrateur)', 'Administration'],
+  ['super', 'Super administrateur', 'Tous les droits, sans restriction', 'Super']
+];
+const permShort = p => (PERMS.find(x => x[0] === p) || [p, p])[1];
+const rolePerms = r => !r ? [] : (r.perms || []).includes('super') ? PERMS.map(p => p[0]) : (r.perms || []);
+const AUTH_EV = {
+  login: ['Connexion', 'ok'], fail: ['Échec de connexion', 'danger'], blocked: ['Adresse bloquée', 'danger'], locked: ['Compte bloqué', 'danger'], disabled: ['Compte désactivé refusé', 'warn'],
+  logout: ['Déconnexion', ''], signup: ['Création d’accès', 'ok'], password: ['Mot de passe changé', ''], 'pw-reset': ['Mot de passe réinitialisé (lien e-mail)', 'warn'], forgot: ['Mot de passe oublié', ''],
+  reset: ['Accès réinitialisé', 'warn'], kick: ['Déconnexion forcée', 'warn'], 'kick-all': ['Tout le monde déconnecté', 'warn'], unlock: ['Compte débloqué', ''], unblock: ['Adresse débloquée', ''],
+  invite: ['Invitation', ''], 'invite-revoke': ['Invitation annulée', ''], 'mfa-ask': ['Code de double authentification demandé', ''], 'mfa-on': ['Double authentification activée', 'ok'],
+  'mfa-off': ['Double authentification désactivée', 'warn'], 'mfa-fail': ['Code de double authentification erroné', 'danger'], 'mfa-recovery': ['Code de secours utilisé', 'warn'], 'mfa-codes': ['Nouveaux codes de secours', ''], 'mfa-reset': ['Double authentification réinitialisée', 'warn'],
+  'sa-ok': ['Mot de passe super admin saisi', ''], 'sa-fail': ['Mot de passe super admin erroné', 'danger'], 'sa-change': ['Mot de passe super admin changé', 'warn'], 'sa-init': ['Mot de passe super admin défini', 'warn'],
+  'sec-set': ['Réglages de sécurité modifiés', 'warn'], settings: ['Réglages de l’outil modifiés', ''], 'user-add': ['Personne ajoutée', ''], 'user-edit': ['Personne modifiée', ''], 'user-delete': ['Personne supprimée', 'warn'],
+  'role-save': ['Rôle enregistré', ''], 'role-delete': ['Rôle supprimé', 'warn'], 'dossier-delete': ['Dossier supprimé', 'warn'], purge: ['Dossiers effacés (durée de conservation)', ''],
+  'backup-auto': ['Sauvegarde automatique', 'ok'], 'backup-now': ['Sauvegarde manuelle', 'ok'], 'backup-get': ['Sauvegarde téléchargée', ''], restore: ['Restauration', 'warn'],
+  'mail-test': ['E-mail de test', 'ok'], 'mail-fail': ['Échec d’envoi d’e-mail', 'danger'], 'super-alert': ['Alerte super administrateur envoyée', 'warn'],
+  'web-submit': ['Formulaire en ligne reçu', 'ok'], 'web-notify': ['Demande transmise à la Monétique', 'ok'], 'web-ar': ['Accusé de réception envoyé', 'ok'], 'web-link': ['Lien de formulaire envoyé', ''],
+  'web-link-revoke': ['Lien de formulaire annulé', ''], 'web-resend': ['E-mails du formulaire renvoyés', ''], 'web-bot': ['Robot écarté (formulaire)', 'warn'], 'web-cap': ['Limite du lien générique atteinte', 'warn']
+};
+let ADM = { sec: 'users', data: null };
+function openAdmin(sec) {
+  const secs = [
+    (can('users') || can('security')) && ['users', 'Utilisateurs'],
+    can('users') && ['roles', 'Rôles et droits'],
+    can('settings') && ['settings', 'Réglages de l’outil'],
+    can('security') && ['security', 'Sécurité & accès'],
+    can('security') && ['journal', 'Journal et blocages'],
+    can('security') && ['backups', 'Sauvegardes']
+  ].filter(Boolean);
+  if (!secs.length) return toast('Votre rôle ne donne pas accès à l’administration.', true);
+  ADM.sec = sec && secs.some(s => s[0] === sec) ? sec : (secs.some(s => s[0] === ADM.sec) ? ADM.sec : secs[0][0]);
+  const m = modal({ title: 'Administration', size: 'xl', foot: null, body: '<div class="adm"><nav></nav><section></section></div>' });
+  m.body.style.padding = '0';
+  const nav = m.body.querySelector('nav'), sc = m.body.querySelector('section');
+  const show = async (k) => {
+    ADM.sec = k;
+    nav.innerHTML = ''; secs.forEach(([key, label]) => { const b = el('button', { type: 'button', 'aria-current': String(key === k) }, label); b.onclick = () => show(key); nav.append(b); });
+    sc.innerHTML = '<p class="muted">Chargement…</p>';
+    try { await ({ users: admUsers, roles: admRoles, settings: admSettings, security: admSecurity, journal: admJournal, backups: admBackups })[k](sc, () => show(k)); }
+    catch (e) { console.error(e); sc.innerHTML = `<div class="bnr2 danger">${esc(e.message)}</div>`; }
+  };
+  show(ADM.sec);
+}
+
+/* --- Utilisateurs --- */
+async function admUsers(sc, reload) {
+  const d = await call('admin-users'); if (!d) { sc.innerHTML = ''; return; }
+  ADM.data = d;
+  const myPerms = new Set(ME.perms), isSuper = can('super');
+  const role = id => d.roles.find(r => r.id === id);
+  const outranks = u => !isSuper && rolePerms(role(u.roleId)).some(p => !myPerms.has(p));
+  const editable = u => can('users') && !outranks(u);
+  const users = d.users.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  sc.innerHTML = `<div class="toolbar"><h3 style="margin:0;flex:1">Utilisateurs (${users.length})</h3>${can('users') ? '<button class="btn sm primary" data-add>Ajouter une personne</button>' : ''}<input class="inp" data-q placeholder="Filtrer" style="max-width:220px"></div>
+    <p class="muted" style="margin:0 0 10px">Chacun se connecte avec son adresse e-mail. Un accès se crée avec une invitation (lien à usage unique valable ${d.inviteDays} jours${d.mailReady ? ', envoyé par e-mail' : ''}).</p>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Personne</th><th>Rôle</th><th>Accès</th><th>Dernière connexion</th><th>Actions</th></tr></thead><tbody></tbody></table></div>`;
+  const tb = sc.querySelector('tbody');
+  const draw = () => {
+    const q = (sc.querySelector('[data-q]').value || '').toLowerCase();
+    tb.innerHTML = '';
+    for (const u of users.filter(u => !q || (u.name + ' ' + u.login).toLowerCase().includes(q))) {
+      const a = d.accounts[u.id], inv = d.invites[u.id], lk = a ? d.locks[a.login] : null, r = role(u.roleId), me = u.id === d.me;
+      let acc = !u.active ? '<span class="tag">désactivée</span>' : a ? '<span class="tag ok">accès créé</span>' : inv ? `<span class="tag info">invitation jusqu’au ${esc(fdt(inv.expires).slice(0, 10))}</span>` : '<span class="tag warn">pas d’accès</span>';
+      if (a && a.mfa) acc += ' <span class="tag ok" title="Double authentification active">2FA</span>';
+      if (lk && lk.locked) acc += ` <span class="tag danger">bloqué${lk.until ? ' jusqu’à ' + esc(fdt(lk.until).slice(-5)) : ''}</span>`;
+      const tr = el('tr');
+      tr.innerHTML = `<td><b>${esc(u.name)}</b>${me ? ' <span class="tag">vous</span>' : ''}<br><small class="muted">${esc(u.login)}</small></td>
+        <td>${r ? ((r.perms || []).includes('super') ? '<span class="tag gold">Super administrateur</span>' : esc(r.name)) : '<span class="tag danger">rôle supprimé</span>'}</td>
+        <td>${acc}</td><td>${a && a.lastLogin ? esc(fdt(a.lastLogin)) : '—'}</td><td><div class="rowacts"></div></td>`;
+      const ra = tr.querySelector('.rowacts');
+      const btn = (label, fn, dgr) => { const b = el('button', { class: 'ibtn' + (dgr ? ' dgr' : ''), type: 'button' }, label); b.onclick = fn; ra.append(b); };
+      if (editable(u)) {
+        btn('Modifier', () => userDialog(d, u, reload));
+        if (u.active && !a) btn(inv ? 'Nouvelle invitation' : 'Inviter', () => inviteDialog(d, u, reload));
+        if (inv && !a) btn('Annuler l’invitation', async () => { if (await call('invite-revoke', { userId: u.id })) reload(); });
+        if (a && !me) btn('Réinitialiser l’accès', async () => {
+          if (!await ask(`Réinitialiser l’accès de <b>${esc(u.name)}</b> ?<br><br>Son mot de passe est supprimé et ses sessions sont fermées. Il lui faudra une nouvelle invitation.`, { ok: 'Réinitialiser', danger: true })) return;
+          if (await call('reset', { userId: u.id })) { toast(`Accès de ${u.name} réinitialisé.`); if (await ask(`Inviter maintenant <b>${esc(u.name)}</b> ?`, { ok: 'Inviter' })) { await reload(); inviteDialog(ADM.data, u, reload); } else reload(); }
+        }, true);
+        if (a && a.mfa && !me) btn('Réinit. 2FA', async () => {
+          if (!await ask(`Réinitialiser la double authentification de <b>${esc(u.name)}</b> (téléphone perdu ou changé) ? Ses sessions sont fermées.`, { ok: 'Réinitialiser' })) return;
+          if (await call('mfa-reset', { userId: u.id })) { toast('Double authentification réinitialisée.'); reload(); }
+        });
+        if (a && !me) btn('Déconnecter', async () => { if (await ask(`Déconnecter <b>${esc(u.name)}</b> de tous ses postes ?`, { ok: 'Déconnecter' }) && await call('kick', { userId: u.id })) toast(`${u.name} a été déconnecté(e).`); });
+        if (lk) btn('Débloquer', async () => { if (await call('unlock-login', { login: a.login })) { toast('Compte débloqué.'); reload(); } });
+        if (!me) btn('Supprimer', async () => {
+          if (!await ask(`Supprimer la fiche de <b>${esc(u.name)}</b> ? Son accès et ses invitations sont supprimés. Les dossiers qu’elle a traités restent.`, { ok: 'Supprimer', danger: true })) return;
+          if (await call('user-delete', { id: u.id })) { toast('Fiche supprimée.'); reload(); }
+        }, true);
+      } else if (lk && can('security') && !outranks(u)) btn('Débloquer', async () => { if (await call('unlock-login', { login: a.login })) { toast('Compte débloqué.'); reload(); } });
+      else if (!can('users')) ra.innerHTML = '<span class="muted">lecture seule</span>';
+      else ra.innerHTML = '<span class="muted">réservé au super administrateur</span>';
+      tb.append(tr);
+    }
+  };
+  sc.querySelector('[data-q]').oninput = draw;
+  const add = sc.querySelector('[data-add]'); if (add) add.onclick = () => userDialog(d, null, reload);
+  draw();
+}
+function userDialog(d, u, reload) {
+  const isSuper = can('super'), myPerms = new Set(ME.perms);
+  const roles = d.roles.filter(r => isSuper || rolePerms(r).every(p => myPerms.has(p)));
+  const me = u && u.id === d.me;
+  const m = modal({ title: u ? `Modifier · ${u.name}` : 'Ajouter une personne', body: `<div class="fgrid">
+      <div class="fld half"><label for="ud-n">Nom affiché</label><input class="inp" id="ud-n" maxlength="80" value="${esc(u ? u.name : '')}" placeholder="Prénom Nom"></div>
+      <div class="fld half"><label for="ud-l">Adresse e-mail (identifiant)</label><input class="inp" id="ud-l" type="email" maxlength="120" value="${esc(u ? u.login : '')}" placeholder="prenom.nom@d8.fr"></div>
+      <div class="fld half"><label for="ud-r">Rôle</label><select class="inp" id="ud-r" ${me ? 'disabled' : ''}>${roles.map(r => `<option value="${esc(r.id)}" ${u && u.roleId === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>${me ? '<div class="hint">Vous ne pouvez pas changer votre propre rôle.</div>' : ''}</div>
+      <div class="fld half"><label>&nbsp;</label><label class="sw"><input type="checkbox" id="ud-a" ${!u || u.active ? 'checked' : ''} ${me ? 'disabled' : ''}><span>Fiche active (peut se connecter)</span></label></div>
+      <div class="fld half"><label for="ud-f">Fonction (signature)</label><input class="inp" id="ud-f" maxlength="80" value="${esc(u ? u.sigFonction : '')}"></div>
+      <div class="fld half"><label for="ud-t">Téléphone direct (signature)</label><input class="inp" id="ud-t" maxlength="40" value="${esc(u ? u.sigTel : '')}"></div></div>
+      ${u && d.accounts[u.id] ? '<p class="muted" style="margin:10px 0 0">Changer l’adresse e-mail change l’identifiant de connexion : ses sessions ouvertes sont fermées.</p>' : ''}`,
+    foot: '<button class="btn" data-c>Annuler</button><button class="btn primary" data-ok>Enregistrer</button>' });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const login = $('#ud-l').value.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(login)) return toast('Adresse e-mail invalide.', true);
+    const b = { id: u ? u.id : '', name: $('#ud-n').value.trim(), login, roleId: $('#ud-r').value, active: $('#ud-a').checked, sigFonction: $('#ud-f').value.trim(), sigTel: $('#ud-t').value.trim() };
+    const r = await call('user-save', b); if (!r) return;
+    m.close(); toast('Fiche enregistrée.');
+    if (!u && await ask(`Inviter maintenant <b>${esc(b.name || login)}</b> à créer son accès ?`, { ok: 'Inviter' })) { await reload(); const nu = ADM.data.users.find(x => x.id === r.id); if (nu) inviteDialog(ADM.data, nu, reload); }
+    else reload();
+  };
+}
+function inviteDialog(d, u, reload) {
+  const m = modal({ title: `Inviter · ${u.name}`, size: 'sm', body: `<p style="margin:0 0 10px">${esc(u.name)} recevra un lien à usage unique, valable ${d.inviteDays} jours, pour choisir son mot de passe. Son identifiant sera <b>${esc(u.login)}</b>.</p>
+      ${d.invites[u.id] ? '<div class="bnr2 warn"><span>Une invitation est déjà en cours : l’ancien lien ne fonctionnera plus.</span></div>' : ''}
+      <label class="sw"><input type="checkbox" id="iv-s" ${d.mailReady ? 'checked' : 'disabled'}><span>Envoyer l’invitation par e-mail à ${esc(u.login)}${d.mailReady ? '' : ' (envoi des e-mails non réglé)'}</span></label><div data-res></div>`,
+    foot: '<button class="btn" data-c>Fermer</button><button class="btn primary" data-ok>Créer l’invitation</button>' });
+  m.el.querySelector('[data-c]').onclick = () => { m.close(); reload(); };
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const r = await call('invite', { userId: u.id, send: $('#iv-s').checked }); if (!r) return;
+    const link = r.link || (location.origin + location.pathname + '?invitation=' + encodeURIComponent(r.code));
+    m.el.querySelector('[data-ok]').remove();
+    const res = m.el.querySelector('[data-res]');
+    res.innerHTML = `<div class="bnr2 ${r.sent ? 'ok' : 'info'}" style="margin-top:10px"><span>${r.sent ? `Invitation envoyée à <b>${esc(r.sent)}</b>.` : r.mailError ? esc(r.mailError) : 'Transmettez ce lien (ou le code) à la personne.'}</span></div>
+      <div class="fld"><label>Lien d’invitation</label><input class="inp mono" readonly value="${esc(link)}"></div>
+      <div class="fld"><label>Code (si le lien ne s’ouvre pas)</label><input class="inp mono" readonly value="${esc(r.code)}"></div>
+      <div class="actions"><button class="btn sm" data-cp>Copier le lien</button><button class="btn sm" data-ml>Préparer un e-mail</button></div>`;
+    res.querySelector('[data-cp]').onclick = () => copyText(link).then(ok => toast(ok ? 'Lien copié.' : 'Copie impossible.', !ok));
+    res.querySelector('[data-ml]').onclick = () => { location.href = `mailto:${encodeURIComponent(u.login)}?subject=${encodeURIComponent('Votre accès à l’outil Service clients D8')}&body=${encodeURIComponent(`Bonjour ${u.name},\n\nVoici votre accès à l’outil Service clients D8.\nIdentifiant : ${u.login}\n\nPour choisir votre mot de passe, ouvrez ce lien (valable ${r.days} jours, une seule fois) :\n${link}\n\nCode d’invitation, si le lien ne s’ouvre pas : ${r.code}\n`)}`; };
+  };
+}
+
+/* --- Rôles --- */
+async function admRoles(sc, reload) {
+  const d = ADM.data && ADM.data.roles ? ADM.data : await call('admin-users'); if (!d) return;
+  ADM.data = d;
+  const isSuper = can('super'), myPerms = new Set(ME.perms);
+  sc.innerHTML = `<div class="toolbar"><h3 style="margin:0;flex:1">Rôles et droits</h3><button class="btn sm primary" data-add>Ajouter un rôle</button></div>
+    <p class="muted" style="margin:0 0 10px">Un rôle définit les onglets visibles et ce que la personne peut faire ; le serveur applique ces droits. Le rôle super administrateur a tous les droits et ne se modifie que par un super administrateur.</p>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Rôle</th><th>Droits</th><th>Personnes</th><th></th></tr></thead><tbody></tbody></table></div>`;
+  const tb = sc.querySelector('tbody');
+  for (const r of d.roles) {
+    const sup = (r.perms || []).includes('super'), holders = d.users.filter(u => u.roleId === r.id);
+    const mine = isSuper || rolePerms(r).every(p => myPerms.has(p));
+    const tr = el('tr');
+    tr.innerHTML = `<td><b>${esc(r.name)}</b></td><td><div class="pills">${sup ? '<span class="tag gold">Tous les droits</span>' : (r.perms || []).length ? r.perms.map(p => `<span class="tag">${esc(permShort(p))}</span>`).join('') : '<span class="muted">aucun</span>'}</div></td>
+      <td>${holders.length ? holders.map(u => esc(u.name)).join(', ') : '<span class="muted">personne</span>'}</td><td><div class="rowacts"></div></td>`;
+    const ra = tr.querySelector('.rowacts');
+    if ((!sup || isSuper) && mine) {
+      const e = el('button', { class: 'ibtn', type: 'button' }, 'Modifier'); e.onclick = () => roleDialog(r, reload); ra.append(e);
+      if (!sup && !holders.length) { const x = el('button', { class: 'ibtn dgr', type: 'button' }, 'Supprimer'); x.onclick = async () => { if (await ask(`Supprimer le rôle <b>${esc(r.name)}</b> ?`, { ok: 'Supprimer', danger: true }) && await call('role-delete', { id: r.id })) { ADM.data = null; reload(); } }; ra.append(x); }
+    } else ra.innerHTML = '<span class="muted">réservé au super administrateur</span>';
+    tb.append(tr);
+  }
+  sc.querySelector('[data-add]').onclick = () => roleDialog(null, reload);
+}
+function roleDialog(r, reload) {
+  const isSuper = can('super'), myPerms = new Set(ME.perms), sup = r && (r.perms || []).includes('super');
+  let grp = '';
+  const boxes = PERMS.filter(p => p[0] !== 'super' || isSuper).map(([k, l, desc, g]) => {
+    const head = g !== grp ? `<div class="grp">${esc(g)}</div>` : ''; grp = g;
+    const dis = sup || (!isSuper && !myPerms.has(k));
+    return `${head}<label class="sw"><input type="checkbox" value="${k}" ${r && (r.perms || []).includes(k) ? 'checked' : ''} ${dis ? 'disabled' : ''}><span><b>${esc(l)}</b><br><small class="muted">${esc(desc)}</small></span></label>`;
+  }).join('');
+  const m = modal({ title: r ? `Rôle · ${r.name}` : 'Nouveau rôle', size: 'lg', body: `<div class="fld"><label for="rd-n">Nom du rôle</label><input class="inp" id="rd-n" maxlength="60" value="${esc(r ? r.name : '')}"></div>
+    ${sup ? '<div class="bnr2 info" style="margin-top:10px"><span>Le rôle super administrateur garde tous les droits ; seul son nom se modifie.</span></div>' : ''}
+    <div class="permgrid" style="margin-top:10px">${boxes}</div>${!isSuper ? '<p class="muted">Vous ne pouvez donner que les droits que vous avez vous-même.</p>' : ''}`,
+    foot: '<button class="btn" data-c>Annuler</button><button class="btn primary" data-ok>Enregistrer</button>' });
+  m.el.querySelector('[data-c]').onclick = () => m.close();
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const perms = [...m.el.querySelectorAll('.permgrid input:checked')].map(i => i.value);
+    if (await call('role-save', { id: r ? r.id : '', name: $('#rd-n').value.trim(), perms })) { m.close(); ADM.data = null; toast('Rôle enregistré.'); reload(); }
+  };
+}
+
+/* --- Réglages de l'outil (coordonnées, adresses, délais, logo) --- */
+const SET_FIELDS = [
+  ['Entreprise (pied de page des fiches et signature)', [['societe', 'Raison sociale'], ['adresse', 'Adresse'], ['telephone', 'Téléphone'], ['emailGeneral', 'E-mail général']]],
+  ['Adresses de retour des fiches et des réponses', [['emailMonetique', 'SAV carte bancaire et remboursements'], ['emailSav', 'Demandes d’intervention'], ['emailCommandes', 'Commandes']]],
+  ['E-mails de réponse', [['politesse', 'Formule de politesse', '', ['Cordialement', 'Bien cordialement', 'Sincères salutations']], ['expediteur', 'Expéditeur des brouillons Outlook (« De : »)', 'ex. Monetique@d8.fr si vous avez accès à la boîte partagée ; vide = votre compte']]],
+  ['Délais et engagements écrits', [['delaiReclamation', 'Délai de réclamation (jours)', 'Remboursements', 'n'], ['delaiTraitement', 'Délai de réponse (jours ouvrés)', 'Remboursements', 'n'], ['delaiIntervention', 'Délai d’intervention', 'ex. « sous 48 heures ouvrées » ; vide = « dans les meilleurs délais »'], ['delaiLivraison', 'Délai de livraison', 'ex. « sous 5 jours ouvrés » ; vide = date confirmée au cas par cas'], ['horairesTel', 'Horaires téléphoniques', 'ex. « du lundi au vendredi, de 9 h à 17 h »'], ['conservation', 'Conservation des dossiers (mois)', 'Au-delà, les dossiers sont effacés automatiquement (0 = jamais)', 'n']]]
+];
+async function admSettings(sc, reload) {
+  const r = await call('settings'); if (!r) return;
+  const s = r.settings; let logo = s.logo || '';
+  sc.innerHTML = `<h3 style="margin:0 0 10px">Réglages de l’outil</h3><p class="muted" style="margin:0 0 12px">Communs à tous les postes : ils s’appliquent aux e-mails, aux fiches PDF et au formulaire en ligne.</p>` +
+    SET_FIELDS.map(([t, fs]) => `<h4>${esc(t)}</h4><div class="fgrid">${fs.map(([k, l, hint, kind]) => `<div class="fld half"><label for="st-${k}">${esc(l)}</label>${hint && kind !== 'n' && !Array.isArray(kind) || (hint && kind === 'n') ? `<div class="hint">${esc(hint)}</div>` : ''}${Array.isArray(kind) ? `<select class="inp" id="st-${k}">${kind.map(c => `<option ${c === s[k] ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : `<input class="inp" id="st-${k}" ${kind === 'n' ? 'type="number" min="0"' : ''} value="${esc(s[k] ?? '')}">`}</div>`).join('')}</div>`).join('') +
+    `<h4>Logo (fiches PDF, e-mails, formulaire en ligne)</h4><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><img data-lp style="height:44px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:4px"><button class="btn sm" data-lc>Changer (PNG ou JPEG, 400 Ko max.)</button><button class="btn sm ghost" data-lr>Logo D8 d’origine</button><input type="file" accept="image/png,image/jpeg" class="sr" data-lf></div>
+    <div class="actions" style="margin-top:16px"><button class="btn primary" data-save>Enregistrer</button><button class="btn" data-exp>Exporter (.json)</button><button class="btn" data-imp>Importer</button><input type="file" accept=".json,application/json" class="sr" data-if></div>`;
+  const lp = sc.querySelector('[data-lp]'); lp.src = logo || LOGO_D8;
+  sc.querySelector('[data-lc]').onclick = () => sc.querySelector('[data-lf]').click();
+  sc.querySelector('[data-lr]').onclick = () => { logo = ''; lp.src = LOGO_D8; };
+  sc.querySelector('[data-lf]').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; if (f.size > 400000) return toast('Logo trop lourd (400 Ko maximum).', true); const fr = new FileReader(); fr.onload = () => { logo = fr.result; lp.src = logo; }; fr.readAsDataURL(f); };
+  const collect = () => { const o = { logo }; for (const [, fs] of SET_FIELDS) for (const [k, , , kind] of fs) { const v = $('#st-' + k).value; o[k] = kind === 'n' ? (v === '' ? DEFAULTS[k] : +v) : v.trim(); } return o; };
+  sc.querySelector('[data-save]').onclick = async () => { const x = await call('settings-set', collect()); if (x) { C = Object.assign({}, DEFAULTS, x.settings); $('#topLogo').src = logoSrc(); refresh(); toast('Réglages enregistrés.'); } };
+  sc.querySelector('[data-exp]').onclick = () => download(new Blob([JSON.stringify(collect(), null, 2)], { type: 'application/json' }), 'reglages-service-clients-d8.json');
+  sc.querySelector('[data-imp]').onclick = () => sc.querySelector('[data-if]').click();
+  sc.querySelector('[data-if]').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { const o = JSON.parse(await f.text()); for (const [, fs] of SET_FIELDS) for (const [k] of fs) if (k in o) $('#st-' + k).value = o[k]; if (o.logo !== undefined) { logo = o.logo; lp.src = logo || LOGO_D8; } toast('Réglages chargés : vérifiez puis enregistrez.'); } catch (err) { toast('Fichier illisible.', true); } };
+}
+
+/* --- Sécurité & accès --- */
+async function admSecurity(sc, reload) {
+  const c = await call('sec-get'); if (!c) return;
+  const sup = c.super, dis = sup ? '' : 'disabled';
+  const num = (k, l, min, max, hint) => `<div class="fld half"><label for="sc-${k}">${esc(l)}</label>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}<input class="inp" id="sc-${k}" type="number" min="${min}" max="${max}" value="${esc(c[k])}" ${dis}></div>`;
+  const chk = (k, l) => `<label class="sw"><input type="checkbox" id="sc-${k}" ${c[k] ? 'checked' : ''} ${dis}><span>${esc(l)}</span></label>`;
+  const days = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+  sc.innerHTML = `<h3 style="margin:0 0 6px">Sécurité & accès</h3>
+    ${sup ? '' : '<div class="bnr2 info"><span>Consultation seulement : ces réglages se modifient par un super administrateur.</span></div>'}
+    <div class="bnr2 ${c.https ? 'ok' : 'warn'}"><span>${c.https ? 'Connexion chiffrée (HTTPS).' : 'Connexion non chiffrée (HTTP) : les mots de passe circulent en clair sur le réseau. Ajoutez une liaison HTTPS au site IIS.'} · PHP ${esc(c.php)}</span></div>
+    <h4>Mots de passe et sessions</h4><div class="fgrid">
+      ${num('minPassword', 'Longueur minimale', 8, 64, 'CNIL : 8 caractères de 3 types avec blocage, ou 12 sans blocage')}${num('sessionHours', 'Déconnexion après inactivité (heures)', 1, 72)}
+      ${num('inviteDays', 'Validité d’une invitation (jours)', 1, 30)}${num('resetMinutes', 'Validité du lien « mot de passe oublié » (minutes)', 5, 1440)}
+      <div class="fld">${chk('pwDigit', 'Au moins un chiffre')} ${chk('pwSpecial', 'Au moins un caractère spécial')} ${chk('pwUpper', 'Au moins une majuscule')}</div>
+      <div class="fld half"><label for="sc-resetFor">« Mot de passe oublié » par e-mail</label><select class="inp" id="sc-resetFor" ${dis}><option value="all">Tout le monde</option><option value="super">Super administrateurs seulement</option><option value="none">Personne (un administrateur réinitialise)</option></select></div>
+      <div class="fld half"><label for="sc-mfaRequired">Double authentification obligatoire pour</label><select class="inp" id="sc-mfaRequired" ${dis}><option value="none">Personne (facultative)</option><option value="super">Les super administrateurs</option><option value="admin">Les administrateurs et super administrateurs</option><option value="all">Tout le monde</option></select><div class="hint">${c.mfaCount} compte(s) sur ${c.accCount} l’ont activée.</div></div></div>
+    <h4>Blocage après des mots de passe erronés</h4><div class="fgrid">
+      ${num('lockAttempts', 'Compte bloqué après N erreurs', 1, 20)}${num('lockMinutes', 'Pendant (minutes, 0 = jusqu’au déblocage)', 0, 1440)}
+      ${num('superLockAttempts', 'Super administrateurs : après N erreurs (0 = jamais)', 0, 20)}${num('superLockMinutes', 'Pendant (minutes, 0 = jusqu’au lien e-mail)', 0, 1440)}
+      <div class="fld">${chk('superLockMail', 'E-mail au super administrateur bloqué, avec un lien pour choisir un nouveau mot de passe')}</div>
+      <p class="muted fld" style="margin:0">Par adresse IP : ${c.maxFails} échecs tolérés sur ${Math.round(c.failWindow / 60)} min, puis blocage pendant la même durée.</p></div>
+    <h4>Envoi des e-mails (invitations, mots de passe oubliés, formulaire en ligne)</h4>
+    <div class="bnr2 ${c.mailReady ? 'ok' : 'warn'}"><span>${c.mailReady ? 'Envoi des e-mails réglé.' : 'Envoi non réglé : renseignez au moins l’adresse d’expédition et l’adresse de l’application.'}</span></div>
+    ${sup ? '<div class="actions" style="margin:0 0 8px"><button class="btn sm" data-p="m365">Microsoft 365 (avec compte)</button><button class="btn sm" data-p="direct">Relais Microsoft 365 (sans compte)</button></div>' : ''}
+    <div class="fgrid">
+      <div class="fld half"><label for="sc-smtpHost">Serveur SMTP</label><div class="hint">Vide = fonction mail() de PHP</div><input class="inp" id="sc-smtpHost" value="${esc(c.smtpHost)}" ${dis} placeholder="smtp.office365.com"></div>
+      <div class="fld half"><label for="sc-smtpSecure">Chiffrement</label><select class="inp" id="sc-smtpSecure" ${dis}><option value="tls">STARTTLS (port 587)</option><option value="ssl">SSL/TLS (port 465)</option><option value="none">Aucun (relais interne, port 25)</option></select></div>
+      <div class="fld half"><label for="sc-smtpPort">Port</label><input class="inp" id="sc-smtpPort" type="number" value="${esc(c.smtpPort || '')}" ${dis} placeholder="selon le chiffrement"></div>
+      <div class="fld half"><label for="sc-smtpUser">Compte SMTP</label><input class="inp" id="sc-smtpUser" value="${esc(c.smtpUser)}" ${dis} autocomplete="off"></div>
+      <div class="fld half"><label for="sc-smtpPass">Mot de passe SMTP</label><input class="inp" id="sc-smtpPass" type="password" ${dis} autocomplete="new-password" placeholder="${c.smtpPassSet ? 'inchangé (enregistré)' : ''}"></div>
+      <div class="fld half"><label for="sc-mailFrom">Adresse d’expédition</label><input class="inp" id="sc-mailFrom" type="email" value="${esc(c.mailFrom)}" ${dis} placeholder="Monetique@d8.fr"></div>
+      <div class="fld half"><label for="sc-mailFromName">Nom de l’expéditeur</label><input class="inp" id="sc-mailFromName" value="${esc(c.mailFromName)}" ${dis}></div>
+      <div class="fld half"><label for="sc-appUrl">Adresse de l’application</label><div class="hint">Mise dans les liens des e-mails ${sup ? '<button type="button" class="linkbtn" data-here>adresse actuelle</button>' : ''}</div><input class="inp" id="sc-appUrl" value="${esc(c.appUrl)}" ${dis} placeholder="http://serveur/service_clients/"></div></div>
+    ${sup ? '<div class="actions"><button class="btn sm" data-test>Envoyer un e-mail de test (à vous)</button></div>' : ''}
+    <h4>Sauvegardes automatiques et maintenance</h4><div class="fgrid">
+      <div class="fld half"><label for="sc-bt">Heures des sauvegardes complètes</label><div class="hint">Séparées par des virgules, ex. 12:00, 17:00 (vide = désactivées)</div><input class="inp" id="sc-bt" value="${esc((c.backupTimes || []).join(', '))}" ${dis}></div>
+      ${num('backupKeep', 'Sauvegardes conservées', 2, 500)}
+      <div class="fld"><label>Jours</label><div class="pills">${days.map((d, i) => `<label class="sw"><input type="checkbox" data-day="${i + 1}" ${(c.backupDays || []).includes(i + 1) ? 'checked' : ''} ${dis}><span>${d}</span></label>`).join('')}</div></div>
+      <div class="fld">${chk('maintenance', 'Mode maintenance : enregistrements suspendus pour tous sauf les administrateurs')}</div></div>
+    ${sup ? `<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">Tâche planifiée Windows (sauvegardes même quand l’outil n’est pas ouvert)</summary>
+      <p class="muted">Créée par <b>installer-service-clients.ps1 -SauvegardePlanifiee</b>, ou à la main : toutes les 30 minutes, appeler l’adresse ci-dessous.</p><input class="inp mono" readonly value="${esc((c.appUrl ? c.appUrl.replace(/[^/]*$/, '') : location.origin + location.pathname.replace(/[^/]*$/, '')) + 'api.php?a=cron&key=' + c.cronKey)}">
+      <label class="sw" style="margin-top:6px"><input type="checkbox" id="sc-newCron"><span>Générer une nouvelle clé à l’enregistrement (l’ancienne ne fonctionnera plus)</span></label></details>` : ''}
+    ${sup ? `<div class="actions" style="margin-top:14px"><button class="btn primary" data-save>Enregistrer les réglages</button></div>
+      <h4>Super administrateur</h4><p class="muted" style="margin:0 0 8px">Mot de passe super administrateur : ${c.saDefined ? 'défini' + (c.saChanged ? ', changé le ' + esc(fdt(c.saChanged)) : '') : '<b>non défini</b>'}. Il est exigé pour la mise en service, la restauration et certaines réinitialisations.</p>
+      <div class="actions"><button class="btn sm" data-sac>Changer le mot de passe super administrateur</button><button class="btn sm danger" data-kick>Déconnecter tout le monde</button></div>` : ''}`;
+  if (!sup) return;
+  $('#sc-resetFor').value = c.resetFor; $('#sc-mfaRequired').value = c.mfaRequired; $('#sc-smtpSecure').value = c.smtpSecure || 'tls';
+  pwEyes(sc);
+  const set = (k, v) => { $('#sc-' + k).value = v; };
+  sc.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
+    if (b.dataset.p === 'm365') { set('smtpHost', 'smtp.office365.com'); set('smtpSecure', 'tls'); set('smtpPort', 587); if (!$('#sc-smtpUser').value) set('smtpUser', $('#sc-mailFrom').value); toast('Renseignez le mot de passe de la boîte d’envoi (« Compte SMTP ») puis enregistrez. L’adresse d’expédition doit être la même boîte.'); }
+    else { const dom = ($('#sc-mailFrom').value.split('@')[1] || '').trim(); if (!dom) return toast('Renseignez d’abord l’adresse d’expédition (ex. Monetique@d8.fr).', true); set('smtpHost', dom.replace(/\./g, '-') + '.mail.protection.outlook.com'); set('smtpSecure', 'tls'); set('smtpPort', 25); set('smtpUser', ''); toast('Relais sans compte : n’accepte que des destinataires de votre domaine, et l’adresse IP publique du serveur doit être autorisée (SPF ou connecteur).'); }
+  });
+  const here = sc.querySelector('[data-here]'); if (here) here.onclick = () => set('appUrl', location.origin + location.pathname);
+  const collect = () => ({
+    minPassword: +$('#sc-minPassword').value, sessionHours: +$('#sc-sessionHours').value, inviteDays: +$('#sc-inviteDays').value, resetMinutes: +$('#sc-resetMinutes').value,
+    pwDigit: $('#sc-pwDigit').checked, pwSpecial: $('#sc-pwSpecial').checked, pwUpper: $('#sc-pwUpper').checked, resetFor: $('#sc-resetFor').value, mfaRequired: $('#sc-mfaRequired').value,
+    lockAttempts: +$('#sc-lockAttempts').value, lockMinutes: +$('#sc-lockMinutes').value, superLockAttempts: +$('#sc-superLockAttempts').value, superLockMinutes: +$('#sc-superLockMinutes').value, superLockMail: $('#sc-superLockMail').checked,
+    smtpHost: $('#sc-smtpHost').value.trim(), smtpSecure: $('#sc-smtpSecure').value, smtpPort: +$('#sc-smtpPort').value || 0, smtpUser: $('#sc-smtpUser').value.trim(), smtpPass: $('#sc-smtpPass').value,
+    mailFrom: $('#sc-mailFrom').value.trim(), mailFromName: $('#sc-mailFromName').value.trim(), appUrl: $('#sc-appUrl').value.trim(),
+    backupTimes: $('#sc-bt').value.split(/[,;\s]+/).filter(Boolean).map(t => /^\d{1,2}$/.test(t) ? t + ':00' : t), backupKeep: +$('#sc-backupKeep').value,
+    backupDays: [...sc.querySelectorAll('[data-day]:checked')].map(i => +i.dataset.day), maintenance: $('#sc-maintenance').checked, newCronKey: !!($('#sc-newCron') || {}).checked
+  });
+  sc.querySelector('[data-save]').onclick = async () => {
+    const b = collect();
+    if (b.mfaRequired !== c.mfaRequired && b.mfaRequired !== 'none' && !await ask('Les personnes concernées mettront en place la double authentification à leur prochaine connexion (application sur téléphone). Continuer ?')) return;
+    if (await call('sec-set', b)) { toast('Réglages de sécurité enregistrés.'); maintenanceBanner(b.maintenance); reload(); }
+  };
+  sc.querySelector('[data-test]').onclick = async () => { const r = await call('mail-test', {}, null, { ms: 60000 }); if (r) toast(`E-mail de test envoyé à ${r.to}.`); };
+  sc.querySelector('[data-sac]').onclick = async () => { if (await superAdmin('Saisissez le mot de passe actuel puis le nouveau.', true)) toast('Mot de passe super administrateur changé.'); };
+  sc.querySelector('[data-kick]').onclick = async () => { if (await ask('Déconnecter tout le monde (sauf vous) ? Chacun devra ressaisir son mot de passe.', { ok: 'Déconnecter tout le monde', danger: true })) { const r = await call('kick-all', {}); if (r) toast(`${r.sessions} accès déconnecté(s).`); } };
+}
+
+/* --- Journal et blocages --- */
+async function admJournal(sc, reload) {
+  const [log, fails, users] = await Promise.all([call('auth-log'), call('fails'), call('admin-users')]);
+  if (!log) return;
+  sc.innerHTML = `<h3 style="margin:0 0 10px">Journal et blocages</h3>
+    <h4>Adresses IP surveillées</h4><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Adresse</th><th>Échecs</th><th>Dernier essai</th><th>État</th><th></th></tr></thead><tbody data-ips></tbody></table></div>
+    <h4>Comptes bloqués</h4><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Identifiant</th><th>Erreurs</th><th>État</th><th></th></tr></thead><tbody data-locks></tbody></table></div>
+    <h4>Journal des connexions et de l’administration</h4><div class="toolbar"><input class="inp" data-q placeholder="Filtrer (identifiant, événement, adresse, détail)"><button class="btn sm" data-x>Exporter (CSV)</button></div>
+    <div class="tbl-wrap" style="max-height:50vh"><table class="tbl"><thead><tr><th>Date</th><th>Événement</th><th>Identifiant</th><th>Adresse IP</th><th>Détail</th></tr></thead><tbody data-log></tbody></table></div>`;
+  const ips = sc.querySelector('[data-ips]');
+  ips.innerHTML = fails && fails.ips.length ? fails.ips.map((x, i) => `<tr><td class="mono">${esc(x.ip)}</td><td>${x.n} / ${fails.max}</td><td>${esc(fdt(x.last))}</td><td>${x.blocked ? `<span class="tag danger">bloquée jusqu’à ${esc(fdt(x.until).slice(-5))}</span>` : '<span class="tag">surveillée</span>'}</td><td><button class="ibtn" data-ub="${i}">Débloquer</button></td></tr>`).join('')
+    : `<tr><td colspan="5" class="muted">Aucune tentative ratée récente.</td></tr>`;
+  ips.querySelectorAll('[data-ub]').forEach(b => b.onclick = async () => { if (await call('unblock', { ip: fails.ips[+b.dataset.ub].ip })) { toast('Adresse débloquée.'); reload(); } });
+  const lk = sc.querySelector('[data-locks]'), locks = users ? Object.entries(users.locks) : [];
+  lk.innerHTML = locks.length ? locks.map(([l, x], i) => `<tr><td class="mono">${esc(l)}</td><td>${x.n}</td><td>${x.locked ? `<span class="tag danger">${x.until ? 'bloqué jusqu’à ' + esc(fdt(x.until).slice(-5)) : 'bloqué jusqu’au déblocage'}</span>` : '<span class="tag">surveillé</span>'}</td><td><button class="ibtn" data-ul="${i}">Débloquer</button></td></tr>`).join('') : '<tr><td colspan="4" class="muted">Aucun compte bloqué.</td></tr>';
+  lk.querySelectorAll('[data-ul]').forEach(b => b.onclick = async () => { if (await call('unlock-login', { login: locks[+b.dataset.ul][0] })) { toast('Compte débloqué.'); reload(); } });
+  const tb = sc.querySelector('[data-log]');
+  const rows = log.events.map(e => ({ e, lab: (AUTH_EV[e.ev] || [e.ev, ''])[0], tone: (AUTH_EV[e.ev] || ['', ''])[1] }));
+  const draw = () => {
+    const q = sc.querySelector('[data-q]').value.toLowerCase();
+    const list = rows.filter(r => !q || [r.lab, r.e.login, r.e.ip, r.e.info].join(' ').toLowerCase().includes(q)).slice(0, 500);
+    tb.innerHTML = list.map(({ e, lab, tone }) => `<tr><td style="white-space:nowrap">${esc(fdt(e.t))}</td><td>${tone ? `<span class="tag ${tone}">${esc(lab)}</span>` : esc(lab)}</td><td>${esc(e.login)}</td><td class="mono">${esc(e.ip)}</td><td>${esc(e.info)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aucun événement.</td></tr>';
+  };
+  sc.querySelector('[data-q]').oninput = draw;
+  sc.querySelector('[data-x]').onclick = () => { const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"'; download(new Blob(['﻿' + ['Date;Événement;Identifiant;Adresse IP;Détail', ...rows.map(r => [fdt(r.e.t), r.lab, r.e.login, r.e.ip, r.e.info].map(q).join(';'))].join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'journal-service-clients.csv'); };
+  draw();
+}
+
+/* --- Sauvegardes --- */
+async function admBackups(sc, reload) {
+  const b = await call('backups'); if (!b) return;
+  const sup = can('super'), a = b.auto;
+  const dayNames = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+  sc.innerHTML = `<div class="toolbar"><h3 style="margin:0;flex:1">Sauvegardes</h3><button class="btn sm primary" data-now>Sauvegarder maintenant</button></div>
+    <div class="bnr2 ${a.times.length ? 'info' : 'warn'}"><span>${a.times.length ? `Sauvegarde complète automatique à ${esc(a.times.join(', '))} (${a.days.length === 7 ? 'tous les jours' : a.days.map(d => dayNames[d - 1]).join(', ')}), ${a.keep} conservées. Dernière : ${a.state && a.state.done ? esc(fdt(a.state.done)) : 'aucune'} · prochaine : ${a.next ? esc(fdt(a.next)) : '—'}.` : 'Sauvegarde automatique désactivée (aucune heure réglée dans Sécurité & accès).'}</span></div>
+    <p class="muted" style="margin:0 0 10px">${b.count} dossier(s) enregistré(s). Une sauvegarde complète contient les personnes, rôles, accès (mots de passe hachés), réglages et dossiers.${b.dataDir ? ` Dossier des données : <span class="mono">${esc(b.dataDir)}</span> — à inclure dans la sauvegarde du serveur.` : ''}
+      ${b.purge && b.purge.day ? `<br>Durée de conservation : dernier contrôle le ${esc(b.purge.day)}, ${b.purge.removed} dossier(s) effacé(s).` : ''}</p>
+    <div class="tbl-wrap" style="max-height:50vh"><table class="tbl"><thead><tr><th>Date</th><th>Fichier</th><th>Taille</th><th></th></tr></thead><tbody>
+    ${b.files.length ? b.files.map((f, i) => `<tr><td>${esc(fdt(f.date))}</td><td class="mono">${esc(f.name)}</td><td>${Math.ceil(f.size / 1024)} Ko</td><td><div class="rowacts"><button class="ibtn" data-get="${i}">Télécharger</button>${sup ? `<button class="ibtn dgr" data-rs="${i}">Restaurer</button>` : ''}</div></td></tr>`).join('') : '<tr><td colspan="4" class="muted">Aucune sauvegarde pour l’instant.</td></tr>'}
+    </tbody></table></div>
+    ${sup ? `<h4>Restaurer depuis un fichier</h4><p class="muted" style="margin:0 0 8px">Remplace toutes les données (personnes, accès, réglages, dossiers) par celles du fichier. Une copie de l’état actuel est faite avant. Le mot de passe super administrateur est demandé.</p>
+      <div class="actions"><button class="btn sm danger" data-rf>Restaurer un fichier…</button><button class="btn sm" data-purge>Appliquer la durée de conservation maintenant</button><input type="file" accept=".json,application/json" class="sr" data-f></div>` : ''}`;
+  sc.querySelector('[data-now]').onclick = async () => { const r = await call('backup-now', {}, null, { ms: 120000 }); if (r) { toast(`Sauvegarde ${r.name} créée.`); reload(); } };
+  const getFile = async (name) => {
+    const r = await fetch('api.php?a=backup-get&f=' + encodeURIComponent(name), { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401 && await relogin()) return getFile(name);
+    if (!r.ok) { let e = ''; try { e = (await r.json()).error; } catch (x) { } toast(e || 'Téléchargement impossible.', true); return null; }
+    return r.blob();
+  };
+  sc.querySelectorAll('[data-get]').forEach(x => x.onclick = async () => { const f = b.files[+x.dataset.get]; const blob = await getFile(f.name); if (blob) download(blob, f.name); });
+  const restore = async (text, label) => {
+    if (!await ask(`Restaurer <b>${esc(label)}</b> ?<br><br>Toutes les données actuelles (personnes, accès, réglages, dossiers) seront remplacées. Une copie de l’état actuel est faite juste avant.`, { ok: 'Restaurer', danger: true })) return;
+    const r = await call('restore', text, null, { ms: 180000 });
+    if (r) { toast(`Restauration terminée (${r.dossiers} dossier(s)). Copie préalable : ${r.before}.`); setTimeout(() => location.reload(), 1500); }
+  };
+  sc.querySelectorAll('[data-rs]').forEach(x => x.onclick = async () => { const f = b.files[+x.dataset.rs]; const blob = await getFile(f.name); if (blob) restore(await blob.text(), f.name); });
+  const rf = sc.querySelector('[data-rf]'); if (rf) {
+    rf.onclick = () => sc.querySelector('[data-f]').click();
+    sc.querySelector('[data-f]').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; const t = await f.text(); try { const o = JSON.parse(t); if (o.kind !== 'd8-service-clients') return toast('Ce fichier n’est pas une sauvegarde complète de l’outil Service clients.', true); } catch (x) { return toast('Fichier illisible.', true); } restore(t, f.name); };
+    sc.querySelector('[data-purge]').onclick = async () => { if (!await ask(`Effacer maintenant les dossiers non modifiés depuis plus de ${C.conservation} mois ?`, { ok: 'Effacer', danger: true })) return; const r = await call('purge-now', {}); if (r) { toast(`${r.removed} dossier(s) effacé(s).`); reload(); } };
+  }
+}
+
 /* Accès pour les tests et le dépannage (console du navigateur). */
-window.GenSAV = { S, FORMS, C: () => C, validate, generate, buildPdf, buildEml, importPdf, readPdfFields, detectForm, importValues, textToBlocks, blocksToHtml, maskPAN, wa, switchTab, refresh, renderForm, setActive: t => switchTab(t), state: () => S, last: () => last };
-document.addEventListener('DOMContentLoaded', init);
+window.GenSAV = { S, FORMS, C: () => C, ME: () => ME, validate, generate, buildPdf, buildEml, importPdf, readPdfFields, detectForm, importValues, textToBlocks, blocksToHtml, maskPAN, wa,
+  switchTab, refresh, renderForm, setActive: t => switchTab(t), state: () => S, last: () => last, api, saveDossier, ensureSaved, openDossier, openAdmin };
+document.addEventListener('DOMContentLoaded', boot);
+
 </script>
 <script>
 /*! pdf-lib 1.17.1 | MIT License | Copyright (c) 2019 Andrew Dillon | https://github.com/Hopding/pdf-lib */
