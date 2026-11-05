@@ -10,7 +10,7 @@ et tutoriel PDF illustré pour débutants.
 | [`dist/VPN-Maison-1.0.0-iOS-NON-SIGNE.ipa`](dist/VPN-Maison-1.0.0-iOS-NON-SIGNE.ipa) | Application iPhone compilée mais **non signée** : ne s'installe pas telle quelle (voir plus bas). |
 | [`android/`](android) | Code source de l'application Android (Kotlin, Jetpack Compose). |
 | [`ios/`](ios) | Code source de l'application iPhone (SwiftUI + extension réseau). Voir les limites ci-dessous. |
-| [`tutoriel/`](tutoriel) | Générateur du PDF (`python3 build.py && node render.js`). |
+| [`tutoriel/`](tutoriel) | Générateur du PDF : `python3 build.py && node render.js`, puis copie du PDF dans `dist/`. |
 
 ## Comment ça marche
 
