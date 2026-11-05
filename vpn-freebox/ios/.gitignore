@@ -1,0 +1,4 @@
+# Généré par « xcodegen generate » et par scripts/prepare-wireguardkit.sh
+VPNMaison.xcodeproj/
+ThirdParty/
+build/

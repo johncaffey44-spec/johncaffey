@@ -1,0 +1,70 @@
+# Compile l'application iPhone « VPN Maison » sur un Mac de GitHub
+# et produit un fichier .ipa NON SIGNÉ (à signer avec un compte Apple Developer).
+name: VPN Maison – iOS (.ipa)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "vpn-freebox/ios/**"
+      - ".github/workflows/vpn-ios.yml"
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: vpn-freebox/ios
+    steps:
+      - uses: actions/checkout@v4
+
+      # WireGuardKit compile wireguard-go et applique un petit correctif au runtime Go
+      # (vérifié de Go 1.20 à 1.24). Go 1.22 : récent, et compatible avec les dépendances figées.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.12"
+          cache: false
+
+      - name: Installer XcodeGen
+        run: brew install xcodegen
+
+      - name: Préparer WireGuardKit (version figée + manifeste corrigé)
+        run: ./scripts/prepare-wireguardkit.sh
+
+      - name: Générer le projet Xcode
+        run: xcodegen generate
+
+      - name: Compiler (archive non signée)
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild archive \
+            -project VPNMaison.xcodeproj \
+            -scheme VPNMaison \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            -archivePath build/VPNMaison.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | tee build/xcodebuild.log | grep -E -A3 "error:|\*\* (ARCHIVE|BUILD)" || true
+          test -d build/VPNMaison.xcarchive/Products/Applications/VPNMaison.app
+
+      - name: Fabriquer le .ipa
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -R build/VPNMaison.xcarchive/Products/Applications/VPNMaison.app build/ipa/Payload/
+          (cd build/ipa && zip -qry ../VPNMaison-non-signe.ipa Payload)
+          ls -la build/*.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VPNMaison-ipa-non-signe
+          path: vpn-freebox/ios/build/VPNMaison-non-signe.ipa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: journal-xcodebuild
+          path: vpn-freebox/ios/build/xcodebuild.log
