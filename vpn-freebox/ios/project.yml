@@ -1,0 +1,83 @@
+# Projet Xcode décrit en texte : générez-le sur un Mac avec « xcodegen generate »
+# (brew install xcodegen go), puis ouvrez VPNMaison.xcodeproj.
+name: VPNMaison
+options:
+  bundleIdPrefix: com.johncaffey
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  WireGuardKit:
+    url: https://github.com/WireGuard/wireguard-apple
+    revision: 2fec12a6e1f6e3460b6ee483aa00ad29cddadab1
+settings:
+  base:
+    MARKETING_VERSION: 1.0.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "5.0"
+    ENABLE_BITCODE: NO
+    # Renseignez ici l'identifiant de votre équipe Apple Developer (compte payant obligatoire
+    # pour la capacité « Network Extension »), ou choisissez-la dans Xcode > Signing & Capabilities.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  VPNMaison:
+    type: application
+    platform: iOS
+    sources: [VPNMaison, Shared]
+    info:
+      path: VPNMaison/Info.plist
+      properties:
+        CFBundleDisplayName: VPN Maison
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: "La caméra sert uniquement à scanner le QR code WireGuard affiché par Freebox OS."
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: VPNMaison/VPNMaison.entitlements
+      properties:
+        com.apple.developer.networking.networkextension: [packet-tunnel-provider]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johncaffey.vpnmaison
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - target: PacketTunnel
+  PacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources: [PacketTunnel, Shared]
+    info:
+      path: PacketTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: VPN Maison Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    entitlements:
+      path: PacketTunnel/PacketTunnel.entitlements
+      properties:
+        com.apple.developer.networking.networkextension: [packet-tunnel-provider]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johncaffey.vpnmaison.tunnel
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - target: WireGuardGoBridgeiOS
+      - package: WireGuardKit
+        product: WireGuardKit
+  # Compile la partie « Go » de WireGuard (wireguard-go) : nécessite Go installé sur le Mac.
+  # Voir https://github.com/WireGuard/wireguard-apple#wireguardkit-integration
+  WireGuardGoBridgeiOS:
+    type: ""
+    platform: iOS
+    legacy:
+      toolPath: /usr/bin/make
+      arguments: $(ACTION)
+      passSettings: true
+      workingDirectory: ${BUILD_DIR%Build/*}SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo
+    settings:
+      base:
+        SDKROOT: iphoneos
