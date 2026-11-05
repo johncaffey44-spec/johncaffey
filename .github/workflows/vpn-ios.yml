@@ -19,14 +19,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # WireGuardKit compile wireguard-go : version de Go recommandée par le projet.
+      # WireGuardKit compile wireguard-go et applique un petit correctif au runtime Go
+      # (vérifié de Go 1.20 à 1.24). Go 1.22 : récent, et compatible avec les dépendances figées.
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.20.14"
+          go-version: "1.22.12"
           cache: false
 
       - name: Installer XcodeGen
         run: brew install xcodegen
+
+      - name: Préparer WireGuardKit (version figée + manifeste corrigé)
+        run: ./scripts/prepare-wireguardkit.sh
 
       - name: Générer le projet Xcode
         run: xcodegen generate
@@ -43,7 +47,7 @@ jobs:
             -derivedDataPath build/DerivedData \
             -archivePath build/VPNMaison.xcarchive \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            | tee build/xcodebuild.log | grep -E "error:|warning: unable|\*\* (ARCHIVE|BUILD)" || true
+            | tee build/xcodebuild.log | grep -E -A3 "error:|\*\* (ARCHIVE|BUILD)" || true
           test -d build/VPNMaison.xcarchive/Products/Applications/VPNMaison.app
 
       - name: Fabriquer le .ipa

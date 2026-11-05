@@ -9,8 +9,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let log = Logger(subsystem: "com.johncaffey.vpnmaison.tunnel", category: "tunnel")
 
     private lazy var adapter: WireGuardAdapter = {
-        WireGuardAdapter(with: self) { [log] _, message in
-            log.debug("\(message, privacy: .public)")
+        let logger = self.log
+        return WireGuardAdapter(with: self) { _, message in
+            logger.debug("\(message, privacy: .public)")
         }
     }()
 
@@ -27,7 +28,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(error)
             return
         }
-        adapter.start(tunnelConfiguration: configuration) { [log] adapterError in
+        adapter.start(tunnelConfiguration: configuration) { [log = self.log] adapterError in
             if let adapterError {
                 log.error("Démarrage impossible : \(String(describing: adapterError), privacy: .public)")
                 completionHandler(TunnelError.adapter(String(describing: adapterError)))
