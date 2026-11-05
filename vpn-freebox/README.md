@@ -7,6 +7,7 @@ et tutoriel PDF illustré pour débutants.
 |---|---|
 | [`dist/Tutoriel-VPN-Freebox.pdf`](dist/Tutoriel-VPN-Freebox.pdf) | **Commencez ici.** Tutoriel pas à pas (19 pages, schémas avec flèches et encadrés) : réglage de la box, Android, iPhone, tests, dépannage, sécurité. |
 | [`dist/VPN-Maison-1.0.0.apk`](dist/VPN-Maison-1.0.0.apk) | Application Android prête à installer (Android 7 et plus, 4 Mo). |
+| [`dist/VPN-Maison-1.0.0-iOS-NON-SIGNE.ipa`](dist/VPN-Maison-1.0.0-iOS-NON-SIGNE.ipa) | Application iPhone compilée mais **non signée** : ne s'installe pas telle quelle (voir plus bas). |
 | [`android/`](android) | Code source de l'application Android (Kotlin, Jetpack Compose). |
 | [`ios/`](ios) | Code source de l'application iPhone (SwiftUI + extension réseau). Voir les limites ci-dessous. |
 | [`tutoriel/`](tutoriel) | Générateur du PDF (`python3 build.py && node render.js`). |
@@ -63,18 +64,34 @@ ne s'installe pas sur un iPhone normal ; les outils de « sideload » avec un id
 cette capacité.
 
 - Le projet `ios/` (SwiftUI + extension `PacketTunnel` basée sur WireGuardKit) est fourni pour être complet.
-- `.github/workflows/vpn-ios.yml` le compile sur un Mac de GitHub et produit un `.ipa` **non signé**.
+- `.github/workflows/vpn-ios.yml` le compile sur un Mac de GitHub et produit un `.ipa` **non signé**
+  (copie dans `dist/`, SHA-256 `bb010f2fadc3830e76dda9c1d03e2283f713e99bf475977b87be3d671abcafc8`).
 - **Recommandation** : sur iPhone, utilisez l'application officielle gratuite **WireGuard** (App Store) avec le même
   QR code. Elle utilise le même moteur ; c'est la partie 3 du tutoriel.
 
-Pour l'installer malgré tout (Mac + compte payant) : `brew install xcodegen go`, puis `cd vpn-freebox/ios && xcodegen generate`,
-ouvrez `VPNMaison.xcodeproj`, choisissez votre équipe dans *Signing & Capabilities* pour les deux cibles, puis lancez ▶ sur l'iPhone.
+Pour l'installer malgré tout (Mac + compte payant) :
+
+```bash
+brew install xcodegen go
+cd vpn-freebox/ios
+./scripts/prepare-wireguardkit.sh   # WireGuardKit figé + correctifs Xcode 16
+xcodegen generate
+open VPNMaison.xcodeproj
+```
+
+Puis choisissez votre équipe dans *Signing & Capabilities* pour les deux cibles et lancez ▶ sur l'iPhone.
+
+`prepare-wireguardkit.sh` est nécessaire car le paquet officiel `wireguard-apple` (inchangé depuis 2023) ne se compile
+plus tel quel avec Xcode 16 : manifeste en `swift-tools-version:5.3` incompatible avec `.iOS(.v15)`, et un
+`#include <sys/types.h>` manquant dans `WireGuardKitC`.
 
 ## Limites connues (en toute franchise)
 
 - L'APK a été compilé, signé, analysé (manifeste, bibliothèques natives) et sa logique de configuration est couverte
   par des tests unitaires. Il **n'a pas pu être essayé sur un vrai téléphone ni sur une vraie Freebox** avant la livraison.
-- Le projet iPhone n'a été ni compilé localement ni essayé sur un iPhone (voir l'onglet *Actions* du dépôt pour le résultat de la compilation sur Mac).
+- Le projet iPhone **se compile** sur macOS (Xcode 16.4, GitHub Actions) : l'extension `PacketTunnel.appex` du `.ipa`
+  contient bien le moteur wireguard-go. Il **n'a pas été essayé sur un iPhone** : il faudrait le signer avec un compte
+  Apple Developer payant.
 - Les noms des menus Freebox OS viennent de la documentation disponible fin 2026 ; Free peut les changer.
 - Google prévoit, à partir de 2027, de restreindre l'installation d'applications hors Play Store aux développeurs vérifiés
   (avec une procédure « avancée » pour les utilisateurs expérimentés). Solution de repli : l'application officielle WireGuard du Play Store.

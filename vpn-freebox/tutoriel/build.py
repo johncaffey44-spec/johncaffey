@@ -384,11 +384,11 @@ Faites toujours les tests <b>en 4G/5G, Wi-Fi coupé</b>.</p>
 <li>Une <b>compilation automatique sur Mac</b> par GitHub Actions (onglet « Actions » du dépôt) qui produit un <code>.ipa</code> <b>non signé</b>.</li></ul>
 <h4>Pour l'installer sur votre iPhone (si un jour vous avez un Mac et le compte payant)</h4>
 <ol><li>Sur le Mac : installez <b>Xcode</b> (App Store) et <b>Homebrew</b>, puis dans le Terminal : <code>brew install xcodegen go</code>.</li>
-<li>Téléchargez le dépôt, puis : <code>cd vpn-freebox/ios</code> et <code>xcodegen generate</code>.</li>
+<li>Téléchargez le dépôt, puis dans le Terminal : <code>cd vpn-freebox/ios</code>, <code>./scripts/prepare-wireguardkit.sh</code> (récupère et corrige WireGuardKit pour Xcode 16) et <code>xcodegen generate</code>.</li>
 <li>Ouvrez <code>VPNMaison.xcodeproj</code>. Pour les cibles <b>VPNMaison</b> et <b>PacketTunnel</b>, onglet <b>Signing &amp; Capabilities</b> : choisissez votre équipe (Team).</li>
 <li>Branchez l'iPhone, activez <span class="menu">Réglages</span> <span class="arrow">➜</span> <span class="menu">Confidentialité et sécurité</span> <span class="arrow">➜</span> <span class="menu">Mode développeur</span>.</li>
 <li>Dans Xcode, choisissez votre iPhone en haut et cliquez sur ▶ (Run).</li></ol>
-""" + box("attention", "Honnêtement", "<p>Pour un usage personnel, payer 99 $ par an pour retrouver ce que fait déjà gratuitement l'application officielle WireGuard n'a pas d'intérêt. Le projet iPhone est fourni pour être complet, et n'a pas pu être essayé sur un vrai iPhone.</p>"))
+""" + box("attention", "Honnêtement", "<p>Pour un usage personnel, payer 99 $ par an pour retrouver ce que fait déjà gratuitement l'application officielle WireGuard n'a pas d'intérêt. Le projet iPhone est fourni pour être complet : il se compile sans erreur sur Mac (vérifié avec Xcode 16 via GitHub Actions, moteur WireGuard inclus), mais n'a pas pu être essayé sur un vrai iPhone, faute de signature Apple.</p>"))
     h.append(part("B", "Transparence : ce que fait l'application VPN Maison").replace("PARTIE B", "ANNEXE B").replace('class="part"', 'class="part annexe"'))
     h.append(f"""
 <table><tr><th style="width:30%">Question</th><th>Réponse</th></tr>
@@ -398,7 +398,7 @@ Faites toujours les tests <b>en 4G/5G, Wi-Fi coupé</b>.</p>
 <tr><td>Envoie-t-elle des données ?</td><td>Non : ni publicité, ni statistiques, ni serveur tiers. Le seul échange en dehors du tunnel est la connexion chiffrée à <b>votre</b> Freebox.</td></tr>
 <tr><td>Et le bouton « Lancer le test » ?</td><td>Il lit la page publique <code>http://mafreebox.freebox.fr/api_version</code> de votre box, à travers le tunnel. Elle ne renvoie que le modèle de la box ; aucun mot de passe n'est envoyé.</td></tr>
 <tr><td>Code source</td><td><code>github.com/{REPO}</code>, dossier <code>vpn-freebox</code>.</td></tr>
-<tr><td>Ce qui a été vérifié</td><td>L'APK a été compilé et signé, et sa logique de lecture de configuration est couverte par des tests automatiques. Il n'a pas pu être essayé sur un téléphone réel avant la livraison : signalez tout souci.</td></tr></table>
+<tr><td>Ce qui a été vérifié</td><td>L'APK a été compilé et signé, puis recompilé de façon indépendante par GitHub Actions ; sa logique de lecture de configuration est couverte par des tests automatiques. Il n'a pas pu être essayé sur un téléphone réel avant la livraison : signalez tout souci.</td></tr></table>
 <p style="margin-top:14px;color:#5F6368;font-size:9pt">Les noms de menus de Freebox OS et de l'application Free proviennent de la documentation disponible fin 2026 ; Free peut les modifier.
 « Freebox » est une marque de Free ; ce tutoriel est indépendant et non affilié.</p>
 """)
