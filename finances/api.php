@@ -12,10 +12,11 @@
  *
  * SÉCURITÉ — à lire avant la mise en service :
  *   1. Dès que l'outil est accessible hors de chez vous : HTTPS obligatoire ($REQUIRE_HTTPS = true).
- *   2. Placez data/ hors de la racine web si possible ($DATA_DIR). Sinon, l'application vérifie
- *      elle-même que data/ n'est pas lisible depuis le navigateur et affiche une alerte rouge si c'est le cas.
- *   3. Chaque personne a son propre mot de passe et son code de secours. Personne ne voit le détail
- *      des opérations de l'autre sans son accord (Réglages › Confidentialité).
+ *   2. Placez data/ hors de la racine web ($DATA_DIR) et limitez l'accès au réseau de la maison
+ *      ($ALLOWED_NETS = ['local']), dans config.local.php : l'installeur Windows le fait pour vous.
+ *      Sinon, l'application vérifie elle-même que data/ n'est pas lisible et affiche une alerte rouge.
+ *   3. Chaque personne du foyer a son propre mot de passe et son code de secours. Personne ne voit le
+ *      détail des opérations des autres sans leur accord (Réglages › Confidentialité).
  *   4. N'hébergez pas vos finances personnelles sur le serveur ou le NAS de votre employeur.
  * -----------------------------------------------------------------------------
  */
@@ -38,7 +39,7 @@ $ALLOWED_NETS  = ['tout'];            // qui peut ouvrir l'application : ['tout'
 // Réglages propres à CETTE installation (écrits par l'installeur Windows, jamais publiés) : ils remplacent ceux du dessus.
 if (is_file(__DIR__ . '/config.local.php')) require __DIR__ . '/config.local.php';
 
-define('BOUSSOLE', '1.0.0');
+define('BOUSSOLE', '1.1.0');
 if (PHP_VERSION_ID < 70400) { header('Content-Type: application/json; charset=utf-8'); http_response_code(500); echo '{"error":"PHP 7.4 ou plus est nécessaire (version actuelle : ' . PHP_VERSION . ')."}'; exit; }
 if (!@date_default_timezone_set($TIMEZONE)) date_default_timezone_set('Europe/Paris');
 header('Content-Type: application/json; charset=utf-8');
