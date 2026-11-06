@@ -1,1 +1,3 @@
 *.zip
+# Boussole : base de données, clé de chiffrement, documents et sessions — ne JAMAIS publier
+finances/data/
