@@ -23,17 +23,54 @@ const CREDIT_HINT_RE = '/\b(VIR SEPA RECU|VIREMENT RECU|VIR RECU|VIREMENT DE|VIR
 function imp_parse_file(string $raw, string $filename): array {
     $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
     if ($ext === 'pdf' || starts($raw, '%PDF')) return imp_parse_pdf_server($raw);
+    // tableurs : Excel .xlsx et OpenDocument .ods (archives ZIP), Excel 97-2003 .xls (fichier composé OLE)
+    if (starts($raw, "PK\x03\x04")) {
+        $z = zip_entries($raw, 60 * 1024 * 1024);
+        if (isset($z['xl/workbook.xml'])) return imp_parse_sheets(fmt_xlsx_sheets($z), 'xlsx');
+        if (isset($z['content.xml']) && strpos((string)($z['mimetype'] ?? ''), 'spreadsheet') !== false) return imp_parse_sheets(fmt_ods_sheets($z), 'ods');
+        return imp_empty('zip', 'Archive ZIP : décompressez-la, puis importez le relevé qu’elle contient (CSV, OFX, Excel…).');
+    }
+    if (starts($raw, "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1")) return imp_parse_sheets(fmt_xls_sheets($raw), 'xls');
     $txt = utf8_from_any($raw);
     $head = substr($txt, 0, 4096);
+    if (preg_match('/<(\w+:)?(BkToCstmrStmt|BkToCstmrAcctRpt|BkToCstmrDbtCdtNtfctn)\b|camt\.05[234]/', $head)) return imp_finalize(fmt_parse_camt(ltrim($txt, "\xEF\xBB\xBF")));
+    if (preg_match('/(^|\n|\{4:)\s*:20:/', $head) && preg_match('/\n:61:/', $txt) && preg_match('/\n:6[02][FM]:/', $txt)) return imp_finalize(fmt_parse_mt940($txt));
     if ($ext === 'ofx' || $ext === 'qfx' || preg_match('/<OFX>|OFXHEADER|<STMTTRN>/i', $head)) return imp_finalize(imp_parse_ofx($txt));
     if ($ext === 'qif' || preg_match('/^\s*!Type:/mi', $head)) return imp_finalize(imp_parse_qif($txt));
+    // « .xls » qui est en réalité une page HTML (export de certaines banques)
+    if (preg_match('/<table\b/i', $txt) && (in_array($ext, ['xls', 'htm', 'html'], true) || preg_match('/^\s*(<!DOCTYPE|<html|<table)/i', $head))) {
+        $r = imp_parse_sheets(fmt_html_tables($txt), 'html');
+        if ($r['rows']) return $r;
+    }
+    if (in_array($ext, ['xml'], true)) return imp_empty('xml', 'Fichier XML non reconnu : seuls les relevés ISO 20022 (camt.052, camt.053, camt.054) sont lus.');
     // un vrai CSV (.csv/.tsv) peut être sans en-tête ; un autre fichier n'est lu comme CSV que si son en-tête est reconnu
-    $isCsv = in_array($ext, ['csv', 'tsv'], true);
+    $isCsv = in_array($ext, ['csv', 'tsv', 'xls'], true);
     if ($isCsv || imp_csv_delim(imp_lines($txt)) !== null) {
         $r = imp_parse_csv($txt, $isCsv);
         if ($r['rows']) return imp_finalize($r);
     }
     return imp_parse_text($txt);
+}
+
+function imp_empty(string $format, string $warning): array {
+    return ['format' => $format, 'rows' => [], 'meta' => [], 'warnings' => [$warning], 'check' => ['status' => 'inconnu', 'detail' => '']];
+}
+
+/** Feuilles d'un tableur : la première dont les colonnes sont reconnues ; sinon, colonnes devinées sur la plus grande. */
+function imp_parse_sheets(array $sheets, string $format): array {
+    $best = null;
+    foreach ($sheets as $rows) {
+        if (!$rows) continue;
+        $r = imp_parse_table($rows, false, $format);
+        if ($r['rows']) return imp_finalize($r);
+        if ($best === null || count($rows) > count($best)) $best = $rows;
+    }
+    if ($best !== null) {
+        $r = imp_parse_table($best, true, $format);
+        if ($r['rows']) return imp_finalize($r);
+    }
+    $nom = ['xlsx' => 'classeur Excel', 'xls' => 'classeur Excel', 'ods' => 'classeur OpenDocument', 'html' => 'tableau'][$format] ?? 'fichier';
+    return imp_empty($format, 'Aucune colonne « date » et « montant » reconnue dans ce ' . $nom . '. Vérifiez qu’il s’agit bien de l’export des opérations, ou utilisez l’export CSV ou OFX de votre banque.');
 }
 
 function imp_lines(string $t, int $max = 40): array {
@@ -114,6 +151,12 @@ function imp_parse_csv(string $txt, bool $allowGuess = true): array {
     $delim = imp_csv_delim(imp_lines($txt, 60)) ?? ';';
     $rows = [];
     foreach ($all as $l) { if (trim($l) === '') continue; $rows[] = array_map('trim', str_getcsv($l, $delim, '"', '\\')); }
+    return imp_parse_table($rows, $allowGuess, 'csv');
+}
+
+/** Tableau de lignes (CSV, Excel, OpenDocument, HTML) : repère l'en-tête puis lit date, libellé et montant. */
+function imp_parse_table(array $rows, bool $allowGuess, string $format): array {
+    $rows = array_map(function ($r) { return array_map(function ($c) { return trim((string)$c); }, (array)$r); }, $rows);
     $warn = [];
     // ligne d'en-tête : la première qui contient une date ET un montant (ou débit / crédit)
     $map = null; $start = 0;
@@ -130,7 +173,7 @@ function imp_parse_csv(string $txt, bool $allowGuess = true): array {
     if ($map === null) {
         $map = $allowGuess ? imp_csv_guess($rows) : null;
         $start = 0;
-        if ($map === null) return ['format' => 'csv', 'rows' => [], 'meta' => [], 'warnings' => ['Colonnes du fichier non reconnues.']];
+        if ($map === null) return ['format' => $format, 'rows' => [], 'meta' => [], 'warnings' => ['Colonnes du fichier non reconnues.']];
         $warn[] = 'Fichier sans en-tête : colonnes déduites du contenu, vérifiez le sens des montants.';
     }
     if (!isset($map['label']) && isset($map['label2'])) { $map['label'] = $map['label2']; unset($map['label2']); }
@@ -138,7 +181,10 @@ function imp_parse_csv(string $txt, bool $allowGuess = true): array {
     $dayFirst = imp_csv_dayfirst($rows, $start, $map['date']);
     $out = []; $balances = []; $foreign = 0; $skipped = 0;
     foreach (array_slice($rows, $start) as $r) {
-        $date = date_parse_any((string)($r[$map['date']] ?? ''), null, $dayFirst);
+        $cellDate = (string)($r[$map['date']] ?? '');
+        $date = date_parse_any($cellDate, null, $dayFirst);
+        // tableur : date restée en numéro de série (cellule sans format de date)
+        if ($date === null && $format !== 'csv' && preg_match('/^\d{5}(\.\d+)?$/', $cellDate) && (float)$cellDate > 20000 && (float)$cellDate < 80000) $date = fmt_serial_date((float)$cellDate);
         if ($date === null) continue;
         if (isset($map['state'])) {
             $st = norm_text((string)($r[$map['state']] ?? ''));
@@ -177,7 +223,7 @@ function imp_parse_csv(string $txt, bool $allowGuess = true): array {
     }
     if ($foreign) $warn[] = $foreign . ' opération(s) dans une autre devise que l’euro : les montants sont repris tels quels.';
     if ($skipped) $warn[] = $skipped . ' opération(s) annulée(s) ou en attente ignorée(s).';
-    return ['format' => 'csv', 'rows' => $out, 'meta' => $meta, 'warnings' => $warn];
+    return ['format' => $format, 'rows' => $out, 'meta' => $meta, 'warnings' => $warn];
 }
 
 function imp_csv_dayfirst(array $rows, int $start, int $col): bool {

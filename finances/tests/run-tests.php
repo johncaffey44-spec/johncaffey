@@ -8,7 +8,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 define('BOUSSOLE', 'test');
 date_default_timezone_set('Europe/Paris');
 $root = dirname(__DIR__);
-foreach (['util', 'categorize', 'import', 'legal', 'analyse', 'alertes', 'vault', 'mail', 'zip'] as $f) require $root . '/lib/' . $f . '.php';
+foreach (['util', 'categorize', 'import', 'legal', 'analyse', 'alertes', 'vault', 'mail', 'zip', 'formats'] as $f) require $root . '/lib/' . $f . '.php';
 
 $pass = 0; $fail = 0;
 function ok($cond, string $what): void { global $pass, $fail; if ($cond) { $pass++; } else { $fail++; echo "  ✗ $what\n"; } }
@@ -190,6 +190,39 @@ rewind($flux);
 $lu2 = zip_entries(stream_get_contents($flux));
 ok($n2 === 'Paie/octobre (2).pdf' && ($lu2['Paie/octobre.pdf'] ?? '') === '%PDF-1' && ($lu2['Paie/octobre (2).pdf'] ?? '') === '%PDF-2', 'archive au fil de l’eau, noms en double renommés');
 ok(zip_safe_name('Facture : avril/mai 2026 ?') === 'Facture _ avril_mai 2026 _', 'noms de fichiers sans caractères interdits par Windows');
+
+section('Formats de relevés (tableurs, XML ISO 20022, MT940)');
+$ref = imp_parse_file(file_get_contents(__DIR__ . '/samples/export-3-mois.csv'), 'export.csv');
+$cle = function (array $r): array { $l = array_map(function ($x) { return [$x['date'], $x['amount'], $x['label']]; }, $r['rows']); sort($l); return $l; };
+foreach (['export-3-mois.xlsx' => 'Excel .xlsx', 'export-3-mois.xls' => 'Excel 97-2003 .xls (binaire)', 'export-3-mois.ods' => 'OpenDocument .ods', 'export-3-mois-html.xls' => '« .xls » HTML de banque'] as $f => $nom) {
+    $r = imp_parse_file(file_get_contents(__DIR__ . '/samples/' . $f), $f);
+    ok($cle($r) === $cle($ref), $nom . ' : ' . count($r['rows']) . ' opérations identiques au CSV');
+}
+$c = imp_parse_file(file_get_contents(__DIR__ . '/samples/releve-camt053.xml'), 'releve.xml');
+ok(count($c['rows']) === 2 && $c['rows'][0]['amount'] === -6234 && has($c['rows'][0]['label'], 'EDF CLIENTS PARTICULIERS') && $c['check']['status'] === 'ok', 'camt.053 : opérations comptabilisées, soldes cohérents');
+ok(count($c['warnings']) === 1 && has($c['warnings'][0], 'attente'), 'camt.053 : opération en attente ignorée');
+$m = imp_parse_file(file_get_contents(__DIR__ . '/samples/releve-mt940.sta'), 'releve.sta');
+ok(count($m['rows']) === 2 && $m['rows'][0]['label'] === 'EDF CLIENTS PARTICULIER PRLV SEPA FACTURE 2026-10' && $m['rows'][1]['label'] === 'EXEMPLE SAS SALAIRE OCTOBRE' && $m['check']['status'] === 'ok', 'MT940 : libellés nettoyés, soldes cohérents');
+$abime = false; try { imp_parse_file("PK\x03\x04" . str_repeat("\0", 30), 'archive.zip'); } catch (RuntimeException $e) { $abime = has($e->getMessage(), 'illisible'); }
+ok($abime, 'archive ZIP abîmée : message clair');
+$zipAutre = zip_build(['lisezmoi.txt' => 'bonjour']);
+ok(has(implode(' ', imp_parse_file($zipAutre, 'archive.zip')['warnings']), 'décompressez'), 'archive ZIP : invitation à la décompresser');
+
+section('Exports (Excel, OFX, QIF) et courrier Word');
+$txE = [['date' => '2026-10-03', 'amount' => -1234, 'label' => 'CARTE X1234 BOULANGERIE « CHEZ ÉMILE »', 'merchant' => 'BOULANGERIE CHEZ EMILE', 'category' => 'courses', 'fp' => 'a1'],
+    ['date' => '2026-10-28', 'amount' => 185000, 'label' => 'VIR SEPA EXEMPLE SAS SALAIRE', 'merchant' => 'EXEMPLE SAS', 'category' => 'salaire', 'fp' => 'b2'],
+    ['date' => '2026-10-13', 'amount' => -800, 'label' => 'COMMISSION D’INTERVENTION & FRAIS <TEST>', 'merchant' => 'COMMISSION', 'category' => 'frais_bancaires', 'fp' => 'c3']];
+$retour = function (string $data, string $nom) { $r = imp_parse_file($data, $nom); $l = array_map(function ($x) { return [$x['date'], $x['amount']]; }, $r['rows']); sort($l); return $l; };
+$attendu = [['2026-10-03', -1234], ['2026-10-13', -800], ['2026-10-28', 185000]];
+$x = fmt_xlsx_build('Opérations', [['Date', 'date', 12], ['Libellé', 'texte', 50], ['Montant', 'euros', 14]], array_map(function ($t) { return [$t['date'], $t['label'], $t['amount']]; }, $txE));
+ok($retour($x, 'export.xlsx') === $attendu, 'Excel : écrit puis relu (dates, montants)');
+$z = zip_entries($x);
+ok(has($z['xl/worksheets/sheet1.xml'], 'CHEZ ÉMILE') && has($z['xl/worksheets/sheet1.xml'], 'state="frozen"') && has($z['xl/styles.xml'], 'formatCode="dd/mm/yyyy"'), 'Excel : accents, en-tête figé, format de date');
+ok($retour(fmt_ofx_build($txE, ['account' => '…5678']), 'export.ofx') === $attendu, 'OFX : écrit puis relu');
+ok(has(fmt_ofx_build($txE), '&amp; FRAIS &lt;TEST&gt;'), 'OFX : caractères spéciaux échappés');
+ok($retour(fmt_qif_build($txE, ['courses' => 'Courses alimentaires']), 'export.qif') === $attendu, 'QIF : écrit puis relu (jour avant mois)');
+$d = zip_entries(fmt_docx_build('Réclamation', "Madame, Monsieur,\n\nObjet : remboursement\n\nJe conteste « 8,00 € » & demande…"));
+ok(isset($d['word/document.xml'], $d['[Content_Types].xml']) && has($d['word/document.xml'], '« 8,00 € » &amp; demande') && has($d['word/document.xml'], '<w:b/>'), 'Word : texte échappé, ligne « Objet » en gras');
 
 section('Réseau de la maison');
 $cas = [['192.168.1.20', ['local'], '', true], ['8.8.8.8', ['local'], '', false], ['100.101.102.103', ['local'], '', true], ['::ffff:192.168.0.4', ['local'], '', true],

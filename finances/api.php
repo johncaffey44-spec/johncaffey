@@ -64,6 +64,7 @@ require __DIR__ . '/lib/alertes.php';
 require __DIR__ . '/lib/vault.php';
 require __DIR__ . '/lib/mail.php';
 require __DIR__ . '/lib/zip.php';
+require __DIR__ . '/lib/formats.php';
 
 class UserError extends RuntimeException {}
 
@@ -1002,7 +1003,8 @@ case 'import.parse': {
     } elseif ($fmt === 'texte') {
         $res = imp_parse_text(clean_str(str_replace("\r", '', (string)($payload['texte'] ?? '')), 2000000) . "\n");
     } elseif ($token !== null) {
-        $res = imp_parse_file($raw, $fname);
+        try { $res = imp_parse_file($raw, $fname); }
+        catch (RuntimeException $e) { fail(400, $e->getMessage()); }       // fichier abîmé ou format inattendu : message clair
     } else fail(400, 'Aucun relevé reçu.');
 
     // aperçu : catégorie proposée et doublons déjà importés
@@ -1522,18 +1524,79 @@ case 'security': {
 }
 
 case 'export': {
+    // mes opérations (un mois ou tout) : CSV pour Excel, classeur Excel, OFX ou QIF pour un logiciel de comptes, JSON = toutes mes données
     $u = auth();
-    $txs = tx_load((int)$u['id']);
-    ev((int)$u['id'], 'export_csv', count($txs) . ' opérations');
+    $uid = (int)$u['id'];
+    $fmt = (string)($_GET['format'] ?? 'csv');
+    if (!in_array($fmt, ['csv', 'xlsx', 'ofx', 'qif', 'json'], true)) fail(400, 'Format d’export inconnu.');
+    $mois = (string)($_GET['mois'] ?? '');
+    $txs = tx_load($uid);
+    if (preg_match('/^\d{4}-\d{2}$/', $mois)) $txs = array_values(array_filter($txs, function ($t) use ($mois) { return strncmp($t['date'], $mois, 7) === 0; }));
+    else $mois = '';
+    $nom = 'boussole-' . ($fmt === 'json' ? 'mes-donnees' : 'operations') . '-' . ($mois ?: date('Y-m-d'));
+    $ft = fee_types();
+    $catLabel = function (string $c) use ($cats): string { return $cats[$c][0] ?? $c; };
+    $send = function (string $type, string $ext, string $data) use ($nom): void {
+        header_remove('Content-Type');
+        header('Content-Type: ' . $type);
+        header('Content-Disposition: attachment; filename="' . $nom . '.' . $ext . '"');
+        header('Content-Length: ' . strlen($data));
+        echo $data;
+        exit;
+    };
+    ev($uid, 'export_' . $fmt, count($txs) . ' opérations' . ($mois ? ' (' . $mois . ')' : ''));
+    if ($fmt === 'xlsx') {
+        $rows = [];
+        foreach ($txs as $t) $rows[] = [$t['date'], $t['label'], (int)$t['amount'], $t['kind'], $catLabel($t['category']), NATURES[$t['nature']][0] ?? $t['nature'],
+            $t['fee'] !== '' ? ($ft[$t['fee']][0] ?? $t['fee']) : '', $t['common'] ? 'oui' : '', $t['note']];
+        $send('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx', fmt_xlsx_build('Opérations', [['Date', 'date', 12], ['Libellé', 'texte', 58], ['Montant', 'euros', 14],
+            ['Type', 'texte', 12], ['Catégorie', 'texte', 24], ['Nature', 'texte', 16], ['Frais bancaire', 'texte', 22], ['Commune', 'texte', 10], ['Note', 'texte', 30]], $rows));
+    }
+    if ($fmt === 'ofx') {
+        $p = profile($u);
+        $send('application/x-ofx', 'ofx', fmt_ofx_build($txs, ['account' => $p['compte'] !== '' ? $p['compte'] : 'COMPTE']));
+    }
+    if ($fmt === 'qif') {
+        $labels = [];
+        foreach ($cats as $id => $c) $labels[$id] = $c[0];
+        $send('application/qif', 'qif', fmt_qif_build($txs, $labels));
+    }
+    if ($fmt === 'json') {
+        // portabilité : tout ce que Boussole sait de moi (jamais les mots de passe ni les codes)
+        $q = function (string $sql) use ($uid): array { $s = db()->prepare($sql); $s->execute([$uid]); return $s->fetchAll(); };
+        $docs = array_map(function ($d) { unset($d['store']); $d['meta'] = json_dec($d['meta']); return $d; }, $q('SELECT * FROM docs WHERE user_id = ? ORDER BY id'));
+        $data = ['export' => ['application' => 'Boussole', 'version' => BOUSSOLE, 'date' => date('c'), 'periode' => $mois ?: 'tout'],
+            'compte' => ['prenom' => $u['name'], 'email' => $u['email'], 'cree_le' => date('c', (int)$u['created_at']), 'role' => $u['role'] ?? 'admin'], 'profil' => profile($u),
+            'operations' => array_map(function ($t) use ($cats) { return tx_public($t, $cats); }, $txs),
+            'releves' => $q('SELECT * FROM statements WHERE user_id = ? ORDER BY period_end'), 'regles' => $q('SELECT * FROM rules WHERE user_id = ? ORDER BY id'),
+            'enveloppes' => budgets_of($uid), 'abonnements_suivis' => subs_state($uid), 'alertes' => $q('SELECT * FROM alerts WHERE user_id = ? ORDER BY id'),
+            'documents' => ['note' => 'Fichiers : Coffre-fort › Tout télécharger (.zip)', 'liste' => $docs]];
+        $send('application/json; charset=utf-8', 'json', json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+    }
     header_remove('Content-Type');
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="boussole-operations-' . date('Y-m-d') . '.csv"');
+    header('Content-Disposition: attachment; filename="' . $nom . '.csv"');
     $o = fopen('php://output', 'w');
     fwrite($o, "\xEF\xBB\xBF");
     fputcsv($o, ['Date', 'Libellé', 'Montant', 'Type', 'Catégorie', 'Nature', 'Frais bancaire', 'Dépense commune', 'Note'], ';', '"', '\\');
-    $ft = fee_types();
-    foreach ($txs as $t) fputcsv($o, [fr_date($t['date']), $t['label'], str_replace('.', ',', sprintf('%.2f', $t['amount'] / 100)), $t['kind'], $cats[$t['category']][0] ?? $t['category'], NATURES[$t['nature']][0] ?? $t['nature'], $t['fee'] !== '' ? ($ft[$t['fee']][0] ?? $t['fee']) : '', $t['common'] ? 'oui' : '', $t['note']], ';', '"', '\\');
+    foreach ($txs as $t) fputcsv($o, [fr_date($t['date']), $t['label'], str_replace('.', ',', sprintf('%.2f', $t['amount'] / 100)), $t['kind'], $catLabel($t['category']), NATURES[$t['nature']][0] ?? $t['nature'], $t['fee'] !== '' ? ($ft[$t['fee']][0] ?? $t['fee']) : '', $t['common'] ? 'oui' : '', $t['note']], ';', '"', '\\');
     fclose($o);
+    exit;
+}
+
+case 'letter.docx': {
+    // courrier relu et complété dans la page, rendu au format Word
+    $u = auth(); $in = body();
+    $objet = clean_str($in['objet'] ?? '', 200);
+    $corps = trim(str_replace("\r", '', (string)preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', cut((string)($in['corps'] ?? ''), 60000))));
+    if ($corps === '') fail(400, 'Courrier vide.');
+    $doc = fmt_docx_build($objet !== '' ? $objet : 'Courrier', $corps);
+    ev((int)$u['id'], 'courrier_word', cut($objet, 80));
+    header_remove('Content-Type');
+    header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    header('Content-Disposition: attachment; filename="' . (preg_replace('/[^A-Za-z0-9]+/', '-', norm_text($objet ?: 'courrier')) ?: 'courrier') . '.docx"');
+    header('Content-Length: ' . strlen($doc));
+    echo $doc;
     exit;
 }
 

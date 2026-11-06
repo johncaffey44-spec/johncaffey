@@ -545,16 +545,53 @@ async function openLetter(id, source) {
   try { L = await api('letter', { method: 'POST', body: Object.assign({ id }, source || {}) }); } catch (e) { return toast(e.message, false); }
   const profile = S.me.profil;
   const missing = !profile.nom_complet || !profile.adresse || !profile.compte;
-  const mailto = 'mailto:?subject=' + encodeURIComponent(L.objet) + '&body=' + encodeURIComponent(L.corps);
+  const nomFichier = (L.objet || 'courrier').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'courrier';
   modal({ title: L.titre, wide: true, html: `
     ${missing ? `<div class="note warn" style="margin-bottom:12px">${ic('info', 'sm')} Complétez votre nom, adresse et n° de compte dans <a href="#/reglages" data-close>Réglages</a> : ils seront ajoutés automatiquement aux courriers.</div>` : ''}
-    <div class="field"><label class="f">Objet</label><div class="row"><input class="in" id="lobj" value="${esc(L.objet)}" readonly><button class="btn sm" id="cobj">${ic('copy', 'sm')}Copier</button></div></div>
-    <label class="f">Texte (destinataire : ${esc(L.destinataire)})</label><div class="letter" id="lbody">${esc(L.corps)}</div>
-    <p class="help">Relisez et complétez les passages entre [crochets] avant l’envoi. Références vérifiées le ${esc(fd(L.verifie))}.</p>
+    <div class="field"><label class="f" for="lobj">Objet</label><div class="row"><input class="in" id="lobj" value="${esc(L.objet)}"><button class="btn sm" id="cobj">${ic('copy', 'sm')}Copier</button></div></div>
+    <label class="f" for="lbody">Texte (destinataire : ${esc(L.destinataire)}) — modifiable</label><textarea class="in letter" id="lbody" spellcheck="true" style="width:100%;min-height:340px">${esc(L.corps)}</textarea>
+    <p class="help">Complétez les passages entre [crochets] directement ici : la copie, l’e-mail, le fichier Word et l’impression reprennent votre texte. Références vérifiées le ${esc(fd(L.verifie))}.</p>
+    <div class="row wrap" style="margin-top:8px"><button class="btn sm" id="ldocx">${ic('download', 'sm')}Word (.docx)</button><button class="btn sm" id="ltxt">${ic('download', 'sm')}Texte (.txt)</button><button class="btn sm" id="lprint">${ic('file', 'sm')}Imprimer ou PDF</button></div>
     ${L.conseils.length ? `<h3 style="margin-top:14px">Conseils d’envoi</h3><ul class="small sec" style="margin:6px 0 0;padding-left:18px">${L.conseils.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
     ${L.refs.length ? `<div class="refs"><b>Textes cités</b>${L.refs.map(r => `<details><summary>${esc(r.titre)}</summary><p>${esc(r.texte)}</p></details>`).join('')}</div>` : ''}`,
-    actions: [{ label: 'Ouvrir dans ma messagerie', onClick: () => { location.href = mailto; return false; } }, { label: 'Copier le texte', kind: 'primary', onClick: () => { copyText(L.corps); return false; } }],
-    onOpen: o => { o.querySelector('#cobj').addEventListener('click', () => copyText(L.objet)); } });
+    actions: [{ label: 'Ouvrir dans ma messagerie', onClick: o => { location.href = 'mailto:?subject=' + encodeURIComponent($('#lobj', o).value) + '&body=' + encodeURIComponent($('#lbody', o).value); return false; } },
+      { label: 'Copier le texte', kind: 'primary', onClick: o => { copyText($('#lbody', o).value); return false; } }],
+    onOpen: o => {
+      const texte = () => $('#lbody', o).value;
+      $('#cobj', o).addEventListener('click', () => copyText($('#lobj', o).value));
+      $('#ltxt', o).addEventListener('click', () => saveBlob(new Blob(['\ufeff' + texte().replace(/\r?\n/g, '\r\n')], { type: 'text/plain;charset=utf-8' }), nomFichier + '.txt'));
+      $('#ldocx', o).addEventListener('click', async e => {
+        const b = e.currentTarget; b.disabled = true;
+        try { saveBlob(await apiBlob('letter.docx', { objet: $('#lobj', o).value, corps: texte() }), nomFichier + '.docx'); } catch (err) { toast(err.message, false); }
+        b.disabled = false;
+      });
+      $('#lprint', o).addEventListener('click', () => printText(texte()));
+    } });
+}
+/** Enregistre un fichier produit dans la page (courrier .txt, .docx). */
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+/** Appel POST qui renvoie un fichier (et non du JSON). */
+async function apiBlob(action, body) {
+  const res = await fetch('api.php?a=' + encodeURIComponent(action), { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-CSRF': S.csrf || '' }, body: JSON.stringify(body) });
+  if (!res.ok) { let m = 'Erreur ' + res.status; try { m = (await res.json()).error || m; } catch (e) { /* réponse sans JSON */ } throw new Error(m); }
+  return res.blob();
+}
+/** Imprime un texte seul (courrier) : le reste de la page est masqué pendant l'impression. Avec « Enregistrer au format PDF », on obtient un PDF. */
+function printText(text) {
+  const z = document.createElement('div');
+  z.id = 'printzone';
+  z.textContent = text;
+  document.body.appendChild(z);
+  document.body.classList.add('imprime-texte');
+  const fin = () => { document.body.classList.remove('imprime-texte'); z.remove(); window.removeEventListener('afterprint', fin); };
+  window.addEventListener('afterprint', fin);
+  window.print();
+  setTimeout(fin, 60000);
 }
 function actionButtons(actions, alertId) {
   return (actions || []).map((a, i) => a.type === 'courrier'
@@ -678,7 +715,7 @@ async function viewImport(v, q, tok) {
   const maxMo = Math.round(S.status.max_upload / 1048576 * 10) / 10;
   v.innerHTML = `<div class="page-head"><div class="grow"><h1>Importer un relevé</h1><p>Chacun importe ses propres relevés. Rien n’est enregistré avant votre validation.</p></div></div>
   <div class="grid g2">
-    <section class="card"><div class="drop" id="drop" tabindex="0" role="button" aria-label="Choisir un relevé">${ic('upload')}<h2>Déposez votre relevé ici</h2><p class="sec">ou touchez pour choisir un fichier</p><p class="small mut">PDF · CSV · OFX · QFX · QIF · TXT — ${maxMo} Mo au plus</p><input type="file" id="ifile" accept=".pdf,.csv,.ofx,.qfx,.qif,.txt,.tsv" hidden></div>
+    <section class="card"><div class="drop" id="drop" tabindex="0" role="button" aria-label="Choisir un relevé">${ic('upload')}<h2>Déposez votre relevé ici</h2><p class="sec">ou touchez pour choisir un fichier</p><p class="small mut">PDF · CSV · Excel (.xlsx, .xls) · OpenDocument (.ods) · OFX · QFX · QIF · XML ISO 20022 (camt.053) · MT940 · TXT — ${maxMo} Mo au plus</p><input type="file" id="ifile" accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,.ods,.ofx,.qfx,.qif,.xml,.sta,.940,.mt940,.htm,.html" hidden></div>
       <details style="margin-top:14px"><summary class="sec" style="cursor:pointer">Ou coller le texte du relevé</summary><textarea class="in" id="itext" style="margin-top:8px" placeholder="Copiez les lignes depuis votre relevé PDF ou votre site bancaire, puis collez-les ici."></textarea><button class="btn" id="btext" style="margin-top:8px">Analyser le texte</button></details>
     </section>
     <section class="card"><h2>Le bon format</h2><ul class="sec" style="padding-left:18px;margin:8px 0 0">
@@ -806,7 +843,7 @@ async function viewTx(v, q, tok) {
     <input class="in sm" id="fq" placeholder="Rechercher…" value="${esc(q.q || '')}" style="width:180px">
     ${lecteurs.length ? `<select class="in sm" id="fqui" style="width:auto" aria-label="Personne"><option value="moi" ${qui === 'moi' ? 'selected' : ''}>Mes opérations</option>${lecteurs.map(m => `<option value="${m.id}" ${qui === String(m.id) ? 'selected' : ''}>${esc(m.nom)}</option>`).join('')}<option value="foyer" ${qui === 'foyer' ? 'selected' : ''}>Tout le foyer</option></select>` : ''}
   </div>
-  <div class="row wrap" style="margin-bottom:10px"><span class="chip">${pl(ops.length, 'opération')}</span><span class="chip">Entrées ${amt(ent)}</span><span class="chip">Sorties ${amt(sor)}</span><a class="btn sm ghost right" href="api.php?a=export" download>${ic('download', 'sm')}Exporter (CSV)</a></div>
+  <div class="row wrap" style="margin-bottom:10px"><span class="chip">${pl(ops.length, 'opération')}</span><span class="chip">Entrées ${amt(ent)}</span><span class="chip">Sorties ${amt(sor)}</span>${exportMenu(mois, 'right')}</div>
   <section class="card txl">${ops.length ? Object.entries(byDay).map(([day, list]) => `<div class="day">${esc(new Date(day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>${list.map(o => `
     <div class="txr" data-id="${o.id}" tabindex="0" role="button">
       <span class="ico" aria-hidden="true">${esc(o.icone)}</span>
@@ -820,6 +857,12 @@ async function viewTx(v, q, tok) {
   const fqui = $('#fqui', v); if (fqui) fqui.addEventListener('change', e => nav({ qui: e.target.value }));
   $$('.txr', v).forEach(el => { const o = ops.find(x => x.id === +el.dataset.id); const open = () => editTx(o); el.addEventListener('click', open); el.addEventListener('keydown', e => { if (e.key === 'Enter') open(); }); });
   if (q.q) { const f = $('#fq', v); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+}
+/** Menu « Exporter » : un mois ou tout, dans le format du logiciel qui va le lire. */
+function exportMenu(mois, cls = '', titre = 'Exporter') {
+  const q = (f) => 'api.php?a=export&format=' + f + (mois ? '&mois=' + encodeURIComponent(mois) : '');
+  const items = [['xlsx', 'Excel (.xlsx)', 'tableur avec dates et montants'], ['csv', 'CSV', 'Excel, LibreOffice, Google Sheets'], ['ofx', 'OFX', 'logiciels de comptes : HomeBank, GnuCash, Money…'], ['qif', 'QIF', 'anciens logiciels de comptes'], ['json', 'JSON', 'toutes mes données, lisibles par un programme']];
+  return `<details class="menu ${cls}"><summary class="btn sm ghost">${ic('download', 'sm')}${esc(titre)}${mois ? ' (' + esc(fm(mois)) + ')' : ''}</summary><div class="menu-list">${items.map(([f, l, h]) => `<a href="${q(f)}" download><b>${esc(l)}</b><small>${esc(h)}</small></a>`).join('')}</div></details>`;
 }
 function editTx(o) {
   const mine = o.a_moi;
@@ -1221,7 +1264,7 @@ async function viewSettings(v, q, tok) {
     <div id="sauvegarde"></div>
     <h3 style="margin:16px 0 6px">Journal de mon compte</h3><div id="journal" class="small sec">…</div></section>
   <section class="card"><h2>Mes données</h2><p class="sec small" style="margin:4px 0 12px">Vos données vous appartiennent.</p>
-    <div class="row wrap"><a class="btn" href="api.php?a=export" download>${ic('download', 'sm')}Exporter mes opérations (CSV)</a></div>
+    <div class="row wrap">${exportMenu('', '', 'Exporter mes opérations')}<a class="btn" href="api.php?a=export&format=json" download>${ic('download', 'sm')}Toutes mes données (JSON)</a><a class="btn" href="api.php?a=docs.zip">${ic('download', 'sm')}Mes documents (.zip)</a></div>
     <h3 style="margin:16px 0 6px">Effacer mes données</h3><p class="small mut">Supprime vos opérations, relevés, documents, alertes et règles. Votre accès est conservé. Irréversible.</p>
     <div class="row wrap"><input class="in" type="password" id="purgepw" placeholder="Mot de passe" style="max-width:220px" autocomplete="current-password"><button class="btn danger" id="bpurge">${ic('trash', 'sm')}Tout effacer</button></div></section>
   </div>`;
