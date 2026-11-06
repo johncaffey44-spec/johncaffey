@@ -17,6 +17,7 @@ Chacun des deux membres du foyer a son propre accès : rien n'est partagé sans 
 | **Abonnements** | Prélèvements et charges récurrentes détectés automatiquement, hausses de prix, coût annuel ; marquez « inutile » ou « résilié » : Boussole vous relance tant que c'est prélevé. |
 | **Courriers** | 14 modèles prêts à copier (réclamation, contestation, 8 semaines, liste noire de créanciers, statut fragile, médiateur, résiliation…), pré-remplis avec vos coordonnées et les articles de loi. |
 | **Vos droits** | Les règles qui protègent le client, vérifiées le 6 novembre 2026, avec leurs références. |
+| **Alertes par e-mail** | Récapitulatif des nouvelles alertes, e-mail de sécurité en cas de blocage, lien « mot de passe oublié ». Connexion par adresse e-mail. |
 | **Coffre-fort** | Bulletins de paie, justificatifs, factures, chiffrés sur le serveur, avec leur durée de conservation officielle ; dossiers prêts (location, prêt, CAF, impôts) en .zip. |
 | **Foyer & équité** | Répartition des dépenses communes au prorata des revenus ou à parts égales, virements entre vous neutralisés. |
 
@@ -29,8 +30,9 @@ Presque tous les hébergements les proposent d'origine (OVH, o2switch, IONOS, Ho
 1. Copiez **tout le dossier `finances`** sur le serveur (`index.html`, `api.php`, `lib/`, `assets/`, `vendor/`, `.htaccess`, `web.config`, `manifest.webmanifest`).
 2. Donnez au serveur web le droit d'écrire dans ce dossier : `api.php` y crée `data/` au premier lancement.
 3. Ouvrez `https://votre-site/finances/` : l'écran **Première mise en service** apparaît.
-4. Saisissez le nom du foyer, **votre** prénom et **votre** mot de passe, puis le prénom de votre partenaire.
-5. Notez votre **code de secours** (seul moyen de récupérer l'accès en cas d'oubli) et transmettez le **code d'invitation** à votre partenaire : il ou elle choisira son propre mot de passe.
+4. Saisissez le nom du foyer, **votre** prénom, **votre adresse e-mail** (c'est votre identifiant de connexion et l'adresse qui reçoit vos alertes), puis créez votre mot de passe (saisi deux fois). Ajoutez le prénom de votre partenaire.
+5. Notez votre **code de secours** (il permet de récupérer l'accès même si les e-mails ne fonctionnent pas) et transmettez le **code d'invitation** à votre partenaire : il ou elle saisira sa propre adresse e-mail et choisira son propre mot de passe.
+6. Dans **Réglages › Envoi des e-mails**, choisissez comment partent les e-mails, puis cliquez sur « Enregistrer et m'envoyer un test » (voir la section 4).
 
 > **N'hébergez pas vos finances personnelles sur le serveur ou le NAS de votre employeur.**
 > L'administrateur y aurait accès, et le service ne vous appartient pas.
@@ -54,14 +56,39 @@ L'application vérifie elle-même que `data/` n'est pas lisible depuis le naviga
 - **Mode discret** (icône œil en bas du menu) : floute les montants quand quelqu'un regarde l'écran.
 - Les PDF sont lus **dans le navigateur** : ils ne transitent par aucun service extérieur. Aucune ressource externe n'est chargée.
 
-## 4. La routine mensuelle (10 minutes)
+## 4. Alertes par e-mail
+
+**Ce que vous recevez** (Réglages › Alertes par e-mail) : un récapitulatif des **nouvelles** alertes, à chaque import et lors de la veille automatique. Au choix : critiques et à vérifier (conseillé), critiques seulement, toutes, ou aucune. Le mode **discret** n'indique que le nombre d'alertes, sans aucun montant : un e-mail n'est pas un canal confidentiel.
+Boussole écrit aussi en cas de **compte bloqué** après plusieurs mauvais mots de passe, de **changement d'adresse** (à l'ancienne adresse) et pour le lien **« mot de passe oublié »** (valable 30 minutes, une seule fois).
+
+**Par où partent les e-mails** (Réglages › Envoi des e-mails, réglage commun aux deux comptes) :
+
+| Solution | Quand la choisir |
+|---|---|
+| Fonction mail() de l'hébergeur | Le plus simple sur un hébergement mutualisé (OVH, o2switch, IONOS…). Expéditeur : une adresse de votre domaine. |
+| SMTP de l'hébergeur | Plus fiable que mail() : serveur, port et identifiants fournis par l'hébergeur (ex. `ssl0.ovh.net`, port 465, SSL). |
+| Gmail | Serveur `smtp.gmail.com`, port 587, STARTTLS ; identifiant = l'adresse Gmail ; mot de passe = un **mot de passe d'application** (compte Google › Sécurité › Validation en deux étapes). |
+| Brevo (relais gratuit) | `smtp-relay.brevo.com`, port 587 ; identifiant et clé SMTP dans votre compte Brevo. |
+
+> **Une adresse Outlook, Hotmail ou Live peut RECEVOIR les alertes, mais ne peut plus servir à les ENVOYER** :
+> depuis le 16 septembre 2024, Microsoft exige une connexion OAuth pour ces comptes, que ce petit serveur ne gère pas.
+
+Pour que les alertes n'arrivent pas dans les **courriers indésirables** : ajoutez l'adresse d'expédition à vos contacts, et, si vous utilisez votre propre domaine, activez SPF et DKIM chez l'hébergeur.
+
+**Veille automatique** : Boussole recalcule les alertes au plus toutes les 6 heures, dès que quelqu'un ouvre l'application. Pour être prévenu **même sans l'ouvrir** (découvert prévu avant la paie, pièce d'identité qui expire), programmez chez votre hébergeur une tâche quotidienne qui appelle l'adresse secrète affichée dans Réglages › Envoi des e-mails › Veille automatique :
+
+```bash
+5 7 * * * curl -fsS "https://votre-site/finances/api.php?a=veille&cle=VOTRE_CLE" > /dev/null
+```
+
+## 5. La routine mensuelle (10 minutes)
 
 1. **Le 5 du mois** : chacun importe le relevé du mois écoulé (export **CSV ou OFX** de préférence : espace client › comptes › télécharger / exporter).
 2. **Alertes critiques** : préparez le courrier proposé, envoyez-le par la messagerie sécurisée de la banque, marquez l'alerte « traitée ».
 3. **Coffre-fort** : déposez le bulletin de paie (avec le net à payer : Boussole vérifie qu'il correspond au virement reçu).
 4. **Une fois par trimestre** : passez les abonnements en revue.
 
-## 5. Ce qu'il faut savoir (limites honnêtes)
+## 6. Ce qu'il faut savoir (limites honnêtes)
 
 - **La loi plafonne les frais ; elle n'oblige pas à rembourser des frais conformes.** Boussole distingue toujours ce qui est *exigible* (plafond dépassé, prélèvement non autorisé, rejet facturé plusieurs fois…) de ce qui relève du *geste commercial*.
 - **La lecture des PDF est automatique mais pas infaillible** : chaque banque a sa mise en page. D'où l'aperçu et le contrôle des soldes ; en cas d'écart, préférez l'export CSV. Un relevé **scanné** (image) ne contient pas de texte : il faut le relevé numérique.
@@ -69,29 +96,29 @@ L'application vérifie elle-même que `data/` n'est pas lisible depuis le naviga
 - **« Utile » ou « inutile » est un choix personnel** : Boussole parle d'« essentiel », de « plaisir » (assumé, à budgéter) et d'« évitable » (frais, agios, amendes…). Changez la nature d'une catégorie dans Réglages.
 - Boussole est une aide pour agir, **pas un conseil juridique personnalisé**. En cas de litige important : association de consommateurs, Point conseil budget (gratuit) ou avocat.
 
-## 6. Mettre à jour
+## 7. Mettre à jour
 
 1. Sauvegardez le dossier `data/`.
 2. Remplacez tous les fichiers **sauf `data/`**.
 3. Rechargez la page (Ctrl + F5).
 
-## 7. Valeurs à tenir à jour (`lib/legal.php`)
+## 8. Valeurs à tenir à jour (`lib/legal.php`)
 
 | Valeur | Montant | Quand la vérifier |
 |---|---|---|
 | Solde bancaire insaisissable (= RSA personne seule) | 651,69 € depuis le 1er avril 2026 | chaque 1er avril |
 | Plafonds des frais d'incidents (8 €/80 €, 20 €, 30/50 €, 25 €/mois) | voir `LEGAL_*` | à chaque nouveau décret |
 
-## 8. Tests
+## 9. Tests
 
 ```bash
 php tests/run-tests.php
 ```
 
 Vérifie la lecture des relevés (texte, CSV Windows-1252, OFX, QIF), la catégorisation, les plafonds de frais, les alertes,
-les courriers et le chiffrement, sur des relevés **fictifs** (`tests/samples/`).
+les courriers, les e-mails (encodage, injection d'en-têtes, mode discret) et le chiffrement, sur des relevés **fictifs** (`tests/samples/`).
 
-## 9. Sources (vérifiées le 6 novembre 2026)
+## 10. Sources (vérifiées le 6 novembre 2026)
 
 - Code monétaire et financier : art. R312-4-1 (commissions d'intervention), D133-6 (rejet de prélèvement : tout compris, représentations), D131-25 (chèque), L312-1-3 et R312-4-3 (clients fragiles), L312-1-5 (information 14 jours avant), L133-18, L133-19, L133-23, L133-24 (opérations non autorisées), L133-25 et L133-25-1 (prélèvement SEPA, 8 semaines), L133-45 (réponse sous 15 jours ouvrables), L316-1 (médiateur), L312-1-1 (tarifs, récapitulatif annuel), L312-1-7 (mobilité bancaire).
 - [INC — La tarification bancaire en cas d'incidents de paiement](https://www.inc-conso.fr/content/la-tarification-bancaire-en-cas-dincidents-de-paiement)

@@ -96,7 +96,7 @@ function toast(msg, ok = true) {
   t.className = 'toast' + (ok ? ' ok' : '');
   t.textContent = msg;
   $('#toasts').appendChild(t);
-  setTimeout(() => t.remove(), ok ? 3800 : 6500);
+  setTimeout(() => t.remove(), ok ? Math.max(3800, msg.length * 45) : Math.max(6500, msg.length * 60));
 }
 function modal({ title, html, wide = false, actions = [], onOpen = null }) {
   const o = document.createElement('div');
@@ -191,6 +191,7 @@ async function boot() {
   try { S.status = await api('status'); }
   catch (e) { $('#root').innerHTML = `<div class="auth"><div class="auth-card"><div class="sb-brand">${LOGO}<div><b>Boussole</b><small>finances du foyer</small></div></div><h1>Démarrage impossible</h1><p class="err">${esc(e.message)}</p><p class="sec small">Ouvrez l’application par son adresse http(s)://… sur un serveur avec PHP 7.4 ou plus, et non en double-cliquant sur le fichier.</p></div></div>`; return; }
   if (!S.status.installe) return renderSetup();
+  if (location.hash.startsWith('#/reinit')) { const j = new URLSearchParams(location.hash.split('?')[1] || '').get('jeton'); if (j) return renderReset(j); }
   if (!S.status.moi) return renderLogin();
   S.csrf = S.status.csrf;
   await startApp();
@@ -211,42 +212,80 @@ function authFrame(inner) {
   $('#root').innerHTML = `<div class="auth"><div class="auth-card"><div class="sb-brand">${LOGO}<div><b>Boussole</b><small>${esc(S.status && S.status.foyer ? S.status.foyer : 'finances du foyer')}</small></div></div>${inner}</div></div>`;
   $$('.pw button').forEach(b => b.addEventListener('click', () => { const i = b.previousElementSibling; i.type = i.type === 'password' ? 'text' : 'password'; b.innerHTML = ic(i.type === 'password' ? 'eye' : 'eyeoff'); }));
 }
+const pwPair = (id, label) => pwField(id, label, 'new-password') + pwField(id + '2', 'Confirmez le mot de passe', 'new-password') + `<div class="help" id="${id}h" style="margin:-6px 0 10px"></div>`;
+function bindPwHint(id) {
+  const a = $('#' + id), b = $('#' + id + '2'), h = $('#' + id + 'h'), min = (S.status && S.status.min_password) || 10;
+  const upd = () => { const n = [...a.value].length; h.textContent = n < min ? n + ' / ' + min + ' caractères au moins — une courte phrase est plus facile à retenir et plus solide.' : (b.value && b.value !== a.value ? 'Les deux saisies ne correspondent pas encore.' : (b.value ? '✓ Mots de passe identiques.' : '✓ Longueur suffisante.')); };
+  a.addEventListener('input', upd); b.addEventListener('input', upd); upd();
+}
+function pwCheck(id) { const a = $('#' + id).value; if (a !== $('#' + id + '2').value) throw new Error('Les deux mots de passe ne correspondent pas.'); return a; }
 const pwField = (id, label, auto = 'current-password') => `<div class="field"><label class="f" for="${id}">${label}</label><div class="pw"><input class="in" id="${id}" type="password" autocomplete="${auto}" required><button type="button" aria-label="Afficher ou masquer">${ic('eye')}</button></div></div>`;
 
 function renderLogin(msg = '') {
   const pending = (S.status && S.status.invitation_en_attente) || [];
   authFrame(`<h1>Connexion</h1><p class="sec small">Chacun a son propre accès : vos opérations restent privées tant que vous ne choisissez pas de les partager.</p>
-    <form id="fl"><div class="field"><label class="f" for="ln">Prénom</label><input class="in" id="ln" autocomplete="username" required></div>${pwField('lp', 'Mot de passe')}
+    <form id="fl"><div class="field"><label class="f" for="ln">Adresse e-mail</label><input class="in" id="ln" type="email" inputmode="email" autocomplete="username" required placeholder="prenom.nom@exemple.fr"></div>${pwField('lp', 'Mot de passe')}
     <p class="err" id="le">${esc(msg)}</p><button class="btn primary" style="width:100%">Se connecter</button></form>
     <div class="links"><button type="button" id="goinv">${pending.length ? 'Activer mon compte (code d’invitation)' : 'J’ai un code d’invitation'}</button><button type="button" id="gorec">Mot de passe oublié</button></div>`);
   $('#fl').addEventListener('submit', async e => {
     e.preventDefault();
-    try { const r = await api('login', { method: 'POST', body: { nom: $('#ln').value, mot_de_passe: $('#lp').value } }); S.csrf = r.csrf; await startApp(); }
+    try { const r = await api('login', { method: 'POST', body: { identifiant: $('#ln').value, mot_de_passe: $('#lp').value } }); S.csrf = r.csrf; await startApp(); }
     catch (err) { $('#le').textContent = err.message; }
   });
   $('#goinv').addEventListener('click', renderActivate);
-  $('#gorec').addEventListener('click', renderRecover);
+  $('#gorec').addEventListener('click', renderForgot);
   $('#ln').focus();
 }
 function renderActivate() {
   authFrame(`<h1>Activer mon compte</h1><p class="sec small">Saisissez le code d’invitation reçu, puis choisissez VOTRE mot de passe (personne d’autre ne le connaîtra).</p>
-    <form id="fa"><div class="field"><label class="f" for="ac">Code d’invitation</label><input class="in" id="ac" autocomplete="one-time-code" required placeholder="XXXX-XXXX-XXXX"></div>${pwField('ap', 'Nouveau mot de passe (' + (S.status.min_password || 10) + ' caractères au moins)', 'new-password')}
+    <form id="fa"><div class="field"><label class="f" for="ac">Code d’invitation</label><input class="in" id="ac" autocomplete="one-time-code" required placeholder="XXXX-XXXX-XXXX"></div>
+    <div class="field"><label class="f" for="aem">Votre adresse e-mail</label><input class="in" id="aem" type="email" inputmode="email" autocomplete="username" required placeholder="prenom.nom@exemple.fr"><div class="help">Ce sera votre identifiant ; vos alertes y seront envoyées.</div></div>
+    ${pwPair('ap', 'Créez votre mot de passe (' + (S.status.min_password || 10) + ' caractères au moins)')}
     <p class="err" id="ae"></p><button class="btn primary" style="width:100%">Activer</button></form><div class="links"><button type="button" id="back">← Retour à la connexion</button></div>`);
   $('#back').addEventListener('click', () => renderLogin());
+  bindPwHint('ap');
   $('#fa').addEventListener('submit', async e => {
     e.preventDefault();
-    try { const r = await api('activate', { method: 'POST', body: { code: $('#ac').value, mot_de_passe: $('#ap').value } }); S.csrf = r.csrf; await startApp(); showRecovery(r.code_secours, 'Bienvenue ' + r.nom + ' !'); }
+    try { const pw = pwCheck('ap'); const r = await api('activate', { method: 'POST', body: { code: $('#ac').value, email: $('#aem').value, mot_de_passe: pw, confirmation: pw } }); S.csrf = r.csrf; await startApp(); showRecovery(r.code_secours, 'Bienvenue ' + r.nom + ' !'); }
     catch (err) { $('#ae').textContent = err.message; }
   });
 }
-function renderRecover() {
-  authFrame(`<h1>Mot de passe oublié</h1><p class="sec small">Utilisez le code de secours qui vous a été donné à la création de votre accès.</p>
-    <form id="fr"><div class="field"><label class="f" for="rn">Prénom</label><input class="in" id="rn" required></div><div class="field"><label class="f" for="rc">Code de secours</label><input class="in" id="rc" required placeholder="XXXX-XXXX-XXXX-XXXX"></div>${pwField('rp', 'Nouveau mot de passe', 'new-password')}
+function renderForgot() {
+  if (!S.status.mail) return renderRecover('L’envoi d’e-mails n’est pas encore configuré sur ce serveur : utilisez votre code de secours.');
+  authFrame(`<h1>Mot de passe oublié</h1><p class="sec small">Indiquez votre adresse : vous recevrez un lien valable 30 minutes pour choisir un nouveau mot de passe.</p>
+    <form id="ff"><div class="field"><label class="f" for="fe">Adresse e-mail</label><input class="in" id="fe" type="email" inputmode="email" autocomplete="username" required></div><p class="err" id="fer"></p><div class="note ok hide" id="fok" style="margin-bottom:10px"></div><button class="btn primary" style="width:100%">Recevoir le lien</button></form>
+    <div class="links"><button type="button" id="back">← Retour à la connexion</button><button type="button" id="gorec">J’ai mon code de secours</button></div>`);
+  $('#back').addEventListener('click', () => renderLogin());
+  $('#gorec').addEventListener('click', () => renderRecover());
+  $('#ff').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('#fer').textContent = '';
+    try { const r = await api('forgot', { method: 'POST', body: { identifiant: $('#fe').value } }); const ok = $('#fok'); ok.textContent = r.message; ok.classList.remove('hide'); }
+    catch (err) { $('#fer').textContent = err.message; }
+  });
+  $('#fe').focus();
+}
+function renderReset(jeton) {
+  authFrame(`<h1>Nouveau mot de passe</h1><p class="sec small">Choisissez votre nouveau mot de passe. Ce lien ne sert qu’une fois.</p>
+    <form id="frs">${pwPair('np', 'Nouveau mot de passe')}<p class="err" id="rse"></p><button class="btn primary" style="width:100%">Enregistrer et me connecter</button></form>
+    <div class="links"><button type="button" id="back">← Retour à la connexion</button></div>`);
+  bindPwHint('np');
+  $('#back').addEventListener('click', () => { history.replaceState(null, '', location.pathname + location.search); renderLogin(); });
+  $('#frs').addEventListener('submit', async e => {
+    e.preventDefault();
+    try { const pw = pwCheck('np'); const r = await api('reset', { method: 'POST', body: { jeton, mot_de_passe: pw, confirmation: pw } }); S.csrf = r.csrf; history.replaceState(null, '', location.pathname + location.search + '#/accueil'); await startApp(); toast('Mot de passe changé : vous êtes connecté(e).'); }
+    catch (err) { $('#rse').textContent = err.message; }
+  });
+}
+function renderRecover(note = '') {
+  authFrame(`<h1>Code de secours</h1><p class="sec small">${note ? esc(note) + ' ' : ''}Utilisez le code de secours qui vous a été donné à la création de votre accès.</p>
+    <form id="fr"><div class="field"><label class="f" for="rn">Adresse e-mail</label><input class="in" id="rn" type="email" inputmode="email" autocomplete="username" required></div><div class="field"><label class="f" for="rc">Code de secours</label><input class="in" id="rc" required placeholder="XXXX-XXXX-XXXX-XXXX"></div>${pwPair('rp', 'Nouveau mot de passe')}
     <p class="err" id="re"></p><button class="btn primary" style="width:100%">Choisir ce mot de passe</button></form><div class="links"><button type="button" id="back">← Retour à la connexion</button></div>`);
   $('#back').addEventListener('click', () => renderLogin());
+  bindPwHint('rp');
   $('#fr').addEventListener('submit', async e => {
     e.preventDefault();
-    try { const r = await api('recover', { method: 'POST', body: { nom: $('#rn').value, code: $('#rc').value, mot_de_passe: $('#rp').value } }); S.csrf = r.csrf; await startApp(); showRecovery(r.code_secours, 'Mot de passe changé'); }
+    try { const pw = pwCheck('rp'); const r = await api('recover', { method: 'POST', body: { identifiant: $('#rn').value, code: $('#rc').value, mot_de_passe: pw, confirmation: pw } }); S.csrf = r.csrf; await startApp(); showRecovery(r.code_secours, 'Mot de passe changé'); }
     catch (err) { $('#re').textContent = err.message; }
   });
 }
@@ -260,24 +299,28 @@ function renderSetup() {
   authFrame(`<h1>Première mise en service</h1><p class="sec small">Deux minutes : vous créez votre accès, puis un code d’invitation pour votre partenaire, qui choisira lui-même son mot de passe.</p>
     <div class="note" style="margin:10px 0 14px">${checks.map(([ok, t]) => `<div class="row" style="align-items:flex-start;margin:3px 0"><span class="${ok ? 'pos' : ''}" style="${ok ? '' : 'color:var(--warn)'}">${ic(ok ? 'check' : 'alert', 'sm')}</span><span>${esc(t)}</span></div>`).join('')}</div>
     <form id="fs"><div class="field"><label class="f" for="sf">Nom du foyer</label><input class="in" id="sf" placeholder="Notre foyer"></div>
-    <div class="field"><label class="f" for="sn">Votre prénom</label><input class="in" id="sn" required autocomplete="username"></div>
-    ${pwField('sp', 'Votre mot de passe (' + (st.min_password || 10) + ' caractères au moins)', 'new-password')}
+    <div class="field"><label class="f" for="sn">Votre prénom</label><input class="in" id="sn" required autocomplete="given-name"></div>
+    <div class="field"><label class="f" for="semail">Votre adresse e-mail</label><input class="in" id="semail" type="email" inputmode="email" autocomplete="username" required placeholder="prenom.nom@exemple.fr"><div class="help">C’est votre identifiant de connexion ; vos alertes y seront envoyées.</div></div>
+    ${pwPair('sp', 'Créez votre mot de passe (' + (st.min_password || 10) + ' caractères au moins)')}
     <div class="field"><label class="f" for="s2">Prénom de votre partenaire (facultatif)</label><input class="in" id="s2"><div class="help">Il ou elle recevra un code d’invitation à usage unique.</div></div>
     <p class="err" id="se"></p><button class="btn primary" style="width:100%">Créer mon accès</button></form>`);
+  bindPwHint('sp');
   $('#fs').addEventListener('submit', async e => {
     e.preventDefault();
     try {
-      const r = await api('setup', { method: 'POST', body: { foyer: $('#sf').value, nom: $('#sn').value, mot_de_passe: $('#sp').value, nom_partenaire: $('#s2').value } });
+      const pw = pwCheck('sp');
+      const r = await api('setup', { method: 'POST', body: { foyer: $('#sf').value, nom: $('#sn').value, email: $('#semail').value, mot_de_passe: pw, confirmation: pw, nom_partenaire: $('#s2').value } });
       S.csrf = r.csrf;
       await startApp();
-      showRecovery(r.code_secours, 'Accès créé', r.invitation ? { code: r.invitation, nom: r.partenaire } : null);
+      showRecovery(r.code_secours, 'Accès créé', r.invitation ? { code: r.invitation, nom: r.partenaire } : null, r.email);
     } catch (err) { $('#se').textContent = err.message; }
   });
 }
-function showRecovery(code, title, invite = null) {
+function showRecovery(code, title, invite = null, email = '') {
   modal({ title, wide: !!invite, html: `
     <p><b>Votre code de secours</b> — notez-le sur papier ou dans un gestionnaire de mots de passe. C’est la seule façon de retrouver l’accès si vous oubliez votre mot de passe ; il ne sera plus jamais affiché.</p>
     <div class="code">${esc(code)}</div>
+    ${email ? `<p class="small sec" style="margin-top:12px">Votre identifiant : <b>${esc(email)}</b>. Pour y recevoir vos alertes, réglez l’envoi des e-mails dans <a href="#/reglages" data-close>Réglages › Envoi des e-mails</a>.</p>` : ''}
     ${invite ? `<p style="margin-top:18px"><b>Code d’invitation pour ${esc(invite.nom)}</b> — valable 30 jours, à usage unique. Transmettez-le de vive voix ou par message : ${esc(invite.nom)} ouvrira l’application, cliquera sur « J’ai un code d’invitation » et choisira son propre mot de passe.</p><div class="code">${esc(invite.code)}</div>` : ''}`,
     actions: [{ label: 'J’ai noté ' + (invite ? 'les codes' : 'le code'), kind: 'primary' }] });
 }
@@ -363,9 +406,14 @@ async function refreshBadge() {
 async function probeData() {
   const bn = $('#banners'); if (!bn) return;
   let html = '';
-  try {
+  let checked = false;
+  try { checked = sessionStorage.getItem('boussole.probe') === 'ok'; } catch (e) { /* stockage indisponible : on vérifie à chaque fois */ }
+  // Sonde de sécurité : un 404 dans la console est le BON résultat (dossier data inaccessible). Une fois par session.
+  if (!checked) try {
     const r = await fetch('data/probe.txt', { cache: 'no-store', credentials: 'omit' });
-    if (r.ok && (await r.text()).includes('boussole-data-exposed')) html += `<div class="banner crit">${ic('octagon')}<div><b>Le dossier « data » est lisible depuis le navigateur.</b>N’importe qui pourrait télécharger votre base de données. Le serveur ignore le fichier .htaccess (nginx, serveur intégré de PHP…) : placez le dossier data hors de la racine web ($DATA_DIR dans api.php) ou interdisez-le dans la configuration du serveur.</div></div>`;
+    const exposed = r.ok && (await r.text()).includes('boussole-data-exposed');
+    if (!exposed) { try { sessionStorage.setItem('boussole.probe', 'ok'); } catch (e) { /* sans importance */ } }
+    if (exposed) html += `<div class="banner crit">${ic('octagon')}<div><b>Le dossier « data » est lisible depuis le navigateur.</b>N’importe qui pourrait télécharger votre base de données. Le serveur ignore le fichier .htaccess (nginx, serveur intégré de PHP…) : placez le dossier data hors de la racine web ($DATA_DIR dans api.php) ou interdisez-le dans la configuration du serveur.</div></div>`;
   } catch (e) { /* injoignable = protégé */ }
   if (!S.status.https && !['localhost', '127.0.0.1', '::1'].includes(location.hostname) && !/^(192\.168|10\.|172\.(1[6-9]|2\d|3[01]))\./.test(location.hostname)) html += `<div class="banner warn">${ic('alert')}<div><b>Connexion non chiffrée (http).</b>Vos mots de passe et vos relevés circulent en clair. Activez https (certificat gratuit Let’s Encrypt) puis $REQUIRE_HTTPS = true dans api.php.</div></div>`;
   bn.innerHTML = html;
@@ -1084,6 +1132,16 @@ async function viewSettings(v, q, tok) {
     <label class="check"><input type="checkbox" id="pd" ${p.partage_details ? 'checked' : ''}><span><b>Partager le détail de mes opérations</b><br><span class="small mut">${esc(partner ? partner.nom : 'Votre partenaire')} pourra les consulter (sans les modifier). Permet aussi de repérer les abonnements payés en double.</span></span></label>
     <button class="btn primary" data-save="partage">Enregistrer</button>
     <h3 style="margin:16px 0 6px">Affichage</h3><div class="seg" id="sth">${[['auto', 'Automatique'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<button data-th="${k}" class="${theme === k ? 'on' : ''}">${l}</button>`).join('')}</div></section>
+  <section class="card"><h2>Alertes par e-mail</h2>
+    <p class="sec small" style="margin:4px 0 10px">Identifiant de connexion et adresse de réception : <b>${esc(S.me.moi.email || 'non renseignée')}</b></p>
+    ${S.me.mail_pret ? '' : '<div class="note warn small" style="margin-bottom:10px">L’envoi des e-mails n’est pas encore configuré : voir la carte « Envoi des e-mails ».</div>'}
+    <div class="field"><label class="f" for="mlvl">Recevoir</label><select class="in" id="mlvl">${[['importantes', 'Les alertes critiques et à vérifier (conseillé)'], ['critiques', 'Seulement les alertes critiques'], ['toutes', 'Toutes, y compris conseils et bravos'], ['aucune', 'Aucun e-mail d’alerte']].map(([k, l]) => `<option value="${k}" ${p.alertes_email === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="field"><label class="f" for="mcont">Contenu des e-mails</label><select class="in" id="mcont"><option value="titres" ${p.email_contenu !== 'discret' ? 'selected' : ''}>Le titre de chaque alerte</option><option value="discret" ${p.email_contenu === 'discret' ? 'selected' : ''}>Discret : seulement le nombre d’alertes, aucun montant</option></select><div class="help">Un e-mail n’est pas un canal confidentiel : le mode discret n’y fait figurer aucune information financière.</div></div>
+    <div class="row wrap"><button class="btn primary" id="bmpref">Enregistrer</button><button class="btn" id="bmtest">Envoyer un e-mail de test</button></div>
+    <h3 style="margin:16px 0 6px">Changer d’adresse</h3>
+    <div class="field"><input class="in" id="nemail" type="email" inputmode="email" placeholder="nouvelle adresse" autocomplete="email"></div>
+    <div class="row wrap"><input class="in" type="password" id="nemailpw" placeholder="mot de passe actuel" autocomplete="current-password" style="max-width:220px"><button class="btn" id="bnemail">Changer l’adresse</button></div></section>
+  <section class="card"><h2>Envoi des e-mails</h2><p class="sec small" style="margin:4px 0 10px">Réglage commun aux deux comptes : par où partent les e-mails de Boussole.</p><div id="mailform" class="sec small">Chargement…</div></section>
   <section class="card"><h2>Sécurité</h2>
     <div class="field" style="margin-top:10px"><label class="f" for="op">Mot de passe actuel</label><input class="in" type="password" id="op" autocomplete="current-password"></div>
     <div class="field"><label class="f" for="np">Nouveau mot de passe</label><input class="in" type="password" id="np" autocomplete="new-password"></div>
@@ -1121,6 +1179,13 @@ async function viewSettings(v, q, tok) {
     } catch (e) { toast(e.message, false); }
   });
   $$('[data-th]', v).forEach(b => b.addEventListener('click', () => { store.set('theme', b.dataset.th); applyTheme(); renderShell(); route(); }));
+  $('#bmpref', v).addEventListener('click', () => save({ alertes_email: val('#mlvl'), email_contenu: val('#mcont') }, 'Préférences d’alerte enregistrées.'));
+  $('#bmtest', v).addEventListener('click', async e => { const b = e.currentTarget; b.disabled = true; try { const r = await api('mail.test', { method: 'POST' }); toast(r.message); } catch (err) { toast(err.message, false); } b.disabled = false; });
+  $('#bnemail', v).addEventListener('click', async () => {
+    try { const r = await api('email.change', { method: 'POST', body: { email: val('#nemail'), mot_de_passe: val('#nemailpw') } }); S.me.moi.email = r.email; toast('Adresse changée : ' + r.email + '. C’est aussi votre nouvel identifiant.'); route(); }
+    catch (err) { toast(err.message, false); }
+  });
+  mailSettings($('#mailform', v));
   $('#bpw', v).addEventListener('click', async () => { try { await api('password', { method: 'POST', body: { ancien: val('#op'), nouveau: val('#np') } }); toast('Mot de passe changé.'); $('#op').value = ''; $('#np').value = ''; } catch (e) { toast(e.message, false); } });
   $('#brec', v).addEventListener('click', async () => {
     const pw = val('#op');
@@ -1133,7 +1198,52 @@ async function viewSettings(v, q, tok) {
   });
   try {
     const j = await api('security');
-    const EV = { connexion: 'Connexion', echec_connexion: 'Mot de passe erroné', deconnexion: 'Déconnexion', import: 'Import', document_ouvert: 'Document ouvert', document_ajoute: 'Document ajouté', document_supprime: 'Document supprimé', reglages: 'Réglages', mot_de_passe_change: 'Mot de passe changé', activation: 'Activation', installation: 'Installation', export_csv: 'Export', dossier_telecharge: 'Dossier téléchargé', echec_code_secours: 'Code de secours erroné', mot_de_passe_reinitialise: 'Mot de passe réinitialisé', nouveau_code_secours: 'Nouveau code de secours', invitation: 'Invitation', suppression_releve: 'Relevé supprimé', donnees_effacees: 'Données effacées', reglages_foyer: 'Réglages du foyer' };
+    const EV = { connexion: 'Connexion', echec_connexion: 'Mot de passe erroné', deconnexion: 'Déconnexion', import: 'Import', document_ouvert: 'Document ouvert', document_ajoute: 'Document ajouté', document_supprime: 'Document supprimé', reglages: 'Réglages', mot_de_passe_change: 'Mot de passe changé', activation: 'Activation', installation: 'Installation', export_csv: 'Export', dossier_telecharge: 'Dossier téléchargé', echec_code_secours: 'Code de secours erroné', mot_de_passe_reinitialise: 'Mot de passe réinitialisé', nouveau_code_secours: 'Nouveau code de secours', invitation: 'Invitation', suppression_releve: 'Relevé supprimé', donnees_effacees: 'Données effacées', reglages_foyer: 'Réglages du foyer', email_echec: 'Échec d’envoi d’e-mail', email_alertes: 'Alertes envoyées par e-mail', compte_bloque: 'Compte bloqué', reinit_demande: 'Lien « mot de passe oublié » demandé', email_change: 'Adresse e-mail changée', reglages_email: 'Réglages d’envoi des e-mails', email_test: 'E-mail de test' };
     $('#journal', v).innerHTML = j.journal.length ? `<div class="tbl-wrap" style="max-height:220px;overflow-y:auto"><table class="tbl"><tbody>${j.journal.map(e => `<tr><td class="nowrap">${esc(new Date(e.t * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}</td><td>${esc(EV[e.ev] || e.ev)}${e.ev.startsWith('echec') ? ' <span class="flag">!</span>' : ''}<div class="mut" style="font-size:11.5px">${esc(e.info || '')} ${esc(e.ip)}</div></td></tr>`).join('')}</tbody></table></div><p class="small mut" style="margin-top:6px">Une connexion que vous ne reconnaissez pas ? Changez immédiatement votre mot de passe.</p>` : 'Aucun évènement.';
   } catch (e) { /* journal non essentiel */ }
+}
+
+/* ============================================================== Envoi des e-mails (Réglages) */
+async function mailSettings(box) {
+  let c;
+  try { c = await api('mail.get'); } catch (e) { box.textContent = e.message; return; }
+  box.classList.remove('sec', 'small');
+  box.innerHTML = `<div class="note small" style="margin-bottom:12px">Une adresse <b>Outlook, Hotmail ou Live</b> peut <b>recevoir</b> les alertes, mais plus les <b>envoyer</b> : depuis septembre 2024, Microsoft exige une connexion OAuth que ce petit serveur ne gère pas. Envoyez depuis l’adresse de votre hébergeur, Gmail (mot de passe d’application) ou Brevo.</div>
+    <div class="grid g2"><div class="field"><label class="f" for="mpre">Préréglage</label><select class="in" id="mpre"><option value="">— choisir —</option>${c.prereglages.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}</select></div>
+      <div class="field"><label class="f" for="mmode">Mode</label><select class="in" id="mmode"><option value="off">Désactivé</option><option value="php" ${c.mail_php ? '' : 'disabled'}>Fonction mail() de l’hébergeur</option><option value="smtp">Serveur SMTP</option></select></div></div>
+    <div class="grid g2"><div class="field"><label class="f" for="mfrom">Adresse d’expédition</label><input class="in" id="mfrom" type="email" value="${esc(c.from)}" placeholder="alertes@mon-domaine.fr"></div><div class="field"><label class="f" for="mname">Nom affiché</label><input class="in" id="mname" value="${esc(c.from_name)}"></div></div>
+    <div id="msmtp"><div class="grid g3"><div class="field"><label class="f" for="mhost">Serveur SMTP</label><input class="in" id="mhost" value="${esc(c.host)}" placeholder="ssl0.ovh.net"></div><div class="field"><label class="f" for="mport">Port</label><input class="in" id="mport" type="number" value="${esc(c.port)}"></div>
+      <div class="field"><label class="f" for="msec">Chiffrement</label><select class="in" id="msec"><option value="tls">STARTTLS (587)</option><option value="ssl">SSL/TLS (465)</option><option value="none">Aucun (réseau local)</option></select></div></div>
+      <div class="grid g2"><div class="field"><label class="f" for="muser">Identifiant</label><input class="in" id="muser" value="${esc(c.user)}" autocomplete="off"></div><div class="field"><label class="f" for="mpass">Mot de passe</label><input class="in" id="mpass" type="password" autocomplete="new-password" placeholder="${c.mot_de_passe_enregistre ? 'enregistré (vide = inchangé)' : ''}"><div class="help">Conservé chiffré sur le serveur.</div></div></div></div>
+    <div class="field"><label class="f" for="murl">Adresse de l’application (liens des e-mails)</label><input class="in" id="murl" value="${esc(c.app_url)}" placeholder="détectée : ${esc(c.url_detectee)}"></div>
+    <div class="row wrap"><button class="btn primary" id="bmsave">Enregistrer</button><button class="btn" id="bmsavetest">Enregistrer et m’envoyer un test</button><span class="chip ${c.pret ? 'k-bravo' : ''}" id="mstate">${c.pret ? 'prêt' : 'non configuré'}</span></div>
+    <details style="margin-top:12px"><summary class="small sec" style="cursor:pointer">Veille automatique (avancé)</summary><p class="small sec" style="margin:6px 0">Boussole recalcule les alertes au plus toutes les 6 heures, dès que quelqu’un ouvre l’application. Pour être prévenu même sans l’ouvrir (découvert prévu, papier qui expire), programmez chez votre hébergeur une tâche quotidienne qui appelle cette adresse (gardez-la secrète) :</p><div class="code" style="font-size:12px;word-break:break-all;text-align:left">${esc(c.veille)}</div></details>`;
+  const mode = $('#mmode', box), secure = $('#msec', box);
+  mode.value = c.mode; secure.value = c.secure;
+  const sync = () => { $('#msmtp', box).classList.toggle('hide', mode.value !== 'smtp'); };
+  mode.addEventListener('change', sync); sync();
+  $('#mpre', box).addEventListener('change', e => {
+    const p = c.prereglages.find(x => x.id === e.target.value); if (!p) return;
+    const v = p.valeurs;
+    if (v.mode) mode.value = v.mode;
+    if (v.host !== undefined) $('#mhost', box).value = v.host;
+    if (v.port) $('#mport', box).value = v.port;
+    if (v.secure) secure.value = v.secure;
+    sync();
+    if (p.id === 'gmail') toast('Gmail : identifiant = votre adresse Gmail ; mot de passe = un « mot de passe d’application » (compte Google › Sécurité).');
+    if (p.id === 'brevo') toast('Brevo : identifiant et clé SMTP dans votre compte Brevo (rubrique SMTP & API).');
+  });
+  const doSave = async () => {
+    const r = await api('mail.save', { method: 'POST', body: { mode: mode.value, from: $('#mfrom', box).value, from_name: $('#mname', box).value, host: $('#mhost', box).value, port: +$('#mport', box).value || 587, secure: secure.value, user: $('#muser', box).value, mot_de_passe: $('#mpass', box).value, app_url: $('#murl', box).value } });
+    S.me.mail_pret = r.pret; S.status.mail = r.pret;
+    const st = $('#mstate', box); st.textContent = r.pret ? 'prêt' : 'non configuré'; st.classList.toggle('k-bravo', r.pret);
+    $('#mpass', box).value = '';
+    return r;
+  };
+  $('#bmsave', box).addEventListener('click', async e => { const b = e.currentTarget; b.disabled = true; try { await doSave(); toast('Réglages d’envoi enregistrés.'); } catch (err) { toast(err.message, false); } b.disabled = false; });
+  $('#bmsavetest', box).addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try { await doSave(); const r = await api('mail.test', { method: 'POST' }); toast(r.message); } catch (err) { toast(err.message, false); }
+    b.disabled = false;
+  });
 }

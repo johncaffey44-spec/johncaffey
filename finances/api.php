@@ -51,6 +51,7 @@ require __DIR__ . '/lib/legal.php';
 require __DIR__ . '/lib/analyse.php';
 require __DIR__ . '/lib/alertes.php';
 require __DIR__ . '/lib/vault.php';
+require __DIR__ . '/lib/mail.php';
 
 class UserError extends RuntimeException {}
 
@@ -96,7 +97,7 @@ function db(): PDO {
 function migrate(PDO $db): void {
     $db->exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
     $v = (int)($db->query("SELECT v FROM meta WHERE k = 'schema'")->fetchColumn() ?: 0);
-    if ($v >= 1) return;
+    if ($v < 1) {
     $db->exec("
         CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT NOT NULL UNIQUE, name TEXT NOT NULL, pw TEXT NOT NULL DEFAULT '',
             invite TEXT NOT NULL DEFAULT '', invite_exp INTEGER NOT NULL DEFAULT 0, recovery TEXT NOT NULL DEFAULT '', profile TEXT NOT NULL DEFAULT '{}',
@@ -124,6 +125,20 @@ function migrate(PDO $db): void {
         CREATE TABLE IF NOT EXISTS throttle (ip TEXT PRIMARY KEY, n INTEGER NOT NULL, t INTEGER NOT NULL);
     ");
     $db->exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', '1')");
+    $v = 1;
+    }
+    if ($v < 2) {
+        // identifiant = adresse e-mail, lien « mot de passe oublié », alertes envoyées par e-mail
+        $cols = array_column($db->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+        if (!in_array('email', $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''");
+        if (!in_array('reset_hash', $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN reset_hash TEXT NOT NULL DEFAULT ''");
+        if (!in_array('reset_exp', $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN reset_exp INTEGER NOT NULL DEFAULT 0");
+        $acols = array_column($db->query('PRAGMA table_info(alerts)')->fetchAll(), 'name');
+        if (!in_array('mailed', $acols, true)) $db->exec("ALTER TABLE alerts ADD COLUMN mailed INTEGER NOT NULL DEFAULT 0");
+        $db->exec('UPDATE alerts SET mailed = 1');
+        $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email <> ''");
+        $db->exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', '2')");
+    }
 }
 
 function is_https(): bool {
@@ -190,13 +205,87 @@ function partner_of(int $uid): ?array { $s = db()->prepare('SELECT * FROM users 
 function profile(array $u): array {
     $p = json_dec($u['profile'] ?? '{}');
     return $p + ['nom_complet' => '', 'adresse' => '', 'ville' => '', 'banque' => '', 'compte' => '', 'alias_moi' => [], 'alias_partenaire' => [], 'alias_employeur' => [],
-        'jour_paie' => 0, 'solde' => null, 'solde_date' => null, 'epargne_dispo' => null, 'fragile' => 'non', 'partage_details' => false, 'partage_totaux' => true, 'natures' => []];
+        'jour_paie' => 0, 'solde' => null, 'solde_date' => null, 'epargne_dispo' => null, 'fragile' => 'non', 'partage_details' => false, 'partage_totaux' => true, 'natures' => [],
+        'alertes_email' => 'importantes', 'email_contenu' => 'titres'];
 }
 function profile_save(int $uid, array $p): void { db()->prepare('UPDATE users SET profile = ? WHERE id = ?')->execute([json_enc($p), $uid]); }
 
 function foyer(): array {
     $v = db()->query("SELECT v FROM meta WHERE k = 'foyer'")->fetchColumn();
     return json_dec($v ?: '{}') + ['nom' => 'Notre foyer', 'mode' => 'prorata', 'communes' => COMMON_DEFAULT];
+}
+
+function email_norm($e): string { return strtolower(clean_str($e, 120)); }
+/** Compte désigné par son adresse e-mail (identifiant) ou, à défaut, par son prénom. */
+function user_by_ident(string $ident): ?array {
+    $ident = trim($ident);
+    if (strpos($ident, '@') !== false) { $s = db()->prepare('SELECT * FROM users WHERE email = ?'); $s->execute([email_norm($ident)]); }
+    else { $s = db()->prepare('SELECT * FROM users WHERE login = ?'); $s->execute([slug($ident)]); }
+    $u = $s->fetch();
+    return $u ?: null;
+}
+function email_taken(string $email, int $exceptId = 0): bool { $s = db()->prepare('SELECT COUNT(*) FROM users WHERE email = ? AND id <> ?'); $s->execute([$email, $exceptId]); return (int)$s->fetchColumn() > 0; }
+
+/** Réglages d'envoi des e-mails ; le mot de passe SMTP n'est déchiffré qu'au moment d'envoyer. */
+function mail_cfg(bool $withPass = false): array {
+    global $DATA_DIR;
+    $c = json_dec((string)(db()->query("SELECT v FROM meta WHERE k = 'mail'")->fetchColumn() ?: '{}'));
+    $c += ['mode' => 'off', 'from' => '', 'from_name' => 'Boussole', 'host' => '', 'port' => 587, 'secure' => 'tls', 'user' => '', 'pass_enc' => '', 'app_url' => ''];
+    if ($withPass) {
+        $c['pass'] = '';
+        if ($c['pass_enc'] !== '') { try { $c['pass'] = vault_decrypt((string)base64_decode((string)$c['pass_enc']), vault_key($DATA_DIR)); } catch (RuntimeException $e) { $c['pass'] = ''; } }
+    }
+    return $c;
+}
+function mail_ready(): bool { $c = mail_cfg(); return in_array($c['mode'], ['php', 'smtp'], true) && valid_email((string)$c['from']); }
+function current_url(): string {
+    $host = (string)preg_replace('/[^A-Za-z0-9.:\-\[\]]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $path = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/'))), '/') . '/';
+    return (is_https() ? 'https' : 'http') . '://' . ($host ?: 'localhost') . $path;
+}
+/** Adresse de l'application pour les liens des e-mails : réglée à la main, sinon mémorisée lors d'une connexion. */
+function app_url(): string {
+    $c = mail_cfg();
+    if (!empty($c['app_url'])) return (string)$c['app_url'];
+    $saved = db()->query("SELECT v FROM meta WHERE k = 'app_url'")->fetchColumn();
+    return $saved ? (string)$saved : current_url();
+}
+function mail_to_user(array $u, string $subject, string $text, ?string $html): ?string {
+    if (!mail_ready()) return 'L’envoi des e-mails n’est pas configuré (Réglages › Envoi des e-mails).';
+    if (!valid_email((string)$u['email'])) return 'Aucune adresse e-mail valide pour ce compte.';
+    $err = mail_send(mail_cfg(true), (string)$u['email'], $subject, $text, $html);
+    if ($err !== null) ev((int)$u['id'], 'email_echec', cut($err, 200));
+    return $err;
+}
+/** Récapitulatif des NOUVELLES alertes, selon les préférences de la personne. Chaque alerte n'est traitée qu'une fois. */
+function notify_alerts(int $uid): void {
+    $u = user_by_id($uid);
+    if (!$u) return;
+    $s = db()->prepare("SELECT id, niveau, titre FROM alerts WHERE user_id = ? AND mailed = 0 AND statut = 'ouverte' ORDER BY CASE niveau WHEN 'critique' THEN 0 WHEN 'attention' THEN 1 WHEN 'info' THEN 2 ELSE 3 END, id");
+    $s->execute([$uid]);
+    $rows = $s->fetchAll();
+    if (!$rows) return;
+    db()->prepare('UPDATE alerts SET mailed = 1 WHERE user_id = ? AND mailed = 0')->execute([$uid]);
+    $p = profile($u);
+    $want = ['critiques' => ['critique'], 'importantes' => ['critique', 'attention'], 'toutes' => ['critique', 'attention', 'info', 'bravo']][(string)$p['alertes_email']] ?? [];
+    $send = array_values(array_filter($rows, function ($r) use ($want) { return in_array($r['niveau'], $want, true); }));
+    if (!$send || !mail_ready() || !valid_email((string)$u['email'])) return;
+    [$sub, $txt, $html] = mail_alerts((string)$u['name'], array_slice($send, 0, 15), app_url() . '#/alertes', (string)$p['email_contenu']);
+    if (mail_to_user($u, $sub, $txt, $html) === null) ev($uid, 'email_alertes', count($send) . ' alerte(s)');
+}
+/** Veille automatique : au plus toutes les 6 heures, recalcule les alertes de chacun (découvert prévu, papiers qui expirent…). */
+function veille_tick(bool $force = false): int {
+    global $DATA_DIR;
+    $last = (int)(db()->query("SELECT v FROM meta WHERE k = 'veille'")->fetchColumn() ?: 0);
+    if (!$force && time() - $last < 6 * 3600) return 0;
+    $lock = @fopen($DATA_DIR . '/veille.lock', 'c');
+    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return 0;
+    db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('veille', ?)")->execute([(string)time()]);
+    $n = 0;
+    foreach (users() as $u) if ($u['pw'] !== '') { refresh_alerts((int)$u['id']); $n++; }
+    flock($lock, LOCK_UN);
+    fclose($lock);
+    return $n;
 }
 
 /** Contexte de catégorisation d'une personne : règles, alias, natures personnalisées, dépenses communes. */
@@ -314,6 +403,7 @@ function refresh_alerts(int $uid): void {
     $keepSet = array_flip($keep);
     foreach ($s->fetchAll() as $r) if (!isset($keepSet[$r['cle']])) $del->execute([(int)$r['id']]);
     $db->commit();
+    notify_alerts($uid);
 }
 
 /* ========================================================================== */
@@ -382,7 +472,8 @@ case 'status': {
     $pending = [];
     foreach (users() as $u) if ($u['pw'] === '' && $u['invite'] !== '') $pending[] = $u['name'];
     $toBytes = function (string $v): int { $v = trim($v); $n = (int)$v; $u = strtolower(substr($v, -1)); return $u === 'g' ? $n << 30 : ($u === 'm' ? $n << 20 : ($u === 'k' ? $n << 10 : $n)); };
-    out(200, ['version' => BOUSSOLE, 'installe' => $installed, 'moi' => $me, 'csrf' => $me ? $_SESSION['csrf'] : null, 'https' => is_https(),
+    if ($installed) veille_tick();
+    out(200, ['version' => BOUSSOLE, 'installe' => $installed, 'moi' => $me, 'csrf' => $me ? $_SESSION['csrf'] : null, 'https' => is_https(), 'mail' => $installed && mail_ready(),
         'chiffrement' => vault_cipher(), 'invitation_en_attente' => $pending, 'foyer' => $installed ? foyer()['nom'] : null,
         'max_upload' => min($MAX_UPLOAD, $toBytes((string)ini_get('upload_max_filesize')), $toBytes((string)ini_get('post_max_size'))),
         'zip' => class_exists('ZipArchive'), 'pdftotext' => imp_find_pdftotext() !== null, 'min_password' => $MIN_PASSWORD]);
@@ -393,7 +484,10 @@ case 'setup': {
     if ((int)db()->query('SELECT COUNT(*) FROM users')->fetchColumn() > 0) fail(409, 'L’application est déjà installée.');
     $foyerNom = clean_str($in['foyer'] ?? '', 60) ?: 'Notre foyer';
     $n1 = clean_str($in['nom'] ?? '', 40); $pw = (string)($in['mot_de_passe'] ?? ''); $n2 = clean_str($in['nom_partenaire'] ?? '', 40);
+    $email = email_norm($in['email'] ?? '');
     if ($n1 === '' || slug($n1) === '') fail(400, 'Indiquez votre prénom.');
+    if (!valid_email($email)) fail(400, 'Indiquez une adresse e-mail valide : elle sert d’identifiant et reçoit les alertes.');
+    if (isset($in['confirmation']) && (string)$in['confirmation'] !== $pw) fail(400, 'Les deux mots de passe ne correspondent pas.');
     if (($m = pw_problem($pw, $n1)) !== null) fail(400, $m);
     if ($n2 !== '' && slug($n2) === slug($n1)) fail(400, 'Les deux prénoms doivent être différents.');
     $db = db();
@@ -401,8 +495,8 @@ case 'setup': {
     $db->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('foyer', ?)")->execute([json_enc(['nom' => $foyerNom, 'mode' => 'prorata', 'communes' => COMMON_DEFAULT])]);
     $rec = new_code(16);
     $p1 = ['alias_moi' => [$n1], 'alias_partenaire' => $n2 !== '' ? [$n2] : []];
-    $db->prepare('INSERT INTO users (login, name, pw, recovery, profile, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        ->execute([slug($n1), $n1, password_hash($pw, PASSWORD_DEFAULT), password_hash(code_norm($rec), PASSWORD_DEFAULT), json_enc($p1), time()]);
+    $db->prepare('INSERT INTO users (login, name, email, pw, recovery, profile, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        ->execute([slug($n1), $n1, $email, password_hash($pw, PASSWORD_DEFAULT), password_hash(code_norm($rec), PASSWORD_DEFAULT), json_enc($p1), time()]);
     $uid = (int)$db->lastInsertId();
     $invite = null;
     if ($n2 !== '') {
@@ -415,16 +509,15 @@ case 'setup': {
     $u = user_by_id($uid);
     $s = login_session($u);
     ev($uid, 'installation', 'foyer ' . $foyerNom);
-    out(200, ['ok' => true, 'csrf' => $s['csrf'], 'code_secours' => $rec, 'invitation' => $invite, 'partenaire' => $n2]);
+    db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('app_url', ?)")->execute([current_url()]);
+    out(200, ['ok' => true, 'csrf' => $s['csrf'], 'code_secours' => $rec, 'invitation' => $invite, 'partenaire' => $n2, 'email' => $email]);
 }
 
 case 'login': {
     $in = body();
     throttle_check();
-    $login = slug((string)($in['nom'] ?? ''));
+    $u = user_by_ident((string)($in['identifiant'] ?? $in['nom'] ?? ''));
     $pw = (string)($in['mot_de_passe'] ?? '');
-    $s = db()->prepare('SELECT * FROM users WHERE login = ?'); $s->execute([$login]);
-    $u = $s->fetch();
     if ($u && (int)$u['locked_until'] > time()) fail(423, 'Compte bloqué après plusieurs erreurs. Réessayez dans ' . (int)ceil(((int)$u['locked_until'] - time()) / 60) . ' minute(s), ou utilisez votre code de secours.');
     if (!$u || $u['pw'] === '' || !password_verify($pw, $u['pw'])) {
         throttle_fail();
@@ -432,9 +525,13 @@ case 'login': {
             $f = (int)$u['fails'] + 1;
             db()->prepare('UPDATE users SET fails = ?, locked_until = ? WHERE id = ?')->execute([$f >= $LOCK_ATTEMPTS ? 0 : $f, $f >= $LOCK_ATTEMPTS ? time() + $LOCK_MINUTES * 60 : 0, (int)$u['id']]);
             ev((int)$u['id'], 'echec_connexion');
+            if ($f >= $LOCK_ATTEMPTS) {
+                ev((int)$u['id'], 'compte_bloque', $LOCK_MINUTES . ' min');
+                if (mail_ready()) { [$ms, $mt, $mh] = mail_lock((string)$u['name'], $LOCK_MINUTES, client_ip(), app_url()); mail_to_user($u, $ms, $mt, $mh); }
+            }
         }
         if ($u && $u['pw'] === '' && $u['invite'] !== '') fail(401, 'Ce compte n’est pas encore activé : utilisez le code d’invitation.');
-        fail(401, 'Prénom ou mot de passe incorrect.');
+        fail(401, 'Adresse e-mail ou mot de passe incorrect.');
     }
     if (password_needs_rehash($u['pw'], PASSWORD_DEFAULT)) db()->prepare('UPDATE users SET pw = ? WHERE id = ?')->execute([password_hash($pw, PASSWORD_DEFAULT), (int)$u['id']]);
     $sess = login_session($u);
@@ -450,9 +547,13 @@ case 'activate': {
     $found = null;
     foreach (users() as $u) if ($u['pw'] === '' && $u['invite'] !== '' && (int)$u['invite_exp'] > time() && password_verify($code, $u['invite'])) { $found = $u; break; }
     if (!$found) { throttle_fail(); fail(400, 'Code d’invitation invalide ou expiré.'); }
+    $email = email_norm($in['email'] ?? '');
+    if (!valid_email($email)) fail(400, 'Indiquez une adresse e-mail valide : elle sert d’identifiant et reçoit vos alertes.');
+    if (email_taken($email, (int)$found['id'])) fail(409, 'Cette adresse est déjà utilisée par l’autre compte du foyer.');
+    if (isset($in['confirmation']) && (string)$in['confirmation'] !== $pw) fail(400, 'Les deux mots de passe ne correspondent pas.');
     if (($m = pw_problem($pw, $found['name'])) !== null) fail(400, $m);
     $rec = new_code(16);
-    db()->prepare('UPDATE users SET pw = ?, invite = \'\', invite_exp = 0, recovery = ? WHERE id = ?')->execute([password_hash($pw, PASSWORD_DEFAULT), password_hash(code_norm($rec), PASSWORD_DEFAULT), (int)$found['id']]);
+    db()->prepare('UPDATE users SET pw = ?, email = ?, invite = \'\', invite_exp = 0, recovery = ? WHERE id = ?')->execute([password_hash($pw, PASSWORD_DEFAULT), $email, password_hash(code_norm($rec), PASSWORD_DEFAULT), (int)$found['id']]);
     $sess = login_session(user_by_id((int)$found['id']));
     ev((int)$found['id'], 'activation');
     out(200, ['ok' => true, 'csrf' => $sess['csrf'], 'code_secours' => $rec, 'nom' => $found['name']]);
@@ -461,9 +562,8 @@ case 'activate': {
 case 'recover': {
     $in = body();
     throttle_check();
-    $s = db()->prepare('SELECT * FROM users WHERE login = ?'); $s->execute([slug((string)($in['nom'] ?? ''))]);
-    $u = $s->fetch();
-    if (!$u || $u['recovery'] === '' || !password_verify(code_norm((string)($in['code'] ?? '')), $u['recovery'])) { throttle_fail(); if ($u) ev((int)$u['id'], 'echec_code_secours'); fail(400, 'Prénom ou code de secours incorrect.'); }
+    $u = user_by_ident((string)($in['identifiant'] ?? $in['nom'] ?? ''));
+    if (!$u || $u['recovery'] === '' || !password_verify(code_norm((string)($in['code'] ?? '')), $u['recovery'])) { throttle_fail(); if ($u) ev((int)$u['id'], 'echec_code_secours'); fail(400, 'Adresse e-mail ou code de secours incorrect.'); }
     $pw = (string)($in['mot_de_passe'] ?? '');
     if (($m = pw_problem($pw, $u['name'])) !== null) fail(400, $m);
     $rec = new_code(16);
@@ -471,6 +571,48 @@ case 'recover': {
     $sess = login_session(user_by_id((int)$u['id']));
     ev((int)$u['id'], 'mot_de_passe_reinitialise', 'par code de secours');
     out(200, ['ok' => true, 'csrf' => $sess['csrf'], 'code_secours' => $rec]);
+}
+
+case 'forgot': {
+    $in = body();
+    throttle_check();
+    throttle_fail();                          // chaque demande compte : pas d'envois en rafale depuis une même adresse IP
+    if (!mail_ready()) fail(503, 'L’envoi des e-mails n’est pas configuré sur ce serveur : utilisez votre code de secours.');
+    $u = user_by_ident((string)($in['identifiant'] ?? ''));
+    if ($u && $u['pw'] !== '' && valid_email((string)$u['email']) && (int)$u['reset_exp'] < time() + 25 * 60) {
+        $tok = bin2hex(random_bytes(24));
+        db()->prepare('UPDATE users SET reset_hash = ?, reset_exp = ? WHERE id = ?')->execute([hash('sha256', $tok), time() + 30 * 60, (int)$u['id']]);
+        [$ms, $mt, $mh] = mail_reset((string)$u['name'], app_url() . '#/reinit?jeton=' . $tok);
+        mail_to_user($u, $ms, $mt, $mh);
+        ev((int)$u['id'], 'reinit_demande');
+    }
+    // même réponse que le compte existe ou non : on ne révèle pas quelles adresses sont inscrites
+    out(200, ['ok' => true, 'message' => 'Si un compte correspond à cette adresse, un e-mail vient de partir avec un lien valable 30 minutes. Regardez aussi dans les courriers indésirables.']);
+}
+
+case 'reset': {
+    $in = body();
+    throttle_check();
+    $tok = (string)($in['jeton'] ?? '');
+    if (!preg_match('/^[a-f0-9]{48}$/', $tok)) { throttle_fail(); fail(400, 'Lien invalide.'); }
+    $s = db()->prepare('SELECT * FROM users WHERE reset_hash = ? AND reset_exp > ?'); $s->execute([hash('sha256', $tok), time()]);
+    $u = $s->fetch();
+    if (!$u) { throttle_fail(); fail(400, 'Lien invalide ou expiré : refaites une demande depuis l’écran de connexion.'); }
+    $pw = (string)($in['mot_de_passe'] ?? '');
+    if (isset($in['confirmation']) && (string)$in['confirmation'] !== $pw) fail(400, 'Les deux mots de passe ne correspondent pas.');
+    if (($m = pw_problem($pw, $u['name'])) !== null) fail(400, $m);
+    db()->prepare("UPDATE users SET pw = ?, reset_hash = '', reset_exp = 0, fails = 0, locked_until = 0 WHERE id = ?")->execute([password_hash($pw, PASSWORD_DEFAULT), (int)$u['id']]);
+    $sess = login_session(user_by_id((int)$u['id']));
+    ev((int)$u['id'], 'mot_de_passe_reinitialise', 'par lien e-mail');
+    out(200, ['ok' => true, 'csrf' => $sess['csrf']]);
+}
+
+case 'veille': {
+    // pour une tâche planifiée (cron) : https://…/api.php?a=veille&cle=… (clé visible dans Réglages › Envoi des e-mails)
+    $key = (string)($_GET['cle'] ?? '');
+    $saved = (string)(db()->query("SELECT v FROM meta WHERE k = 'veille_cle'")->fetchColumn() ?: '');
+    if ($saved === '' || !hash_equals($saved, $key)) { throttle_check(); throttle_fail(); fail(403, 'Clé de veille invalide.'); }
+    out(200, ['ok' => true, 'comptes' => veille_tick(true)]);
 }
 
 case 'logout': {
@@ -488,7 +630,8 @@ case 'me': {
     $u = auth();
     $p = profile($u);
     $partner = partner_of((int)$u['id']);
-    out(200, ['moi' => ['id' => (int)$u['id'], 'nom' => $u['name'], 'derniere_connexion' => (int)$u['last_login']], 'profil' => $p, 'foyer' => foyer(),
+    db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('app_url', ?)")->execute([current_url()]);
+    out(200, ['moi' => ['id' => (int)$u['id'], 'nom' => $u['name'], 'email' => $u['email'], 'derniere_connexion' => (int)$u['last_login']], 'profil' => $p, 'foyer' => foyer(), 'mail_pret' => mail_ready(),
         'partenaire' => $partner ? ['id' => (int)$partner['id'], 'nom' => $partner['name'], 'active' => $partner['pw'] !== '', 'partage_details' => (bool)profile($partner)['partage_details'], 'partage_totaux' => (bool)profile($partner)['partage_totaux']] : null,
         'categories' => array_map(function ($c, $id) { return ['id' => $id, 'label' => $c[0], 'nature' => $c[1], 'icone' => $c[2]]; }, $cats, array_keys($cats)),
         'natures' => NATURES, 'types_frais' => fee_types(), 'types_docs' => array_map(function ($t, $id) { return ['id' => $id, 'label' => $t[0], 'icone' => $t[1], 'conservation' => $t[2], 'champs' => $t[5]]; }, doc_types(), array_keys(doc_types())),
@@ -508,6 +651,8 @@ case 'me.save': {
     if (array_key_exists('epargne_dispo', $in)) $p['epargne_dispo'] = $in['epargne_dispo'] === null || $in['epargne_dispo'] === '' ? null : max(0, (int)$in['epargne_dispo']);
     if (array_key_exists('fragile', $in) && in_array($in['fragile'], ['non', 'fragile', 'ocf', 'sbb'], true)) $p['fragile'] = $in['fragile'];
     foreach (['partage_details', 'partage_totaux'] as $k) if (array_key_exists($k, $in)) $p[$k] = (bool)$in[$k];
+    if (array_key_exists('alertes_email', $in) && in_array($in['alertes_email'], ['aucune', 'critiques', 'importantes', 'toutes'], true)) $p['alertes_email'] = $in['alertes_email'];
+    if (array_key_exists('email_contenu', $in) && in_array($in['email_contenu'], ['titres', 'discret'], true)) $p['email_contenu'] = $in['email_contenu'];
     if (array_key_exists('natures', $in)) {
         $nat = [];
         foreach ((array)$in['natures'] as $c => $n) if (isset($cats[$c]) && isset(NATURES[$n]) && $n !== $cats[$c][1]) $nat[$c] = $n;
@@ -531,6 +676,69 @@ case 'foyer.save': {
     if (array_key_exists('communes', $in)) foreach (users() as $x) reclassify((int)$x['id'], true);
     ev((int)$u['id'], 'reglages_foyer');
     out(200, ['ok' => true, 'foyer' => $f]);
+}
+
+case 'email.change': {
+    $u = auth(); $in = body();
+    if (!password_verify((string)($in['mot_de_passe'] ?? ''), $u['pw'])) fail(400, 'Mot de passe incorrect.');
+    $email = email_norm($in['email'] ?? '');
+    if (!valid_email($email)) fail(400, 'Adresse e-mail invalide.');
+    if (email_taken($email, (int)$u['id'])) fail(409, 'Cette adresse est déjà utilisée par l’autre compte du foyer.');
+    $old = (string)$u['email'];
+    db()->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$email, (int)$u['id']]);
+    ev((int)$u['id'], 'email_change');
+    if ($old !== $email && valid_email($old) && mail_ready()) {   // prévient l'ANCIENNE adresse : utile si quelqu'un a pris la main sur le compte
+        [$ms, $mt, $mh] = mail_changed((string)$u['name'], $email, app_url());
+        $tmp = $u; $tmp['email'] = $old;
+        mail_to_user($tmp, $ms, $mt, $mh);
+    }
+    out(200, ['ok' => true, 'email' => $email]);
+}
+
+case 'mail.get': {
+    auth();
+    $c = mail_cfg();
+    $key = (string)(db()->query("SELECT v FROM meta WHERE k = 'veille_cle'")->fetchColumn() ?: '');
+    if ($key === '') { $key = bin2hex(random_bytes(16)); db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('veille_cle', ?)")->execute([$key]); }
+    $presets = [];
+    foreach (mail_presets() as $id => $pr) $presets[] = ['id' => $id, 'label' => $pr[0], 'valeurs' => $pr[1]];
+    out(200, ['mode' => $c['mode'], 'from' => $c['from'], 'from_name' => $c['from_name'], 'host' => $c['host'], 'port' => (int)$c['port'], 'secure' => $c['secure'], 'user' => $c['user'],
+        'mot_de_passe_enregistre' => $c['pass_enc'] !== '', 'app_url' => $c['app_url'], 'url_detectee' => current_url(), 'pret' => mail_ready(), 'prereglages' => $presets,
+        'veille' => current_url() . 'api.php?a=veille&cle=' . $key, 'mail_php' => function_exists('mail')]);
+}
+
+case 'mail.save': {
+    $u = auth(); $in = body();
+    $c = mail_cfg();
+    if (isset($in['mode']) && in_array($in['mode'], ['off', 'php', 'smtp'], true)) $c['mode'] = $in['mode'];
+    if (array_key_exists('from', $in)) { $f = email_norm($in['from']); if ($f !== '' && !valid_email($f)) fail(400, 'Adresse d’expédition invalide.'); $c['from'] = $f; }
+    if (array_key_exists('from_name', $in)) $c['from_name'] = clean_header(clean_str($in['from_name'], 60)) ?: 'Boussole';
+    if (array_key_exists('host', $in)) $c['host'] = (string)preg_replace('/[^A-Za-z0-9.\-]/', '', clean_str($in['host'], 120));
+    if (array_key_exists('port', $in)) $c['port'] = max(1, min(65535, (int)$in['port']));
+    if (isset($in['secure']) && in_array($in['secure'], ['tls', 'ssl', 'none'], true)) $c['secure'] = $in['secure'];
+    if (array_key_exists('user', $in)) $c['user'] = clean_header(clean_str($in['user'], 120));
+    if (!empty($in['mot_de_passe'])) $c['pass_enc'] = base64_encode(vault_encrypt((string)$in['mot_de_passe'], vault_key($DATA_DIR)));
+    if (!empty($in['effacer_mot_de_passe'])) $c['pass_enc'] = '';
+    if (array_key_exists('app_url', $in)) {
+        $url = trim(clean_str($in['app_url'], 200));
+        if ($url !== '' && (!filter_var($url, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $url))) fail(400, 'Adresse de l’application invalide (exemple : https://mon-site.fr/finances/).');
+        $c['app_url'] = $url === '' ? '' : rtrim($url, '/') . '/';
+    }
+    if ($c['mode'] !== 'off' && !valid_email((string)$c['from'])) fail(400, 'Indiquez l’adresse d’expédition des e-mails.');
+    if ($c['mode'] === 'smtp' && $c['host'] === '') fail(400, 'Indiquez le serveur SMTP.');
+    unset($c['pass']);
+    db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('mail', ?)")->execute([json_enc($c)]);
+    ev((int)$u['id'], 'reglages_email', $c['mode']);
+    out(200, ['ok' => true, 'pret' => mail_ready()]);
+}
+
+case 'mail.test': {
+    $u = auth(); body();
+    [$ms, $mt, $mh] = mail_test((string)$u['name'], app_url());
+    $err = mail_to_user($u, $ms, $mt, $mh);
+    if ($err !== null) fail(502, $err);
+    ev((int)$u['id'], 'email_test');
+    out(200, ['ok' => true, 'message' => 'E-mail de test envoyé à ' . $u['email'] . '. S’il n’arrive pas d’ici quelques minutes, regardez dans les courriers indésirables.']);
 }
 
 case 'password': {

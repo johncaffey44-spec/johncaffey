@@ -8,7 +8,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 define('BOUSSOLE', 'test');
 date_default_timezone_set('Europe/Paris');
 $root = dirname(__DIR__);
-foreach (['util', 'categorize', 'import', 'legal', 'analyse', 'alertes', 'vault'] as $f) require $root . '/lib/' . $f . '.php';
+foreach (['util', 'categorize', 'import', 'legal', 'analyse', 'alertes', 'vault', 'mail'] as $f) require $root . '/lib/' . $f . '.php';
 
 $pass = 0; $fail = 0;
 function ok($cond, string $what): void { global $pass, $fail; if ($cond) { $pass++; } else { $fail++; echo "  ✗ $what\n"; } }
@@ -125,6 +125,18 @@ foreach (array_keys(letters_catalog()) as $lid) {
     $l = letter_render($lid, ['items' => [['date' => '2026-10-10', 'label' => 'COMMISSION', 'montant' => 800]], 'montant' => 800, 'mois' => '2026-10', 'date' => '2026-10-10', 'label' => 'X', 'creancier' => 'Y'], ['nom_complet' => 'Alex Martin', 'adresse' => '1 rue Exemple', 'compte' => '…5678']);
     ok($l['objet'] !== '' && strlen($l['corps']) > 200 && has($l['corps'], 'Alex Martin'), 'courrier ' . $lid);
 }
+
+section('E-mails');
+[$hd, , $full] = mail_build('alertes@exemple.fr', 'Boussole', "victime@exemple.fr\r\nBcc: espion@exemple.fr", "Frais d’incidents\r\nBcc: espion@exemple.fr", 'texte', '<p>html</p>');
+ok(!preg_match('/^Bcc:/mi', $full), 'injection d’en-tête bloquée (destinataire et objet)');
+ok(has($full, 'Subject: =?UTF-8?B?'), 'objet accentué encodé (RFC 2047)');
+ok(has($hd, 'Auto-Submitted: auto-generated'), 'marqué comme message automatique');
+ok(valid_email('prenom.nom@exemple.fr') && !valid_email("a@b.fr\nX") && !valid_email('pas-une-adresse'), 'validation des adresses');
+[$sub, $txt] = mail_alerts('Alex', [['niveau' => 'critique', 'titre' => 'Rejet facturé 28,00 € : 8,00 € à récupérer']], 'https://exemple.fr/finances/#/alertes', 'discret');
+ok(!preg_match('/\d+,\d{2}/', $txt . $sub), 'mode discret : aucun montant dans l’e-mail');
+[$sub2, $txt2] = mail_alerts('Alex', [['niveau' => 'critique', 'titre' => 'Rejet facturé 28,00 €'], ['niveau' => 'attention', 'titre' => 'X']], 'https://exemple.fr/', 'titres');
+ok(has($sub2, '2 nouvelles alertes dont 1 critique') && has($txt2, 'Rejet facturé'), 'récapitulatif des alertes');
+ok(has(smtp_hint('535 5.7.139 Authentication unsuccessful, basic authentication is disabled', ['host' => 'smtp-mail.outlook.com']), 'OAuth'), 'refus Microsoft expliqué');
 
 section('Coffre-fort');
 $key = random_bytes(32);
