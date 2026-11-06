@@ -39,7 +39,7 @@ $ALLOWED_NETS  = ['tout'];            // qui peut ouvrir l'application : ['tout'
 // Réglages propres à CETTE installation (écrits par l'installeur Windows, jamais publiés) : ils remplacent ceux du dessus.
 if (is_file(__DIR__ . '/config.local.php')) require __DIR__ . '/config.local.php';
 
-define('BOUSSOLE', '1.1.0');
+define('BOUSSOLE', '1.1.1');
 if (PHP_VERSION_ID < 70400) { header('Content-Type: application/json; charset=utf-8'); http_response_code(500); echo '{"error":"PHP 7.4 ou plus est nécessaire (version actuelle : ' . PHP_VERSION . ')."}'; exit; }
 if (!@date_default_timezone_set($TIMEZONE)) date_default_timezone_set('Europe/Paris');
 header('Content-Type: application/json; charset=utf-8');

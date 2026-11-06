@@ -490,11 +490,12 @@ try {
         $ini = ''
         foreach ($ligne in $r.Sortie) {
             if ($ligne -match 'Loaded Configuration File:\s*(.+)$') {
-                $valeurIni = $Matches[1].Trim()
-                if ($valeurIni -ne '(none)') { $ini = $valeurIni }
+                # PHP 8.5 entoure le chemin de guillemets ("C:\PHP\php.ini") : on les retire
+                $valeurIni = $Matches[1].Trim([char[]]@([char]34, [char]39, [char]32, [char]9))
+                if ($valeurIni -ne '(none)' -and $valeurIni -ne '') { $ini = $valeurIni }
             }
         }
-        if ($ini -eq '') { $ini = Join-Path $phpDir 'php.ini' }
+        if ($ini -eq '' -or -not (Test-Path -LiteralPath $ini)) { $ini = Join-Path $phpDir 'php.ini' }
         if (-not (Test-Path -LiteralPath $ini)) { Stop-Installation ('php.ini introuvable (' + $ini + ') : copiez php.ini-production en php.ini dans ' + $phpDir + '.') }
         Write-Ok ('PHP ' + $versionPhp + ' (' + $phpDir + '), configuration ' + $ini)
         $r = Invoke-Natif $appcmd @('list', 'config', '/section:system.webServer/fastCgi')
@@ -592,7 +593,7 @@ try {
         # =====================================================================
         Write-Etape 'Copie de l''application'
         if (-not $Simulation -and $etatSite -eq 'Started') {
-            $r = Invoke-Natif $appcmd @('stop', 'site', ('/site.name:' + $NomSite))
+            $r = Invoke-Natif $appcmd @('stop', 'site', $NomSite)
             if ($r.Code -eq 0) { $siteArrete = $true; Write-Info ('Site « ' + $NomSite + ' » arrêté pendant la mise à jour.') }
             else { Write-Attention ('Impossible d''arrêter le site pendant la copie : ' + $r.Texte) }
         }
@@ -720,17 +721,17 @@ try {
 
         # redémarrage du site et de PHP (nouveau php.ini)
         if ($siteArrete) {
-            $r = Invoke-Natif $appcmd @('start', 'site', ('/site.name:' + $NomSite))
+            $r = Invoke-Natif $appcmd @('start', 'site', $NomSite)
             if ($r.Code -eq 0) { $siteArrete = $false; Write-Ok ('Site « ' + $NomSite + ' » redémarré') }
             else { Write-Attention ('Le site ne redémarre pas : ' + $r.Texte) }
         } elseif (-not $Simulation -and $etatSite -ne 'Started') {
-            $r = Invoke-Natif $appcmd @('start', 'site', ('/site.name:' + $NomSite))
+            $r = Invoke-Natif $appcmd @('start', 'site', $NomSite)
             if ($r.Code -eq 0) { Write-Ok ('Site « ' + $NomSite + ' » démarré (il était arrêté)') }
             else { Write-Attention ('Le site « ' + $NomSite + ' » est arrêté et ne démarre pas : ' + $r.Texte) }
         }
         if ($iniModifie -and -not $Simulation) {
             $relance = $null
-            if ($pool -ne '') { $relance = Invoke-Natif $appcmd @('recycle', 'apppool', ('/apppool.name:' + $pool)) }
+            if ($pool -ne '') { $relance = Invoke-Natif $appcmd @('recycle', 'apppool', $pool) }
             if ($null -eq $relance -or $relance.Code -ne 0) { $relance = Invoke-Natif (Join-Path $system32 'iisreset.exe') @('/restart') }
             if ($relance.Code -eq 0) { Write-Ok 'PHP relancé avec la nouvelle configuration' }
             else { Write-Attention ('Redémarrez IIS (commande iisreset) pour appliquer le nouveau php.ini : ' + $relance.Texte) }
@@ -927,7 +928,7 @@ try {
     Write-Host 'Vos données n''ont pas été touchées. Corrigez le problème indiqué puis relancez le script : il reprend là où il faut.' -ForegroundColor Yellow
 } finally {
     if ($siteArrete) {
-        $redemarrage = Invoke-Natif $appcmd @('start', 'site', ('/site.name:' + $NomSite))
+        $redemarrage = Invoke-Natif $appcmd @('start', 'site', $NomSite)
         if ($redemarrage.Code -eq 0) { Write-Host ('    Site « ' + $NomSite + ' » redémarré.') }
         else { Write-Host ('    Redémarrez le site « ' + $NomSite + ' » dans le Gestionnaire IIS : ' + $redemarrage.Texte) -ForegroundColor Yellow }
     }

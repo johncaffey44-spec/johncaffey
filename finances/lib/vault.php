@@ -104,8 +104,7 @@ function doc_check_upload(string $tmp, string $name, int $size, int $max): array
     $mime = doc_mime_ext($ext);
     if (function_exists('finfo_open')) {
         $fi = finfo_open(FILEINFO_MIME_TYPE);
-        $m = $fi ? finfo_file($fi, $tmp) : false;
-        if ($fi) finfo_close($fi);
+        $m = $fi ? finfo_file($fi, $tmp) : false;          // pas de finfo_close() : inutile depuis PHP 8.1, déprécié en PHP 8.5
         if (is_string($m) && $m !== '' && $m !== 'application/octet-stream' && ($mime === 'application/octet-stream' || $m === $mime)) $mime = $m;
     }
     return [$mime, $ext];
