@@ -86,7 +86,7 @@ async function api(action, { method = 'GET', body = null, query = null, form = n
   }
   const data = await res.json();
   if (res.status === 401 && data.code === 'auth') { S.me = null; renderLogin(data.error); throw new Error(data.error); }
-  if (!res.ok) throw new Error(data.error || ('Erreur ' + res.status));
+  if (!res.ok) { const err = new Error(data.error || ('Erreur ' + res.status)); err.code = data.code || ''; throw err; }
   return data;
 }
 
@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', boot);
 async function boot() {
   applyTheme();
   try { S.status = await api('status'); }
-  catch (e) { $('#root').innerHTML = `<div class="auth"><div class="auth-card"><div class="sb-brand">${LOGO}<div><b>Boussole</b><small>finances du foyer</small></div></div><h1>Démarrage impossible</h1><p class="err">${esc(e.message)}</p><p class="sec small">Ouvrez l’application par son adresse http(s)://… sur un serveur avec PHP 7.4 ou plus, et non en double-cliquant sur le fichier.</p></div></div>`; return; }
+  catch (e) { $('#root').innerHTML = `<div class="auth"><div class="auth-card"><div class="sb-brand">${LOGO}<div><b>Boussole</b><small>finances du foyer</small></div></div><h1>${e.code === 'reseau' ? 'Accès réservé à la maison' : 'Démarrage impossible'}</h1><p class="err">${esc(e.message)}</p>${e.code === 'reseau' ? '' : '<p class="sec small">Ouvrez l’application par son adresse http(s)://… sur un serveur avec PHP 7.4 ou plus, et non en double-cliquant sur le fichier.</p>'}</div></div>`; return; }
   if (!S.status.installe) return renderSetup();
   if (location.hash.startsWith('#/reinit')) { const j = new URLSearchParams(location.hash.split('?')[1] || '').get('jeton'); if (j) return renderReset(j); }
   if (!S.status.moi) return renderLogin();
@@ -942,7 +942,7 @@ async function viewVault(v, q, tok) {
   v.innerHTML = `<div class="page-head"><div class="grow"><h1>Coffre-fort</h1><p>Bulletins de paie, justificatifs, factures : chiffrés sur le serveur, avec la durée de conservation officielle de chacun.</p></div></div>
   <div class="grid g2">
     <section class="card"><h2 style="margin-bottom:10px">Ajouter un document</h2>
-      <form id="fdoc"><div class="field"><label class="f" for="dfile">Fichier</label><input class="in" type="file" id="dfile" required accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.txt,.csv,.ofx,.qif,.odt,.ods,.docx,.xlsx,.doc,.xls" style="padding-top:7px"><div class="help">Les photos lourdes sont réduites automatiquement avant l’envoi.</div></div>
+      <form id="fdoc"><div class="field"><label class="f" for="dfile">Fichier(s)</label><input class="in" type="file" id="dfile" required multiple style="padding-top:7px"><div class="help">Tous les formats : PDF, photos, tableurs, textes, archives, vidéos… (sauf les programmes). Plusieurs fichiers à la fois si vous voulez ; les photos lourdes sont réduites avant l’envoi.</div></div>
       <div class="grid g2"><div class="field"><label class="f" for="dtype">Type</label><select class="in" id="dtype">${typeOpt}</select></div><div class="field"><label class="f" for="ddate">Date du document</label><input class="in" type="date" id="ddate" value="${today()}"></div></div>
       <div class="help" id="dkeep" style="margin:-6px 0 10px"></div>
       <div class="field"><label class="f" for="dtitle">Titre (facultatif)</label><input class="in" id="dtitle" maxlength="120"></div>
@@ -950,7 +950,7 @@ async function viewVault(v, q, tok) {
         <div class="grid g2"><div class="field"><label class="f" for="dnetimp">Net imposable</label><input class="in" id="dnetimp" inputmode="decimal"></div><div class="field"><label class="f" for="dbrut">Brut</label><input class="in" id="dbrut" inputmode="decimal"></div></div>
         <div class="help" style="margin:-4px 0 10px">Le net à payer est comparé au virement de salaire reçu : en cas d’écart, vous êtes prévenu(e).</div></div>
       <div id="dexp" class="hide field"><label class="f" for="dexpi">Date d’expiration</label><input class="in" type="date" id="dexpi"><div class="help">Rappel deux mois avant.</div></div>
-      <label class="check"><input type="checkbox" id="dshare"><span>Visible par ${esc(S.me.partenaire ? S.me.partenaire.nom : 'mon partenaire')} (justificatif du foyer : bail, facture d’énergie…)</span></label>
+      <label class="check"><input type="checkbox" id="dshare"><span>Visible par tout le foyer (bail, facture d’énergie, assurance habitation…)</span></label>
       <button class="btn primary" style="margin-top:8px">${ic('lock', 'sm')}Ranger dans le coffre</button></form></section>
     <section class="card"><h2 style="margin-bottom:6px">Dossiers prêts à envoyer</h2><p class="sec small" style="margin-bottom:8px">Boussole rassemble les bonnes pièces et signale ce qui manque ou est périmé.</p>
       ${ds.dossiers.map(d => `<details class="kb"><summary>${d.complet ? '<span class="req"><span class="st st-ok">✓</span></span>' : ''}${esc(d.titre)}<span class="chip ${d.complet ? 'k-bravo' : 'k-attention'}" style="margin-left:6px">${d.complet ? 'complet' : 'incomplet'}</span></summary>
@@ -958,32 +958,41 @@ async function viewVault(v, q, tok) {
         ${d.remarques.map(t => `<div class="note small" style="margin-top:8px">${esc(t)}</div>`).join('')}
         ${ds.zip ? `<a class="btn sm" style="margin:10px 0 6px" href="api.php?a=dossier.zip&id=${esc(d.id)}">${ic('download', 'sm')}Télécharger le dossier (.zip)</a>` : ''}</details>`).join('')}</section>
   </div>
-  <section class="card" style="margin-top:16px"><h2 style="margin-bottom:6px">Mes documents</h2>${r.documents.length ? Object.entries(by).map(([t, list]) => { const ty = types.find(x => x.id === t) || { label: t, icone: '📁', conservation: '' }; return `<h3 style="margin:16px 0 4px">${esc(ty.icone + ' ' + ty.label)}</h3><p class="small mut">À conserver : ${esc(ty.conservation)}</p>${list.map(d => `<div class="doc"><span class="ico">${esc(d.icone)}</span><div style="min-width:0"><b>${esc(d.titre)}</b>${d.partage ? ' <span class="flag i">foyer</span>' : ''}${d.a_moi ? '' : ' <span class="chip">partagé par ' + esc(S.me.partenaire ? S.me.partenaire.nom : '') + '</span>'}${d.a_trier ? ' <span class="flag w">peut être jeté</span>' : ''}
+  <section class="card" style="margin-top:16px"><div class="row wrap" style="margin-bottom:6px"><h2 class="grow">Mes documents</h2>${r.documents.length ? `<a class="btn sm" href="api.php?a=docs.zip">${ic('download', 'sm')}Tout télécharger (.zip)</a>` : ''}</div>${r.documents.length ? Object.entries(by).map(([t, list]) => { const ty = types.find(x => x.id === t) || { label: t, icone: '📁', conservation: '' }; return `<h3 style="margin:16px 0 4px">${esc(ty.icone + ' ' + ty.label)}</h3><p class="small mut">À conserver : ${esc(ty.conservation)}</p>${list.map(d => `<div class="doc"><span class="ico">${esc(d.icone)}</span><div style="min-width:0"><b>${esc(d.titre)}</b>${d.ext ? ' <span class="chip">' + esc(d.ext.toUpperCase()) + '</span>' : ''}${d.partage ? ' <span class="flag i">foyer</span>' : ''}${d.a_moi ? '' : ' <span class="chip">partagé par ' + esc(d.proprietaire || '') + '</span>'}${d.a_trier ? ' <span class="flag w">peut être jeté</span>' : ''}
       <div class="small mut">${esc(fd(d.date))}${d.conserver_jusqu ? ' · à garder jusqu’au ' + esc(fd(d.conserver_jusqu)) : ''}${d.expiration ? ' · expire le ' + esc(fd(d.expiration)) : ''} · ${Math.max(1, Math.round(d.taille / 1024))} Ko</div>
       ${d.rapprochement && d.rapprochement.attente ? `<div class="small mut">En attente du relevé où apparaîtra ce salaire.</div>` : ''}${d.rapprochement && !d.rapprochement.attente ? `<div class="small ${Math.abs(d.rapprochement.ecart) <= 100 ? 'pos' : ''}" style="${Math.abs(d.rapprochement.ecart) <= 100 ? '' : 'color:var(--warn)'}">${Math.abs(d.rapprochement.ecart) <= 100 ? '✓ Virement de salaire retrouvé : ' + esc(E(d.rapprochement.recu)) : (d.rapprochement.recu ? '⚠ Reçu ' + esc(E(d.rapprochement.recu)) + ' pour un net à payer de ' + esc(E(d.meta.net)) : '⚠ Aucun virement de salaire retrouvé pour ce mois')}</div>` : ''}</div>
-      <div class="row"><a class="btn sm ghost" href="api.php?a=doc.get&id=${d.id}" target="_blank" rel="noopener" title="Ouvrir">${ic('eye', 'sm')}</a><a class="btn sm ghost" href="api.php?a=doc.get&id=${d.id}&dl=1" title="Télécharger">${ic('download', 'sm')}</a>${d.a_moi ? `<button class="btn sm ghost danger" data-ddel="${d.id}" title="Supprimer">${ic('trash', 'sm')}</button>` : ''}</div></div>`).join('')}`; }).join('') : '<p class="sec">Le coffre est vide. Commencez par vos 3 derniers bulletins de paie et un justificatif de domicile récent.</p>'}</section>`;
+      <div class="row">${d.apercu ? `<a class="btn sm ghost" href="api.php?a=doc.get&id=${d.id}" target="_blank" rel="noopener" title="Ouvrir">${ic('eye', 'sm')}</a>` : ''}<a class="btn sm ghost" href="api.php?a=doc.get&id=${d.id}&dl=1" title="Télécharger">${ic('download', 'sm')}</a>${d.a_moi ? `<button class="btn sm ghost danger" data-ddel="${d.id}" title="Supprimer">${ic('trash', 'sm')}</button>` : ''}</div></div>`).join('')}`; }).join('') : '<p class="sec">Le coffre est vide. Commencez par vos 3 derniers bulletins de paie et un justificatif de domicile récent.</p>'}</section>`;
   const tsel = $('#dtype', v);
   const upd = () => { const t = types.find(x => x.id === tsel.value); $('#dkeep', v).textContent = t ? 'Conservation : ' + t.conservation : ''; $('#dpaie', v).classList.toggle('hide', tsel.value !== 'paie'); $('#dexp', v).classList.toggle('hide', !['identite', 'vehicule', 'assurance'].includes(tsel.value)); };
   tsel.addEventListener('change', upd); upd();
   $('#fdoc', v).addEventListener('submit', async e => {
     e.preventDefault();
     const btn = e.submitter || $('button.primary', e.target);
-    let file = $('#dfile').files[0];
-    if (!file) return;
+    const files = [...$('#dfile').files];
+    if (!files.length) return;
     btn.disabled = true;
-    try {
-      file = await shrinkImage(file);
-      if (file.size > S.status.max_upload) throw new Error('Fichier trop lourd pour ce serveur (' + Math.round(S.status.max_upload / 1048576) + ' Mo au plus).');
-      const fdata = new FormData();
-      fdata.append('file', file, file.name);
-      fdata.append('type', tsel.value); fdata.append('date', $('#ddate').value); fdata.append('titre', $('#dtitle').value);
-      fdata.append('partage', $('#dshare').checked ? '1' : '0');
-      if (tsel.value === 'paie') { fdata.append('periode', $('#dper').value); fdata.append('net', $('#dnet').value); fdata.append('net_imposable', $('#dnetimp').value); fdata.append('brut', $('#dbrut').value); }
-      if (!$('#dexp').classList.contains('hide')) fdata.append('expiration', $('#dexpi').value);
-      await api('doc.upload', { method: 'POST', form: fdata });
-      toast('Document rangé et chiffré.');
-      route(); refreshBadge();
-    } catch (err) { toast(err.message, false); btn.disabled = false; }
+    const titre = $('#dtitle').value.trim();
+    let ok = 0;
+    const refus = [];
+    for (const [i, original] of files.entries()) {
+      if (files.length > 1) btn.textContent = 'Envoi ' + (i + 1) + ' / ' + files.length + '…';
+      try {
+        const file = await shrinkImage(original);
+        if (file.size > S.status.max_upload) throw new Error('trop lourd (' + Math.round(S.status.max_upload / 1048576) + ' Mo au plus)');
+        const fdata = new FormData();
+        fdata.append('file', file, file.name);
+        fdata.append('type', tsel.value); fdata.append('date', $('#ddate').value);
+        fdata.append('titre', titre && files.length > 1 ? titre + ' (' + (i + 1) + ')' : titre);
+        fdata.append('partage', $('#dshare').checked ? '1' : '0');
+        if (tsel.value === 'paie') { fdata.append('periode', $('#dper').value); fdata.append('net', $('#dnet').value); fdata.append('net_imposable', $('#dnetimp').value); fdata.append('brut', $('#dbrut').value); }
+        if (!$('#dexp').classList.contains('hide')) fdata.append('expiration', $('#dexpi').value);
+        await api('doc.upload', { method: 'POST', form: fdata });
+        ok++;
+      } catch (err) { refus.push(original.name + ' : ' + err.message); }
+    }
+    if (ok) toast(ok > 1 ? ok + ' documents rangés et chiffrés.' : 'Document rangé et chiffré.');
+    if (refus.length) toast('Refusé — ' + refus.join(' · '), false);
+    if (ok) { route(); refreshBadge(); } else { btn.disabled = false; btn.innerHTML = ic('lock', 'sm') + 'Ranger dans le coffre'; }
   });
   $$('[data-ddel]', v).forEach(b => b.addEventListener('click', async () => {
     if (!await confirmBox('Supprimer ce document ?', 'Le fichier chiffré sera effacé définitivement du serveur.', 'Supprimer', true)) return;

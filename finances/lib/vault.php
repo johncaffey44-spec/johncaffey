@@ -44,24 +44,88 @@ function doc_keep_until(string $type, ?string $docDate): ?string {
     return date('Y-m-d', strtotime($docDate . ' +' . (int)$t[3] . ' years'));
 }
 
-const DOC_EXT = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'txt', 'csv', 'ofx', 'qfx', 'qif', 'odt', 'ods', 'docx', 'xlsx', 'doc', 'xls'];
-const DOC_BAD_MIME = ['text/html', 'application/xhtml+xml', 'image/svg+xml', 'application/javascript', 'text/javascript', 'application/x-php', 'text/x-php',
-    'application/x-sh', 'text/x-shellscript', 'application/x-executable', 'application/x-msdownload', 'application/x-dosexec', 'application/java-archive', 'application/x-httpd-php'];
+/**
+ * Tous les formats sont acceptés (PDF, photos, tableurs, archives, vidéos…), SAUF les programmes et scripts :
+ * un double-clic sur le fichier téléchargé les exécuterait. Rien n'est jamais exécuté par le serveur : les fichiers
+ * sont chiffrés, rangés hors du site web et renvoyés en téléchargement.
+ */
+const DOC_BLOCKED = ['exe', 'com', 'scr', 'pif', 'cpl', 'msi', 'msp', 'mst', 'bat', 'cmd', 'ps1', 'psm1', 'psd1', 'vbs', 'vbe', 'js', 'jse', 'mjs',
+    'wsf', 'wsh', 'wsc', 'hta', 'jar', 'lnk', 'url', 'reg', 'dll', 'sys', 'drv', 'ocx', 'inf', 'scf', 'application', 'appref-ms', 'gadget', 'msc',
+    'chm', 'apk', 'xll', 'iqy', 'slk', 'sh', 'bash', 'command', 'csh', 'ksh', 'run', 'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'phar',
+    'pht', 'asp', 'aspx', 'ascx', 'ashx', 'asmx', 'cgi', 'pl', 'htaccess', 'library-ms', 'settingcontent-ms', 'search-ms'];
+
+/** Seuls ces formats s'affichent dans le navigateur, et seulement si le contenu correspond bien à l'extension. */
+const DOC_INLINE = ['pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif',
+    'webp' => 'image/webp', 'txt' => 'text/plain', 'csv' => 'text/plain', 'log' => 'text/plain'];
+
+/** Type MIME d'après l'extension (utile quand l'extension PHP fileinfo n'est pas activée, fréquent sous Windows). */
+function doc_mime_ext(string $ext): string {
+    static $m = [
+        'pdf' => 'application/pdf', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif', 'webp' => 'image/webp',
+        'heic' => 'image/heic', 'heif' => 'image/heif', 'tif' => 'image/tiff', 'tiff' => 'image/tiff', 'bmp' => 'image/bmp', 'svg' => 'image/svg+xml',
+        'txt' => 'text/plain', 'csv' => 'text/csv', 'tsv' => 'text/tab-separated-values', 'log' => 'text/plain', 'md' => 'text/markdown', 'rtf' => 'application/rtf',
+        'htm' => 'text/html', 'html' => 'text/html', 'xml' => 'application/xml', 'json' => 'application/json', 'eml' => 'message/rfc822', 'msg' => 'application/vnd.ms-outlook',
+        'ofx' => 'application/x-ofx', 'qfx' => 'application/x-ofx', 'qif' => 'application/qif', 'sta' => 'text/plain', '940' => 'text/plain',
+        'doc' => 'application/msword', 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docm' => 'application/vnd.ms-word.document.macroEnabled.12',
+        'xls' => 'application/vnd.ms-excel', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsm' => 'application/vnd.ms-excel.sheet.macroEnabled.12',
+        'ppt' => 'application/vnd.ms-powerpoint', 'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'odt' => 'application/vnd.oasis.opendocument.text', 'ods' => 'application/vnd.oasis.opendocument.spreadsheet', 'odp' => 'application/vnd.oasis.opendocument.presentation',
+        'zip' => 'application/zip', '7z' => 'application/x-7z-compressed', 'rar' => 'application/vnd.rar', 'gz' => 'application/gzip', 'tar' => 'application/x-tar',
+        'mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'wav' => 'audio/wav', 'ogg' => 'audio/ogg', 'mp4' => 'video/mp4', 'mov' => 'video/quicktime', 'avi' => 'video/x-msvideo',
+        'mkv' => 'video/x-matroska', 'webm' => 'video/webm', 'epub' => 'application/epub+zip', 'pages' => 'application/vnd.apple.pages', 'numbers' => 'application/vnd.apple.numbers',
+    ];
+    return $m[$ext] ?? 'application/octet-stream';
+}
+
+/** Le contenu correspond-il vraiment au format annoncé ? (sinon : pas d'affichage dans le navigateur) */
+function doc_magic_ok(string $ext, string $head): bool {
+    switch ($ext) {
+        case 'pdf': return strpos(substr($head, 0, 1024), '%PDF') !== false;
+        case 'jpg': case 'jpeg': return starts($head, "\xFF\xD8\xFF");
+        case 'png': return starts($head, "\x89PNG\r\n\x1A\n");
+        case 'gif': return starts($head, 'GIF87a') || starts($head, 'GIF89a');
+        case 'webp': return starts($head, 'RIFF') && substr($head, 8, 4) === 'WEBP';
+        case 'txt': case 'csv': case 'log': return strpos(substr($head, 0, 4096), "\0") === false;
+    }
+    return false;
+}
 
 /** Vérifie un fichier envoyé. Rend [mime, ext] ou lance une exception avec un message clair. */
 function doc_check_upload(string $tmp, string $name, int $size, int $max): array {
     if ($size <= 0) throw new RuntimeException('Fichier vide.');
     if ($size > $max) throw new RuntimeException('Fichier trop lourd (' . round($size / 1048576, 1) . ' Mo, maximum ' . round($max / 1048576) . ' Mo).');
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-    if (!in_array($ext, DOC_EXT, true)) throw new RuntimeException('Type de fichier non accepté (.' . $ext . '). Formats acceptés : PDF, images, tableurs, textes, exports bancaires.');
-    $mime = 'application/octet-stream';
-    if (function_exists('finfo_open')) { $fi = finfo_open(FILEINFO_MIME_TYPE); $m = $fi ? finfo_file($fi, $tmp) : false; if ($fi) finfo_close($fi); if (is_string($m) && $m !== '') $mime = $m; }
-    if (in_array($mime, DOC_BAD_MIME, true)) throw new RuntimeException('Ce fichier contient du code (' . $mime . ') : refusé par sécurité.');
-    $head = (string)file_get_contents($tmp, false, null, 0, 512);
-    if (preg_match('/<\?php|<script|<html|<svg/i', $head)) throw new RuntimeException('Ce fichier contient du code : refusé par sécurité.');
-    if ($ext === 'pdf' && !starts($head, '%PDF')) throw new RuntimeException('Ce fichier ne ressemble pas à un PDF.');
+    if (in_array($ext, DOC_BLOCKED, true)) throw new RuntimeException('Les programmes et scripts (.' . $ext . ') ne sont pas acceptés : téléchargés puis ouverts d\'un double-clic, ils s\'exécuteraient.');
+    $head = (string)file_get_contents($tmp, false, null, 0, 4096);
+    if (starts($head, 'MZ') || starts($head, "\x7FELF") || starts($head, "\xCF\xFA\xED\xFE") || starts($head, "\xCA\xFE\xBA\xBE")) {
+        throw new RuntimeException('Ce fichier est un programme déguisé (il porte l\'extension .' . $ext . ') : refusé par sécurité.');
+    }
+    if ($ext === 'pdf' && !doc_magic_ok('pdf', $head)) throw new RuntimeException('Ce fichier ne ressemble pas à un PDF (il est peut-être abîmé).');
+    $mime = doc_mime_ext($ext);
+    if (function_exists('finfo_open')) {
+        $fi = finfo_open(FILEINFO_MIME_TYPE);
+        $m = $fi ? finfo_file($fi, $tmp) : false;
+        if ($fi) finfo_close($fi);
+        if (is_string($m) && $m !== '' && $m !== 'application/octet-stream' && ($mime === 'application/octet-stream' || $m === $mime)) $mime = $m;
+    }
     return [$mime, $ext];
 }
+
+/**
+ * Comment renvoyer un document : [Content-Type, affichable dans le navigateur ?].
+ * HTML, SVG, XML… partent toujours en téléchargement (ils pourraient contenir du code exécuté par la page).
+ */
+function doc_serve_type(string $fname, string $raw): array {
+    $ext = strtolower(pathinfo($fname, PATHINFO_EXTENSION));
+    if (isset(DOC_INLINE[$ext]) && doc_magic_ok($ext, substr($raw, 0, 4096))) {
+        $t = DOC_INLINE[$ext];
+        return [$t . ($t === 'text/plain' ? '; charset=utf-8' : ''), true];
+    }
+    $mime = doc_mime_ext($ext);
+    if (preg_match('#^(text/html|image/svg|application/xml|application/xhtml|text/xml|application/javascript|text/javascript)#', $mime)) $mime = 'application/octet-stream';
+    return [$mime, false];
+}
+function doc_inline_ext(string $fname): bool { return isset(DOC_INLINE[strtolower(pathinfo($fname, PATHINFO_EXTENSION))]); }
 
 /* ========================================================================== */
 /* Chiffrement                                                                 */

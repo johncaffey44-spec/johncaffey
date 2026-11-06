@@ -8,7 +8,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 define('BOUSSOLE', 'test');
 date_default_timezone_set('Europe/Paris');
 $root = dirname(__DIR__);
-foreach (['util', 'categorize', 'import', 'legal', 'analyse', 'alertes', 'vault', 'mail'] as $f) require $root . '/lib/' . $f . '.php';
+foreach (['util', 'categorize', 'import', 'legal', 'analyse', 'alertes', 'vault', 'mail', 'zip'] as $f) require $root . '/lib/' . $f . '.php';
 
 $pass = 0; $fail = 0;
 function ok($cond, string $what): void { global $pass, $fail; if ($cond) { $pass++; } else { $fail++; echo "  ✗ $what\n"; } }
@@ -146,6 +146,36 @@ $bad = false; try { vault_decrypt(vault_encrypt($plain, $key), random_bytes(32))
 ok($bad, 'mauvaise clé refusée');
 ok(doc_keep_until('impots', '2026-08-20') === '2028-12-31', 'conservation avis d’imposition');
 ok(doc_keep_until('releve', '2026-10-31') === '2031-10-31', 'conservation relevé : 5 ans');
+
+section('Coffre-fort : formats acceptés');
+$essai = function (string $nom, string $contenu): string {
+    $f = tempnam(sys_get_temp_dir(), 'bsl');
+    file_put_contents($f, $contenu);
+    try { $r = doc_check_upload($f, $nom, strlen($contenu), 1000000); $res = 'ok:' . $r[0]; } catch (RuntimeException $e) { $res = 'refus'; }
+    unlink($f);
+    return $res;
+};
+ok($essai('facture.pdf', "%PDF-1.7\n") === 'ok:application/pdf', 'PDF accepté');
+ok($essai('faux.pdf', 'bonjour') === 'refus', 'faux PDF refusé');
+ok($essai('virus.exe', "MZ\x90\x00") === 'refus' && $essai('facture.pdf.exe', '%PDF') === 'refus' && $essai('script.ps1', 'x') === 'refus', 'programmes et scripts refusés');
+ok($essai('photo.jpg', "MZ\x90\x00") === 'refus', 'programme déguisé en photo refusé');
+ok(strpos($essai('recu.html', '<html><script>x</script>'), 'ok:') === 0 && strpos($essai('film.mp4', "\0\0\0\x18ftypmp42"), 'ok:') === 0 && strpos($essai('archive.7z', "7z\xBC\xAF"), 'ok:') === 0, 'HTML, vidéo, archive acceptés');
+ok(doc_serve_type('recu.html', '<html>') === ['application/octet-stream', false] && doc_serve_type('logo.svg', '<svg>') === ['application/octet-stream', false], 'HTML et SVG toujours en téléchargement');
+ok(doc_serve_type('a.pdf', '%PDF-1.4')[1] === true && doc_serve_type('a.jpg', '<html>')[1] === false && doc_serve_type('a.txt', 'texte')[0] === 'text/plain; charset=utf-8', 'affichage seulement si le contenu correspond');
+
+section('Archives ZIP (sans extension zip)');
+$fichiers = ['a.txt' => str_repeat('Boussole ', 500), 'dossier/é.bin' => random_bytes(3000), 'vide.txt' => ''];
+$lu = zip_entries(zip_build($fichiers));
+ok($lu === $fichiers, 'écriture puis relecture identiques (compressé, stocké, nom accentué)');
+$flux = fopen('php://memory', 'w+b');
+$z = new ZipFlux($flux);
+$n1 = $z->add('Paie/octobre.pdf', '%PDF-1');
+$n2 = $z->add('Paie/octobre.pdf', '%PDF-2');
+$z->finish();
+rewind($flux);
+$lu2 = zip_entries(stream_get_contents($flux));
+ok($n2 === 'Paie/octobre (2).pdf' && ($lu2['Paie/octobre.pdf'] ?? '') === '%PDF-1' && ($lu2['Paie/octobre (2).pdf'] ?? '') === '%PDF-2', 'archive au fil de l’eau, noms en double renommés');
+ok(zip_safe_name('Facture : avril/mai 2026 ?') === 'Facture _ avril_mai 2026 _', 'noms de fichiers sans caractères interdits par Windows');
 
 section('Réseau de la maison');
 $cas = [['192.168.1.20', ['local'], '', true], ['8.8.8.8', ['local'], '', false], ['100.101.102.103', ['local'], '', true], ['::ffff:192.168.0.4', ['local'], '', true],

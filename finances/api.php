@@ -63,6 +63,7 @@ require __DIR__ . '/lib/analyse.php';
 require __DIR__ . '/lib/alertes.php';
 require __DIR__ . '/lib/vault.php';
 require __DIR__ . '/lib/mail.php';
+require __DIR__ . '/lib/zip.php';
 
 class UserError extends RuntimeException {}
 
@@ -463,6 +464,56 @@ function auth(): array {
     return $u;
 }
 
+/** Contrôle d'un fichier envoyé : un refus donne un message clair (erreur 400), pas une « erreur interne ». */
+function upload_check(string $tmp, string $name, int $size): array {
+    global $MAX_UPLOAD;
+    try { return doc_check_upload($tmp, $name, $size, $MAX_UPLOAD); }
+    catch (RuntimeException $e) { fail(400, $e->getMessage()); }
+    return [];
+}
+/** Titre proposé : le nom du fichier s'il est parlant, sinon « type + date » (IMG_2041.jpg ne dit rien). */
+function doc_default_title(string $fname, string $typeLabel, ?string $period, string $date): string {
+    $base = trim((string)preg_replace('/[_\s]+/', ' ', pathinfo($fname, PATHINFO_FILENAME)));
+    $generic = preg_match('/^(img|dsc|dscn|pxl|scan|scanned|screenshot|capture|photo|image|document|doc|file|fichier|sans titre|untitled|whatsapp image)\b[\s\d-]*/i', $base)
+        || !preg_match('/\p{L}{3}/u', $base);
+    if (!$generic) return cut($base, 120);
+    return $typeLabel . ($period ? ' ' . fr_month($period) : ' du ' . fr_date($date));
+}
+
+/** Envoie au navigateur une archive ZIP des documents (déchiffrés à la volée, jamais écrits en clair sur le disque). */
+function send_docs_zip(string $filename, array $list): void {
+    global $DATA_DIR;
+    $key = vault_key($DATA_DIR);
+    $types = doc_types();
+    $noms = [];
+    foreach (users() as $x) $noms[(int)$x['id']] = $x['name'];
+    @set_time_limit(0);
+    while (ob_get_level() > 0) ob_end_clean();
+    header_remove('Content-Type');
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9._-]+/', '-', norm_text(pathinfo($filename, PATHINFO_FILENAME))) . '.zip"; filename*=UTF-8\'\'' . rawurlencode($filename));
+    $zip = new ZipFlux(fopen('php://output', 'wb'));
+    $inv = "\xEF\xBB\xBFFichier;Type;Titre;Date;Période;Expiration;À conserver jusqu'au;Personne;Partagé avec le foyer;Taille (Ko);Empreinte SHA-256\r\n";
+    $csv = function (array $cols): string { return implode(';', array_map(function ($c) { $c = (string)$c; return preg_match('/[;"\r\n]/', $c) ? '"' . str_replace('"', '""', $c) . '"' : $c; }, $cols)) . "\r\n"; };
+    $manquants = [];
+    foreach ($list as $item) {
+        $d = $item['doc'];
+        $path = $DATA_DIR . '/vault/' . basename((string)$d['store']);
+        $raw = null;
+        if (is_file($path)) { try { $raw = vault_decrypt((string)file_get_contents($path), $key); } catch (RuntimeException $e) { $raw = null; } }
+        if ($raw === null) { $manquants[] = (string)$d['title']; continue; }
+        $ext = strtolower(pathinfo((string)$d['fname'], PATHINFO_EXTENSION));
+        $nom = $zip->add($item['nom'] . ($ext !== '' ? '.' . $ext : ''), $raw, (int)$d['created_at']);
+        $inv .= $csv([$nom, $types[$d['type']][0] ?? $d['type'], $d['title'], fr_date($d['doc_date']), $d['period'] ? fr_month((string)$d['period']) : '', fr_date($d['expiry']),
+            fr_date($d['keep_until']), $noms[(int)$d['user_id']] ?? '', (int)$d['shared'] === 1 ? 'oui' : 'non', (string)max(1, (int)round(strlen($raw) / 1024)), hash('sha256', $raw)]);
+        unset($raw);
+    }
+    if ($manquants) $inv .= "\r\nIllisibles ou absents du coffre : " . implode(', ', $manquants) . "\r\n";
+    $zip->add('inventaire.csv', $inv);
+    $zip->finish();
+    exit;
+}
+
 /* ========================================================================== */
 /* Routeur                                                                     */
 /* ========================================================================== */
@@ -489,7 +540,7 @@ case 'status': {
     out(200, ['version' => BOUSSOLE, 'installe' => $installed, 'moi' => $me, 'csrf' => $me ? $_SESSION['csrf'] : null, 'https' => is_https(), 'mail' => $installed && mail_ready(),
         'chiffrement' => vault_cipher(), 'invitation_en_attente' => $pending, 'foyer' => $installed ? foyer()['nom'] : null,
         'max_upload' => min($MAX_UPLOAD, $toBytes((string)ini_get('upload_max_filesize')), $toBytes((string)ini_get('post_max_size'))),
-        'zip' => class_exists('ZipArchive'), 'pdftotext' => imp_find_pdftotext() !== null, 'min_password' => $MIN_PASSWORD]);
+        'zip' => true, 'pdftotext' => imp_find_pdftotext() !== null, 'min_password' => $MIN_PASSWORD]);
 }
 
 case 'setup': {
@@ -810,7 +861,7 @@ case 'import.parse': {
     if ($file && ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
         if ($file['error'] === UPLOAD_ERR_INI_SIZE || $file['error'] === UPLOAD_ERR_FORM_SIZE) fail(413, 'Fichier plus gros que la limite du serveur (upload_max_filesize = ' . ini_get('upload_max_filesize') . ').');
         if ($file['error'] !== UPLOAD_ERR_OK) fail(400, 'Envoi du fichier interrompu (code ' . (int)$file['error'] . ').');
-        [$mime] = doc_check_upload($file['tmp_name'], (string)$file['name'], (int)$file['size'], $MAX_UPLOAD);
+        [$mime] = upload_check($file['tmp_name'], (string)$file['name'], (int)$file['size']);
         $raw = (string)file_get_contents($file['tmp_name']);
         $fname = clean_str($file['name'], 120);
         $token = bin2hex(random_bytes(16));
@@ -1181,13 +1232,16 @@ case 'docs': {
     $u = auth();
     $uid = (int)$u['id'];
     $types = doc_types();
+    $noms = [];
+    foreach (users() as $x) $noms[(int)$x['id']] = $x['name'];
     $list = [];
     foreach (docs_visible($uid) as $d) {
         $meta = json_dec($d['meta']);
         $list[] = ['id' => (int)$d['id'], 'a_moi' => (int)$d['user_id'] === $uid, 'partage' => (int)$d['shared'] === 1, 'type' => $d['type'], 'type_label' => $types[$d['type']][0] ?? $d['type'],
             'icone' => $types[$d['type']][1] ?? '📁', 'titre' => $d['title'], 'date' => $d['doc_date'], 'periode' => $d['period'], 'expiration' => $d['expiry'], 'conserver_jusqu' => $d['keep_until'],
             'conservation' => $types[$d['type']][2] ?? '', 'montant' => $d['amount'] === null ? null : (int)$d['amount'], 'meta' => (object)$meta, 'fichier' => $d['fname'], 'mime' => $d['mime'], 'taille' => (int)$d['size'],
-            'ajoute' => (int)$d['created_at'], 'a_trier' => $d['keep_until'] !== null && $d['keep_until'] < date('Y-m-d')];
+            'ajoute' => (int)$d['created_at'], 'a_trier' => $d['keep_until'] !== null && $d['keep_until'] < date('Y-m-d'),
+            'ext' => strtolower(pathinfo((string)$d['fname'], PATHINFO_EXTENSION)), 'apercu' => doc_inline_ext((string)$d['fname']), 'proprietaire' => $noms[(int)$d['user_id']] ?? ''];
     }
     // rapprochement bulletins de paie ↔ virements de salaire
     $allTx = tx_load($uid, date('Y-m-d', strtotime('-25 months')));
@@ -1210,7 +1264,7 @@ case 'doc.upload': {
     if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) fail(400, 'Aucun fichier reçu.');
     if ($f['error'] === UPLOAD_ERR_INI_SIZE || $f['error'] === UPLOAD_ERR_FORM_SIZE) fail(413, 'Fichier plus gros que la limite du serveur (upload_max_filesize = ' . ini_get('upload_max_filesize') . ').');
     if ($f['error'] !== UPLOAD_ERR_OK) fail(400, 'Envoi interrompu (code ' . (int)$f['error'] . ').');
-    [$mime] = doc_check_upload($f['tmp_name'], (string)$f['name'], (int)$f['size'], $MAX_UPLOAD);
+    [$mime] = upload_check($f['tmp_name'], (string)$f['name'], (int)$f['size']);
     $types = doc_types();
     $type = isset($types[$_POST['type'] ?? '']) ? (string)$_POST['type'] : 'autre';
     $date = date_parse_any((string)($_POST['date'] ?? '')) ?? date('Y-m-d');
@@ -1220,7 +1274,7 @@ case 'doc.upload': {
     foreach (['net', 'net_imposable', 'brut', 'revenu_fiscal'] as $k) if (isset($_POST[$k]) && $_POST[$k] !== '') { $v = money_parse((string)$_POST[$k]); if ($v !== null) $meta[$k] = abs($v); }
     foreach (['employeur', 'annee_revenus', 'note'] as $k) if (!empty($_POST[$k])) $meta[$k] = clean_str($_POST[$k], 120);
     $amount = isset($_POST['montant']) && $_POST['montant'] !== '' ? money_parse((string)$_POST['montant']) : null;
-    $title = clean_str($_POST['titre'] ?? '', 120) ?: ($types[$type][0] . ($period ? ' ' . fr_month($period) : ' du ' . fr_date($date)));
+    $title = clean_str($_POST['titre'] ?? '', 120) ?: doc_default_title((string)$f['name'], $types[$type][0], $period, $date);
     $raw = (string)file_get_contents($f['tmp_name']);
     $store = bin2hex(random_bytes(16)) . '.bin';
     if (file_put_contents($DATA_DIR . '/vault/' . $store, vault_encrypt($raw, vault_key($DATA_DIR))) === false) fail(500, 'Écriture impossible dans data/vault.');
@@ -1271,14 +1325,16 @@ case 'doc.get': {
     $s = db()->prepare('SELECT * FROM docs WHERE id = ? AND (user_id = ? OR shared = 1)'); $s->execute([(int)($_GET['id'] ?? 0), (int)$u['id']]);
     $d = $s->fetch();
     if (!$d) fail(404, 'Document introuvable.');
-    $raw = vault_decrypt((string)file_get_contents($DATA_DIR . '/vault/' . basename((string)$d['store'])), vault_key($DATA_DIR));
+    $path = $DATA_DIR . '/vault/' . basename((string)$d['store']);
+    if (!is_file($path)) fail(404, 'Fichier absent du coffre (dossier vault incomplet : restaurez la dernière sauvegarde).');
+    $raw = vault_decrypt((string)file_get_contents($path), vault_key($DATA_DIR));
     ev((int)$u['id'], 'document_ouvert', $d['title']);
-    $inline = empty($_GET['dl']) && (in_array($d['mime'], ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif'], true));
-    $safeMime = in_array($d['mime'], ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'text/plain', 'text/csv'], true) ? $d['mime'] : 'application/octet-stream';
+    [$type, $affichable] = doc_serve_type((string)$d['fname'], $raw);
+    $inline = $affichable && empty($_GET['dl']);
     header_remove('Content-Type');
-    header('Content-Type: ' . $safeMime . ($safeMime === 'text/plain' || $safeMime === 'text/csv' ? '; charset=utf-8' : ''));
+    header('Content-Type: ' . $type);
     header('Content-Length: ' . strlen($raw));
-    $fn =preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)$d['fname']) ?: 'document';
+    $fn = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)$d['fname']) ?: 'document';
     header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . $fn . '"; filename*=UTF-8\'\'' . rawurlencode((string)$d['fname']));
     echo $raw;
     exit;
@@ -1289,41 +1345,37 @@ case 'dossiers': {
     $docs = docs_visible((int)$u['id']);
     $out = [];
     foreach (array_keys(dossiers()) as $id) $out[] = dossier_status($id, $docs, date('Y-m-d'));
-    out(200, ['dossiers' => $out, 'zip' => class_exists('ZipArchive')]);
+    out(200, ['dossiers' => $out, 'zip' => true]);
 }
 
 case 'dossier.zip': {
     $u = auth();
-    if (!class_exists('ZipArchive')) fail(501, 'L’extension PHP « zip » n’est pas disponible : téléchargez les documents un par un.');
     $st = dossier_status((string)($_GET['id'] ?? ''), docs_visible((int)$u['id']), date('Y-m-d'));
     if ($st === null) fail(404, 'Dossier inconnu.');
     $ids = [];
     foreach ($st['exigences'] as $r) foreach ($r['docs'] as $d) $ids[] = (int)$d['id'];
     if (!$ids) fail(404, 'Aucun document à rassembler pour ce dossier.');
-    $tmp = $DATA_DIR . '/tmp/' . bin2hex(random_bytes(8)) . '.zip';
-    $zip = new ZipArchive();
-    if ($zip->open($tmp, ZipArchive::CREATE) !== true) fail(500, 'Création de l’archive impossible.');
-    $s = db()->prepare('SELECT * FROM docs WHERE id = ? AND (user_id = ? OR shared = 1)');
-    $key = vault_key($DATA_DIR);
-    $n = 0;
-    foreach (array_unique($ids) as $id) {
-        $s->execute([$id, (int)$u['id']]);
-        $d = $s->fetch();
-        if (!$d) continue;
-        $n++;
-        $ext = pathinfo((string)$d['fname'], PATHINFO_EXTENSION);
-        $name = sprintf('%02d - %s', $n, preg_replace('/[^\p{L}\p{N} ._-]+/u', '_', (string)$d['title'])) . ($ext ? '.' . $ext : '');
-        $zip->addFromString($name, vault_decrypt((string)file_get_contents($DATA_DIR . '/vault/' . basename((string)$d['store'])), $key));
-    }
-    $zip->close();
+    $byId = [];
+    foreach (docs_visible((int)$u['id']) as $d) $byId[(int)$d['id']] = $d;
+    $list = [];
+    foreach (array_values(array_unique($ids)) as $i => $id) if (isset($byId[$id])) $list[] = ['doc' => $byId[$id], 'nom' => sprintf('%02d - ', $i + 1) . zip_safe_name((string)$byId[$id]['title'])];
     ev((int)$u['id'], 'dossier_telecharge', $st['titre']);
-    header_remove('Content-Type');
-    header('Content-Type: application/zip');
-    header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9_-]+/', '-', norm_text($st['titre'])) . '.zip"');
-    header('Content-Length: ' . filesize($tmp));
-    readfile($tmp);
-    @unlink($tmp);
-    exit;
+    send_docs_zip(zip_safe_name($st['titre']) . '.zip', $list);
+}
+
+case 'docs.zip': {
+    // tous les documents visibles (les miens et ceux que le foyer partage), rangés par type, avec un inventaire
+    $u = auth();
+    $docs = docs_visible((int)$u['id']);
+    if (!$docs) fail(404, 'Le coffre est vide.');
+    $types = doc_types();
+    $list = [];
+    foreach ($docs as $d) {
+        $quand = (string)($d['period'] ?: $d['doc_date'] ?: date('Y-m-d', (int)$d['created_at']));
+        $list[] = ['doc' => $d, 'nom' => zip_safe_name($types[$d['type']][0] ?? 'Autres', 60) . '/' . zip_safe_name($quand . ' ' . $d['title'])];
+    }
+    ev((int)$u['id'], 'coffre_telecharge', count($list) . ' document(s)');
+    send_docs_zip('boussole-coffre-' . date('Y-m-d') . '.zip', $list);
 }
 
 /* ---------------------------------------------------------------- sécurité, export, effacement */
