@@ -1,0 +1,35 @@
+# Boussole — protections pour Apache (2.2 et 2.4)
+Options -Indexes
+DirectoryIndex index.html
+
+# Dossiers internes : jamais servis (base de données, clé de chiffrement, code PHP, tests)
+RedirectMatch 404 ^(.*/)?(data|lib|tests|outils|windows)(/.*)?$
+RedirectMatch 404 ^(.*/)?config\.local\.php$
+<FilesMatch "\.(sqlite|key|log|md|bin|ps1|cmd|bak)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+AddType application/manifest+json .webmanifest
+AddType text/javascript .js .mjs
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+  # nouvelle version : le navigateur vérifie toujours les fichiers de l'application
+  <FilesMatch "\.(html|js|css|webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# Forcer https (décommentez si votre hébergement dispose d'un certificat) :
+# RewriteEngine On
+# RewriteCond %{HTTPS} !=on
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

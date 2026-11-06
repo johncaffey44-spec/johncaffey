@@ -1,0 +1,35 @@
+                                   BANQUE EXEMPLE - RELEVÉ DE COMPTE
+                                   Période du 01/10/2026 au 31/10/2026
+  M. ALEX MARTIN                                            IBAN FR76 3000 4000 0500 0012 3456 789
+  Compte de dépôt n° 00012345678
+
+  Date     Valeur   Libellé de l'opération                              Débit          Crédit
+                    ANCIEN SOLDE AU 30/09/2026                                         412,35
+  01/10    01/10    VIR SEPA RECU /DE EXEMPLE SAS /MOTIF SALAIRE                      1 850,00
+                    OCTOBRE 2026
+  02/10    02/10    PRLV SEPA LOYER GESTION LOCATIVE                    780,00
+  03/10    03/10    CB CARREFOUR CITY 02/10 PARIS 15                     45,60
+  04/10    04/10    PRLV SEPA EDF CLIENTS PARTICULIERS                   89,00
+  05/10    05/10    CB UBER EATS 04/10                                   23,90
+  05/10    05/10    CB UBER EATS 05/10                                   18,40
+  06/10    06/10    PRLV SEPA NETFLIX.COM                                 13,49
+  07/10    07/10    PRLV SEPA FREE MOBILE                                 19,99
+  08/10    08/10    VIR SEPA EMIS VERS SAM MARTIN                        300,00
+                    PARTICIPATION COURSES
+  09/10    09/10    CB FDJ PARIONSSPORT                                   20,00
+  10/10    10/10    COMMISSION D'INTERVENTION                              8,00
+  10/10    10/10    FRAIS REJET PRLV SEPA ASSURANCE AUTO                  20,00
+  12/10    12/10    COMMISSION D'INTERVENTION                              8,00
+  14/10    14/10    CB KLARNA PAIEMENT 4X                                 37,25
+  15/10    15/10    RETRAIT DAB 14/10 PARIS                              60,00
+  18/10    18/10    CB AMAZON PAYMENTS 17/10                              54,99
+  20/10    20/10    PRLV SEPA SPOTIFY                                     11,12
+  22/10    22/10    REMBOURSEMENT CPAM SOINS                                             24,50
+  25/10    25/10    ASSURANCE MOYENS DE PAIEMENT                           2,50
+  28/10    28/10    COTISATION CARTE VISA PREMIER                         11,00
+  30/10    30/10    VIR SEPA EMIS VERS LIVRET A                          100,00
+  31/10    31/10    AGIOS ARRETE AU 30/09/2026                             4,12
+                    TOTAL DES OPÉRATIONS                                1 627,36       1 874,50
+                    NOUVEAU SOLDE AU 31/10/2026                                        659,49
+
+                                        Page 1/1
