@@ -25,14 +25,18 @@ declare(strict_types=1);
 $DATA_DIR      = __DIR__ . '/data';   // idéalement hors de la racine web : '/var/boussole-data' ou 'D:\\boussole-data'
 $TIMEZONE      = 'Europe/Paris';
 $SESSION_IDLE  = 30 * 60;             // déconnexion après 30 minutes sans activité
-$MAX_UPLOAD    = 15 * 1024 * 1024;    // taille maximale d'un fichier envoyé (dans la limite de PHP : upload_max_filesize)
+$MAX_UPLOAD    = 25 * 1024 * 1024;    // taille maximale d'un fichier envoyé (dans la limite de PHP : upload_max_filesize)
 $MIN_PASSWORD  = 10;                  // longueur minimale des mots de passe
 $LOCK_ATTEMPTS = 5;                   // compte bloqué après N mots de passe erronés…
 $LOCK_MINUTES  = 15;                  // …pendant N minutes
 $MAX_FAILS_IP  = 20;                  // échecs de connexion tolérés par adresse IP sur 15 minutes
 $REQUIRE_HTTPS = false;               // true : refuse tout accès sans HTTPS (indispensable sur Internet)
-$MAX_USERS     = 2;                   // un foyer de deux personnes
+$MAX_USERS     = 8;                   // nombre maximal de personnes dans le foyer
+$ALLOWED_NETS  = ['tout'];            // qui peut ouvrir l'application : ['tout'] ; ['local'] = réseau de la maison et VPN Tailscale ;
+                                      // ou des plages précises : ['local', '203.0.113.7', '2001:db8::/48']
 /* -------------------------------------------------------------------------- */
+// Réglages propres à CETTE installation (écrits par l'installeur Windows, jamais publiés) : ils remplacent ceux du dessus.
+if (is_file(__DIR__ . '/config.local.php')) require __DIR__ . '/config.local.php';
 
 define('BOUSSOLE', '1.0.0');
 if (PHP_VERSION_ID < 70400) { header('Content-Type: application/json; charset=utf-8'); http_response_code(500); echo '{"error":"PHP 7.4 ou plus est nécessaire (version actuelle : ' . PHP_VERSION . ')."}'; exit; }
@@ -45,6 +49,13 @@ header('Referrer-Policy: no-referrer');
 header('X-Robots-Tag: noindex, nofollow');
 
 require __DIR__ . '/lib/util.php';
+// filtrage réseau : sur le serveur de la maison, rien ne répond aux appareils extérieurs, même si un port est ouvert par erreur
+if (!net_allowed((string)($_SERVER['REMOTE_ADDR'] ?? ''), (array)$ALLOWED_NETS, (string)($_SERVER['LOCAL_ADDR'] ?? $_SERVER['SERVER_ADDR'] ?? ''))) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Accès refusé : Boussole n’accepte que les appareils de la maison (adresse vue par le serveur : ' . ip_clean((string)($_SERVER['REMOTE_ADDR'] ?? '?'))
+        . '). Pour y accéder de l’extérieur, passez par un VPN ou ajoutez l’adresse dans $ALLOWED_NETS (fichier config.local.php).', 'code' => 'reseau'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
 require __DIR__ . '/lib/categorize.php';
 require __DIR__ . '/lib/import.php';
 require __DIR__ . '/lib/legal.php';
@@ -237,7 +248,9 @@ function mail_cfg(bool $withPass = false): array {
     }
     return $c;
 }
-function mail_ready(): bool { $c = mail_cfg(); return in_array($c['mode'], ['php', 'smtp'], true) && valid_email((string)$c['from']); }
+function mail_ready(): bool { $c = mail_cfg(); return ($c['mode'] === 'smtp' || ($c['mode'] === 'php' && mail_php_ok())) && valid_email((string)$c['from']); }
+/** mail() de PHP : utilisable sur un hébergement Linux ; sous Windows, il ne sait pas s'authentifier auprès d'un serveur SMTP. */
+function mail_php_ok(): bool { return function_exists('mail') && PHP_OS_FAMILY !== 'Windows'; }
 function current_url(): string {
     $host = (string)preg_replace('/[^A-Za-z0-9.:\-\[\]]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
     $path = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/'))), '/') . '/';
@@ -608,10 +621,12 @@ case 'reset': {
 }
 
 case 'veille': {
-    // pour une tâche planifiée (cron) : https://…/api.php?a=veille&cle=… (clé visible dans Réglages › Envoi des e-mails)
+    // pour une tâche planifiée (cron) : https://…/api.php?a=veille&cle=… (clé visible dans Réglages › Envoi des e-mails).
+    // Depuis le serveur lui-même (tâche planifiée Windows : http://localhost/…), la clé n'est pas nécessaire.
     $key = (string)($_GET['cle'] ?? '');
     $saved = (string)(db()->query("SELECT v FROM meta WHERE k = 'veille_cle'")->fetchColumn() ?: '');
-    if ($saved === '' || !hash_equals($saved, $key)) { throttle_check(); throttle_fail(); fail(403, 'Clé de veille invalide.'); }
+    $fromServer = ip_is_loopback(client_ip()) && empty($_SERVER['HTTP_X_FORWARDED_FOR']) && empty($_SERVER['HTTP_FORWARDED']);
+    if (!$fromServer && ($saved === '' || !hash_equals($saved, $key))) { throttle_check(); throttle_fail(); fail(403, 'Clé de veille invalide.'); }
     out(200, ['ok' => true, 'comptes' => veille_tick(true)]);
 }
 
@@ -704,13 +719,14 @@ case 'mail.get': {
     foreach (mail_presets() as $id => $pr) $presets[] = ['id' => $id, 'label' => $pr[0], 'valeurs' => $pr[1]];
     out(200, ['mode' => $c['mode'], 'from' => $c['from'], 'from_name' => $c['from_name'], 'host' => $c['host'], 'port' => (int)$c['port'], 'secure' => $c['secure'], 'user' => $c['user'],
         'mot_de_passe_enregistre' => $c['pass_enc'] !== '', 'app_url' => $c['app_url'], 'url_detectee' => current_url(), 'pret' => mail_ready(), 'prereglages' => $presets,
-        'veille' => current_url() . 'api.php?a=veille&cle=' . $key, 'mail_php' => function_exists('mail')]);
+        'veille' => current_url() . 'api.php?a=veille&cle=' . $key, 'mail_php' => mail_php_ok()]);
 }
 
 case 'mail.save': {
     $u = auth(); $in = body();
     $c = mail_cfg();
     if (isset($in['mode']) && in_array($in['mode'], ['off', 'php', 'smtp'], true)) $c['mode'] = $in['mode'];
+    if ($c['mode'] === 'php' && !mail_php_ok()) fail(400, 'La fonction mail() de PHP ne sait pas s’authentifier (Windows) : choisissez « Serveur SMTP ».');
     if (array_key_exists('from', $in)) { $f = email_norm($in['from']); if ($f !== '' && !valid_email($f)) fail(400, 'Adresse d’expédition invalide.'); $c['from'] = $f; }
     if (array_key_exists('from_name', $in)) $c['from_name'] = clean_header(clean_str($in['from_name'], 60)) ?: 'Boussole';
     if (array_key_exists('host', $in)) $c['host'] = (string)preg_replace('/[^A-Za-z0-9.\-]/', '', clean_str($in['host'], 120));

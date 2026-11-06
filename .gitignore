@@ -1,3 +1,5 @@
 *.zip
 # Boussole : base de données, clé de chiffrement, documents et sessions — ne JAMAIS publier
 finances/data/
+# réglages propres à une installation (chemins du serveur de la maison)
+finances/config.local.php

@@ -160,3 +160,59 @@ function mask_account(string $s): string {
 
 function json_enc($v): string { return (string)json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); }
 function json_dec(?string $s): array { $d = $s ? json_decode($s, true) : null; return is_array($d) ? $d : []; }
+
+/* ========================================================================== */
+/* Réseau : qui a le droit d'ouvrir l'application                              */
+/* ========================================================================== */
+
+/** Adresse IP nettoyée : sans zone IPv6 (fe80::1%12) et sans préfixe ::ffff: devant une IPv4. */
+function ip_clean(string $ip): string {
+    $ip = trim($ip, " \t[]");
+    if (($p = strpos($ip, '%')) !== false) $ip = substr($ip, 0, $p);
+    if (stripos($ip, '::ffff:') === 0 && filter_var(substr($ip, 7), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $ip = substr($ip, 7);
+    return $ip;
+}
+
+/** L'adresse $ip appartient-elle à la plage $cidr (« 192.168.0.0/16 », « fd00::/8 » ou une adresse seule) ? */
+function ip_in_net(string $ip, string $cidr): bool {
+    $parts = explode('/', trim($cidr), 2);
+    $a = @inet_pton(ip_clean($ip));
+    $b = @inet_pton(ip_clean($parts[0]));
+    if ($a === false || $b === false || strlen($a) !== strlen($b)) return false;
+    $max = strlen($a) * 8;
+    $bits = isset($parts[1]) && $parts[1] !== '' ? (int)$parts[1] : $max;
+    if ($bits < 0 || $bits > $max) return false;
+    $bytes = intdiv($bits, 8);
+    if (substr($a, 0, $bytes) !== substr($b, 0, $bytes)) return false;
+    $rest = $bits % 8;
+    if ($rest === 0) return true;
+    $mask = (0xFF << (8 - $rest)) & 0xFF;
+    return (ord($a[$bytes]) & $mask) === (ord($b[$bytes]) & $mask);
+}
+
+/**
+ * Plages autorisées. Mots-clés : « tout » (aucun filtre) et « local » : réseau de la maison (IPv4 privées, IPv6 locales
+ * et le même /64 que le serveur, car la Freebox donne des adresses IPv6 publiques aux appareils de la maison) et VPN
+ * Tailscale (100.64.0.0/10).
+ */
+function nets_expand(array $nets, string $serverIp = ''): array {
+    $out = [];
+    foreach ($nets as $n) {
+        $n = strtolower(trim((string)$n));
+        if ($n === 'local') {
+            array_push($out, '127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', '100.64.0.0/10', 'fe80::/10', 'fc00::/7');
+            $s = ip_clean($serverIp);
+            if (filter_var($s, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && $s !== '::1' && !ip_in_net($s, 'fe80::/10') && !ip_in_net($s, 'fc00::/7')) $out[] = $s . '/64';
+        } elseif ($n !== '') $out[] = $n;
+    }
+    return $out;
+}
+function net_allowed(string $ip, array $nets, string $serverIp = ''): bool {
+    foreach ($nets as $n) if (strtolower(trim((string)$n)) === 'tout') return true;
+    $ip = ip_clean($ip);
+    if (filter_var($ip, FILTER_VALIDATE_IP) === false) return false;
+    if (ip_is_loopback($ip)) return true;                     // le serveur lui-même (tâches planifiées)
+    foreach (nets_expand($nets, $serverIp) as $c) if (ip_in_net($ip, $c)) return true;
+    return false;
+}
+function ip_is_loopback(string $ip): bool { $ip = ip_clean($ip); return ip_in_net($ip, '127.0.0.0/8') || ip_in_net($ip, '::1/128'); }

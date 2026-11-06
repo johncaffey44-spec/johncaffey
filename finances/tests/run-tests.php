@@ -147,5 +147,13 @@ ok($bad, 'mauvaise clé refusée');
 ok(doc_keep_until('impots', '2026-08-20') === '2028-12-31', 'conservation avis d’imposition');
 ok(doc_keep_until('releve', '2026-10-31') === '2031-10-31', 'conservation relevé : 5 ans');
 
+section('Réseau de la maison');
+$cas = [['192.168.1.20', ['local'], '', true], ['8.8.8.8', ['local'], '', false], ['100.101.102.103', ['local'], '', true], ['::ffff:192.168.0.4', ['local'], '', true],
+    ['fe80::1%12', ['local'], '', true], ['fd12:3456::1', ['local'], '', true], ['2a01:e0a:1:2:aaaa::5', ['local'], '2a01:e0a:1:2::10', true],
+    ['2a01:e0a:1:3::5', ['local'], '2a01:e0a:1:2::10', false], ['2001:db8::1', ['local'], '', false], ['203.0.113.7', ['local', '203.0.113.7'], '', true],
+    ['203.0.113.8', ['203.0.113.0/30'], '', false], ['203.0.113.3', ['203.0.113.0/30'], '', true], ['1.2.3.4', ['tout'], '', true], ['127.0.0.1', ['203.0.113.0/30'], '', true],
+    ['pas-une-ip', ['local'], '', false], ['172.32.0.1', ['local'], '', false]];
+foreach ($cas as [$ip, $nets, $srv, $attendu]) ok(net_allowed($ip, $nets, $srv) === $attendu, $ip . ' ' . json_encode($nets) . ($srv ? ' (serveur ' . $srv . ')' : '') . ' → ' . ($attendu ? 'autorisé' : 'refusé'));
+
 echo "\n" . ($fail === 0 ? "✓ " : "✗ ") . $pass . ' réussi(s), ' . $fail . ' échec(s)' . "\n";
 exit($fail === 0 ? 0 : 1);

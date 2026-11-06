@@ -3,8 +3,9 @@ Options -Indexes
 DirectoryIndex index.html
 
 # Dossiers internes : jamais servis (base de données, clé de chiffrement, code PHP, tests)
-RedirectMatch 404 ^(.*/)?(data|lib|tests)(/.*)?$
-<FilesMatch "\.(sqlite|key|log|md|bin)$">
+RedirectMatch 404 ^(.*/)?(data|lib|tests|outils|windows)(/.*)?$
+RedirectMatch 404 ^(.*/)?config\.local\.php$
+<FilesMatch "\.(sqlite|key|log|md|bin|ps1|cmd|bak)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
