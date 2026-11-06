@@ -213,3 +213,18 @@ function mail_changed(string $prenom, string $newEmail, string $url): array {
     $text = "Bonjour $prenom,\n\nL'adresse e-mail de votre compte Boussole vient d'être remplacée par : $newEmail\nSi vous n'êtes pas à l'origine de ce changement, connectez-vous et changez votre mot de passe sans attendre.\n\n$url\n";
     return ['Boussole · adresse e-mail modifiée', $text, mail_html('Adresse e-mail modifiée', "Bonjour $p, l’adresse e-mail de votre compte vient d’être remplacée par <b>" . htmlspecialchars($newEmail, ENT_QUOTES, 'UTF-8') . '</b>.', '<p style="margin:0;color:#52514e;font-size:14px">Si vous n’êtes pas à l’origine de ce changement, connectez-vous et changez votre mot de passe sans attendre.</p>', 'Ouvrir Boussole', $url)];
 }
+
+/** Invitation d'une nouvelle personne du foyer : le lien contient le code (après le #, il ne passe jamais par le serveur). */
+function mail_invite(string $prenom, string $par, string $foyer, string $code, string $url): array {
+    $p = htmlspecialchars($prenom, ENT_QUOTES, 'UTF-8');
+    $b = htmlspecialchars($par, ENT_QUOTES, 'UTF-8');
+    $f = htmlspecialchars($foyer, ENT_QUOTES, 'UTF-8');
+    $text = "Bonjour $prenom,\n\n$par vous invite à rejoindre « $foyer » sur Boussole, l'outil de suivi des finances du foyer.\n\n"
+        . "Ouvrez ce lien depuis la maison, puis choisissez VOTRE mot de passe (personne d'autre ne le connaîtra) :\n$url\n\n"
+        . "Code d'invitation (valable 30 jours, à usage unique) : $code\n\n"
+        . "Vos opérations restent privées tant que vous ne choisissez pas de les partager.\n";
+    return ['Boussole · invitation de ' . $par, $text, mail_html('Rejoindre « ' . $foyer . ' »',
+        "Bonjour $p, <b>$b</b> vous invite à rejoindre <b>$f</b> sur Boussole. Vous choisirez vous-même votre mot de passe ; vos opérations restent privées tant que vous ne décidez pas de les partager.",
+        '<p style="margin:0 0 6px;color:#52514e;font-size:14px">Code d’invitation, valable 30 jours :</p><p style="margin:0;font:600 20px/1.3 ui-monospace,Consolas,monospace;letter-spacing:.06em">' . htmlspecialchars($code, ENT_QUOTES, 'UTF-8') . '</p>',
+        'Activer mon accès', $url)];
+}

@@ -26,6 +26,12 @@ const store = { get(k, d) { try { const v = localStorage.getItem('boussole.' + k
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const S = { status: null, me: null, csrf: null, cats: {}, catList: [], route: 'accueil', q: {}, tok: 0, months: [], lastMonth: null, imp: null };
+/* personnes du foyer */
+const membres = () => (S.me && S.me.membres) || [];
+const autres = () => membres().filter(m => !m.moi);
+const autresActifs = () => autres().filter(m => m.active);
+const nomMembre = id => { const m = membres().find(x => x.id === id); return m ? m.nom : 'Autre personne'; };
+const listeNoms = l => l.length <= 1 ? (l[0] || '') : l.slice(0, -1).join(', ') + ' et ' + l[l.length - 1];
 
 /* ============================================================== icônes */
 const ICONS = {
@@ -192,6 +198,7 @@ async function boot() {
   catch (e) { $('#root').innerHTML = `<div class="auth"><div class="auth-card"><div class="sb-brand">${LOGO}<div><b>Boussole</b><small>finances du foyer</small></div></div><h1>${e.code === 'reseau' ? 'Accès réservé à la maison' : 'Démarrage impossible'}</h1><p class="err">${esc(e.message)}</p>${e.code === 'reseau' ? '' : '<p class="sec small">Ouvrez l’application par son adresse http(s)://… sur un serveur avec PHP 7.4 ou plus, et non en double-cliquant sur le fichier.</p>'}</div></div>`; return; }
   if (!S.status.installe) return renderSetup();
   if (location.hash.startsWith('#/reinit')) { const j = new URLSearchParams(location.hash.split('?')[1] || '').get('jeton'); if (j) return renderReset(j); }
+  if (location.hash.startsWith('#/activer') && !S.status.moi) { const c = new URLSearchParams(location.hash.split('?')[1] || '').get('code'); history.replaceState(null, '', location.pathname); return renderActivate(c || ''); }
   if (!S.status.moi) return renderLogin();
   S.csrf = S.status.csrf;
   await startApp();
@@ -232,13 +239,13 @@ function renderLogin(msg = '') {
     try { const r = await api('login', { method: 'POST', body: { identifiant: $('#ln').value, mot_de_passe: $('#lp').value } }); S.csrf = r.csrf; await startApp(); }
     catch (err) { $('#le').textContent = err.message; }
   });
-  $('#goinv').addEventListener('click', renderActivate);
+  $('#goinv').addEventListener('click', () => renderActivate());
   $('#gorec').addEventListener('click', renderForgot);
   $('#ln').focus();
 }
-function renderActivate() {
+function renderActivate(code = '') {
   authFrame(`<h1>Activer mon compte</h1><p class="sec small">Saisissez le code d’invitation reçu, puis choisissez VOTRE mot de passe (personne d’autre ne le connaîtra).</p>
-    <form id="fa"><div class="field"><label class="f" for="ac">Code d’invitation</label><input class="in" id="ac" autocomplete="one-time-code" required placeholder="XXXX-XXXX-XXXX"></div>
+    <form id="fa"><div class="field"><label class="f" for="ac">Code d’invitation</label><input class="in" id="ac" autocomplete="one-time-code" required placeholder="XXXX-XXXX-XXXX" value="${esc(typeof code === 'string' ? code : '')}"></div>
     <div class="field"><label class="f" for="aem">Votre adresse e-mail</label><input class="in" id="aem" type="email" inputmode="email" autocomplete="username" required placeholder="prenom.nom@exemple.fr"><div class="help">Ce sera votre identifiant ; vos alertes y seront envoyées.</div></div>
     ${pwPair('ap', 'Créez votre mot de passe (' + (S.status.min_password || 10) + ' caractères au moins)')}
     <p class="err" id="ae"></p><button class="btn primary" style="width:100%">Activer</button></form><div class="links"><button type="button" id="back">← Retour à la connexion</button></div>`);
@@ -296,13 +303,13 @@ function renderSetup() {
     [!!st.chiffrement, st.chiffrement ? 'Documents chiffrés avec ' + st.chiffrement : 'Aucun module de chiffrement dans PHP (sodium ou openssl)'],
     [true, 'Taille maximale d’un fichier : ' + Math.round(st.max_upload / 1048576 * 10) / 10 + ' Mo'],
   ];
-  authFrame(`<h1>Première mise en service</h1><p class="sec small">Deux minutes : vous créez votre accès, puis un code d’invitation pour votre partenaire, qui choisira lui-même son mot de passe.</p>
+  authFrame(`<h1>Première mise en service</h1><p class="sec small">Deux minutes : vous créez votre accès, puis, si vous voulez, un code d’invitation pour une autre personne du foyer, qui choisira elle-même son mot de passe. Vous pourrez ajouter d’autres personnes ensuite (page Foyer).</p>
     <div class="note" style="margin:10px 0 14px">${checks.map(([ok, t]) => `<div class="row" style="align-items:flex-start;margin:3px 0"><span class="${ok ? 'pos' : ''}" style="${ok ? '' : 'color:var(--warn)'}">${ic(ok ? 'check' : 'alert', 'sm')}</span><span>${esc(t)}</span></div>`).join('')}</div>
     <form id="fs"><div class="field"><label class="f" for="sf">Nom du foyer</label><input class="in" id="sf" placeholder="Notre foyer"></div>
     <div class="field"><label class="f" for="sn">Votre prénom</label><input class="in" id="sn" required autocomplete="given-name"></div>
     <div class="field"><label class="f" for="semail">Votre adresse e-mail</label><input class="in" id="semail" type="email" inputmode="email" autocomplete="username" required placeholder="prenom.nom@exemple.fr"><div class="help">C’est votre identifiant de connexion ; vos alertes y seront envoyées.</div></div>
     ${pwPair('sp', 'Créez votre mot de passe (' + (st.min_password || 10) + ' caractères au moins)')}
-    <div class="field"><label class="f" for="s2">Prénom de votre partenaire (facultatif)</label><input class="in" id="s2"><div class="help">Il ou elle recevra un code d’invitation à usage unique.</div></div>
+    <div class="field"><label class="f" for="s2">Prénom de votre conjoint(e) (facultatif)</label><input class="in" id="s2"><div class="help">Cette personne recevra un code d’invitation à usage unique et sera, comme vous, administratrice du foyer.</div></div>
     <p class="err" id="se"></p><button class="btn primary" style="width:100%">Créer mon accès</button></form>`);
   bindPwHint('sp');
   $('#fs').addEventListener('submit', async e => {
@@ -347,7 +354,7 @@ function renderShell() {
       <div class="sb-brand">${LOGO}<div><b>Boussole</b><small>${esc(S.me.foyer.nom)}</small></div></div>
       <nav class="sb-nav">${nav}</nav>
       <div class="sb-foot">
-        <div class="sb-user"><span class="avatar">${esc(me.nom.slice(0, 1).toUpperCase())}</span><div class="grow"><b>${esc(me.nom)}</b><small>${S.me.partenaire ? 'avec ' + esc(S.me.partenaire.nom) : 'foyer'}</small></div></div>
+        <div class="sb-user"><span class="avatar">${esc(me.nom.slice(0, 1).toUpperCase())}</span><div class="grow"><b>${esc(me.nom)}</b><small>${esc(S.me.moi.admin ? 'administrateur' : 'membre')}${autresActifs().length ? ' · ' + pl(autresActifs().length + 1, 'personne') : ''}</small></div></div>
         <div class="sb-tools">
           <button id="tdisc" title="Mode discret : floute les montants" aria-pressed="${store.get('discret', false)}">${ic(store.get('discret', false) ? 'eyeoff' : 'eye')}</button>
           <button id="ttheme" title="Thème clair / sombre">${ic(isDark() ? 'sun' : 'moon')}</button>
@@ -576,7 +583,7 @@ async function viewHome(v, q, tok) {
   const d = await api('dashboard', { query: { vue, mois: q.mois || '' } });
   if (!live(tok)) return;
   S.months = d.mois_disponibles; S.lastMonth = d.mois_disponibles[d.mois_disponibles.length - 1] || null;
-  const me = S.me.moi, partner = S.me.partenaire;
+  const me = S.me.moi, autresF = autresActifs();
   const head = `<div class="page-head"><div class="grow"><h1>Bonjour ${esc(me.nom)}</h1><p>${d.mois_disponibles.length ? 'Voici où ' + (vue === 'foyer' ? 'en est le foyer' : 'vous en êtes') + ' en ' + esc(fm(d.mois)) + '.' : 'Commençons par vos relevés.'}</p></div></div>`;
   if (!d.mois_disponibles.length) {
     v.innerHTML = head + `<div class="card empty"><div class="big">🧭</div><h2>Importez votre premier relevé</h2><p style="max-width:560px;margin:8px auto 18px">PDF, CSV, OFX ou QIF : Boussole calcule ce qui entre et sort, classe chaque dépense, vérifie les frais bancaires au regard des plafonds légaux et vous prévient en cas de prélèvement suspect.</p><a class="btn primary" href="#/importer">${ic('upload', 'sm')}Importer un relevé</a>
@@ -584,9 +591,11 @@ async function viewHome(v, q, tok) {
     return;
   }
   const s = d.resume, p = d.precedent, sc = d.score;
-  const filters = `<div class="filters">${partner ? `<div class="seg" role="group" aria-label="Vue"><button data-vue="moi" class="${vue === 'moi' ? 'on' : ''}">Moi</button><button data-vue="foyer" class="${vue === 'foyer' ? 'on' : ''}">Foyer</button></div>` : ''}
+  const filters = `<div class="filters">${autresF.length ? `<div class="seg" role="group" aria-label="Vue"><button data-vue="moi" class="${vue === 'moi' ? 'on' : ''}">Moi</button><button data-vue="foyer" class="${vue === 'foyer' ? 'on' : ''}">Foyer</button></div>` : ''}
     <select class="in sm" id="hmois" style="width:auto" aria-label="Mois">${d.mois_disponibles.slice().reverse().map(m => `<option value="${m}" ${m === d.mois ? 'selected' : ''}>${esc(fm(m))}</option>`).join('')}</select>
-    ${vue === 'foyer' && !d.partage.inclus ? `<span class="chip">${esc(partner ? partner.nom : '')} ne partage pas ses totaux</span>` : ''}</div>`;
+    ${vue === 'foyer' && !d.partage.moi_partage ? `<span class="chip">Partagez vos totaux (Réglages › Confidentialité) pour voir ceux du foyer</span>` : vue === 'foyer' && d.partage.prives.length ? `<span class="chip">${esc(listeNoms(d.partage.prives))} ${d.partage.prives.length > 1 ? 'ne partagent pas leurs' : 'ne partage pas ses'} totaux</span>` : ''}</div>`;
+  const sv = S.me.sauvegarde;
+  const sauvAlerte = sv && ((sv.echec && (!sv.derniere || sv.echec.t > sv.derniere)) ? 'La dernière sauvegarde automatique a échoué : ' + sv.echec.erreur : (sv.derniere && Date.now() / 1000 - sv.derniere > 8 * 86400 ? 'Aucune sauvegarde réussie depuis le ' + new Date(sv.derniere * 1000).toLocaleDateString('fr-FR') + ' : le PC était-il éteint à l’heure prévue ?' : ''));
   const lvlColor = sc.total >= 80 ? 'st-good' : sc.total >= 60 ? '' : sc.total >= 40 ? 'st-warn' : 'st-crit';
   const delta = (cur, prev, upGood) => { if (!prev) return '<div class="dl">—</div>'; const dv = cur - prev; if (!dv) return '<div class="dl">= mois précédent</div>'; const good = upGood ? dv > 0 : dv < 0; return `<div class="dl ${good ? 'good' : 'bad'}">${dv > 0 ? '▲' : '▼'} ${esc(E0(Math.abs(dv)))} vs ${esc(MOIS_C[+month(-1, d.mois).slice(5, 7)])}</div>`; };
   const fraisM = (s.frais.incident || 0) + (s.frais.agios || 0) + (s.frais.saisie || 0);
@@ -598,7 +607,7 @@ async function viewHome(v, q, tok) {
     <p class="small sec">${fc.par_jour < 0 ? 'Les charges prévues dépassent le solde : décalez un prélèvement ou prévoyez un virement.' : 'Ce qui reste après les prélèvements habituels à venir (' + esc(E0(fc.charges_fixes)) + '), solde estimé aujourd’hui ' + esc(E0(fc.solde_estime)) + '.'}</p>
     ${fc.premier_negatif ? `<div class="note bad small" style="margin:6px 0">${ic('alert', 'sm')} Découvert prévu le ${esc(fd(fc.premier_negatif))} (point bas ${esc(E0(fc.point_bas))}).</div>` : ''}
     ${fc.ancien ? `<div class="note warn small" style="margin:6px 0">Projection calculée depuis le ${esc(fd(fc.depart.date))} : mettez votre solde à jour.</div>` : ''}`;
-  v.innerHTML = head + filters + `
+  v.innerHTML = head + filters + (sauvAlerte ? `<div class="note warn" style="margin-bottom:14px">${ic('alert', 'sm')} ${esc(sauvAlerte)} <a href="#/reglages">Voir</a></div>` : '') + `
   <div class="grid g-hero">
     <section class="card"><div class="card-head"><div class="grow"><h2>Bien-être financier</h2><p>${esc(fm(d.mois))} · 5 critères notés sur 20</p></div><span class="chip ${sc.total >= 60 ? 'k-bravo' : sc.total >= 40 ? 'k-attention' : 'k-critique'}">${ic(sc.total >= 60 ? 'star' : 'alert', 'sm')}${esc(sc.niveau)}</span></div>
       <div class="hero"><span class="v">${sc.total}</span><span class="u">/ 100</span></div>
@@ -654,12 +663,12 @@ async function viewHome(v, q, tok) {
 }
 function month(delta, ym) { const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + delta; const d = new Date(y, m, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 function equityCard(eq) {
-  const ps = eq.personnes;
+  const ps = eq.personnes, vir = eq.virements || [];
   return `<section class="card" style="margin-top:16px"><div class="card-head"><div class="grow"><h2>Équité des dépenses communes</h2><p>${eq.mode === 'prorata' ? 'Chacun participe en proportion de ses revenus' : 'Partage à parts égales'} · ${esc(E(eq.total_communes))} de dépenses communes</p></div><a class="small" href="#/foyer">Régler</a></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th class="r">Revenus</th><th class="r">Part attendue</th><th class="r">A payé</th><th class="r">Cible</th><th class="r">Écart</th></tr></thead><tbody>
     ${ps.map(x => `<tr><td><b>${esc(x.nom)}</b></td><td class="r num">${amt(x.revenus)}</td><td class="r num">${esc(String(x.part).replace('.', ','))} %</td><td class="r num">${amt(x.contribution)}</td><td class="r num">${amt(x.cible)}</td><td class="r num">${amt(x.ecart, '', true)}</td></tr>`).join('')}</tbody></table></div>
-    <p style="margin-top:10px">${eq.reequilibrage ? `Pour équilibrer ce mois-ci : <b>${esc(eq.reequilibrage.de)}</b> verse <b>${amt(eq.reequilibrage.montant)}</b> à <b>${esc(eq.reequilibrage.a)}</b>.` : 'Les dépenses communes sont équilibrées ce mois-ci.'}</p>
-    <p class="small mut">Un repère pour en parler, pas un verdict : ce qui compte, c’est que la règle choisie vous convienne à tous les deux. « A payé » inclut les virements entre vous.</p></section>`;
+    ${vir.length ? `<p style="margin-top:10px">Pour équilibrer ce mois-ci :</p><ul style="margin:4px 0 0 18px">${vir.map(x => `<li><b>${esc(x.de)}</b> verse <b>${amt(x.montant)}</b> à <b>${esc(x.a)}</b></li>`).join('')}</ul>` : '<p style="margin-top:10px">Les dépenses communes sont équilibrées ce mois-ci.</p>'}
+    <p class="small mut" style="margin-top:8px">Un repère pour en parler, pas un verdict : ce qui compte, c’est que la règle choisie convienne à chacun. « A payé » inclut les virements entre vous.</p></section>`;
 }
 
 /* ============================================================== Import */
@@ -780,7 +789,7 @@ function renderPreview() {
 async function viewTx(v, q, tok) {
   if (!S.months.length) { try { const d = await api('dashboard'); S.months = d.mois_disponibles; } catch (e) { /* sans mois */ } }
   if (!live(tok)) return;
-  const partner = S.me.partenaire;
+  const lecteurs = autresActifs().filter(m => m.partage_details);
   const moisSel = q.mois || S.months[S.months.length - 1] || 'tous';
   const mois = moisSel === 'tous' ? '' : moisSel;
   const qui = q.qui || 'moi';
@@ -795,20 +804,20 @@ async function viewTx(v, q, tok) {
     <select class="in sm" id="fnat" style="width:auto" aria-label="Nature"><option value="">Toutes natures</option>${Object.entries(S.me.natures).map(([k, n]) => `<option value="${k}" ${k === q.nature ? 'selected' : ''}>${esc(n[0])}</option>`).join('')}</select>
     <select class="in sm" id="fcat" style="width:auto;max-width:220px" aria-label="Catégorie"><option value="">Toutes catégories</option>${S.catList.map(c => `<option value="${c.id}" ${c.id === q.cat ? 'selected' : ''}>${esc(c.icone + ' ' + c.label)}</option>`).join('')}</select>
     <input class="in sm" id="fq" placeholder="Rechercher…" value="${esc(q.q || '')}" style="width:180px">
-    ${partner && partner.partage_details ? `<div class="seg"><button data-qui="moi" class="${qui === 'moi' ? 'on' : ''}">Moi</button><button data-qui="partenaire" class="${qui === 'partenaire' ? 'on' : ''}">${esc(partner.nom)}</button><button data-qui="foyer" class="${qui === 'foyer' ? 'on' : ''}">Les deux</button></div>` : ''}
+    ${lecteurs.length ? `<select class="in sm" id="fqui" style="width:auto" aria-label="Personne"><option value="moi" ${qui === 'moi' ? 'selected' : ''}>Mes opérations</option>${lecteurs.map(m => `<option value="${m.id}" ${qui === String(m.id) ? 'selected' : ''}>${esc(m.nom)}</option>`).join('')}<option value="foyer" ${qui === 'foyer' ? 'selected' : ''}>Tout le foyer</option></select>` : ''}
   </div>
   <div class="row wrap" style="margin-bottom:10px"><span class="chip">${pl(ops.length, 'opération')}</span><span class="chip">Entrées ${amt(ent)}</span><span class="chip">Sorties ${amt(sor)}</span><a class="btn sm ghost right" href="api.php?a=export" download>${ic('download', 'sm')}Exporter (CSV)</a></div>
   <section class="card txl">${ops.length ? Object.entries(byDay).map(([day, list]) => `<div class="day">${esc(new Date(day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>${list.map(o => `
     <div class="txr" data-id="${o.id}" tabindex="0" role="button">
       <span class="ico" aria-hidden="true">${esc(o.icone)}</span>
-      <div style="min-width:0"><div class="m">${esc(o.contrepartie)}${o.a_moi ? '' : ` <span class="chip">${esc(partner ? partner.nom : '')}</span>`}</div><div class="s"><i class="dot n-${esc(o.nature)}"></i>${esc(o.categorie_label)}${o.frais ? '<span class="flag">frais</span>' : ''}${o.commune ? '<span class="flag i">commune</span>' : ''}${o.note ? '· ' + esc(o.note) : ''}<span class="hide-m">· ${esc(o.libelle)}</span></div></div>
+      <div style="min-width:0"><div class="m">${esc(o.contrepartie)}${o.a_moi ? '' : ` <span class="chip">${esc(nomMembre(o.user_id))}</span>`}</div><div class="s"><i class="dot n-${esc(o.nature)}"></i>${esc(o.categorie_label)}${o.frais ? '<span class="flag">frais</span>' : ''}${o.commune ? '<span class="flag i">commune</span>' : ''}${o.note ? '· ' + esc(o.note) : ''}<span class="hide-m">· ${esc(o.libelle)}</span></div></div>
       <div class="a">${amt(o.montant, o.montant > 0 ? 'pos' : '', true)}<small>${esc(o.type)}</small></div></div>`).join('')}`).join('') : '<div class="empty"><div class="big">🔎</div>Aucune opération ne correspond.</div>'}</section>`;
   const nav = patch => go('operations', Object.assign({ mois: moisSel, nature: q.nature || '', cat: q.cat || '', q: q.q || '', qui }, patch));
   $('#fmois', v).addEventListener('change', e => nav({ mois: e.target.value }));
   $('#fnat', v).addEventListener('change', e => nav({ nature: e.target.value }));
   $('#fcat', v).addEventListener('change', e => nav({ cat: e.target.value }));
   let t; $('#fq', v).addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => nav({ q: e.target.value }), 450); });
-  $$('[data-qui]', v).forEach(b => b.addEventListener('click', () => nav({ qui: b.dataset.qui })));
+  const fqui = $('#fqui', v); if (fqui) fqui.addEventListener('change', e => nav({ qui: e.target.value }));
   $$('.txr', v).forEach(el => { const o = ops.find(x => x.id === +el.dataset.id); const open = () => editTx(o); el.addEventListener('click', open); el.addEventListener('keydown', e => { if (e.key === 'Enter') open(); }); });
   if (q.q) { const f = $('#fq', v); f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
 }
@@ -826,7 +835,7 @@ function editTx(o) {
       <label class="check"><input type="checkbox" id="erule"><span>Toujours classer ainsi les opérations contenant <input class="in sm" id="emotif" value="${esc(o.contrepartie)}" style="display:inline-block;width:200px;margin-left:4px"></span></label>
       ${o.montant < 0 ? `<h3 style="margin:14px 0 6px">Je ne reconnais pas cette opération</h3><div class="row wrap">
         <button class="btn sm" data-letter="operation_non_autorisee" data-ctx="${esc(ctx)}" data-close>Contester (13 mois)</button>
-        ${o.type === 'prelevement' ? `<button class="btn sm" data-letter="prlv_8_semaines" data-ctx="${esc(ctx)}" data-close>Remboursement sous 8 semaines</button><button class="btn sm" data-letter="opposition_creancier" data-ctx="${esc(ctx)}" data-close>Bloquer ce créancier</button>` : ''}</div>` : ''}` : '<p class="sec">Opération de votre partenaire : lecture seule.</p>'}`,
+        ${o.type === 'prelevement' ? `<button class="btn sm" data-letter="prlv_8_semaines" data-ctx="${esc(ctx)}" data-close>Remboursement sous 8 semaines</button><button class="btn sm" data-letter="opposition_creancier" data-ctx="${esc(ctx)}" data-close>Bloquer ce créancier</button>` : ''}</div>` : ''}` : `<p class="sec">Opération de ${esc(nomMembre(o.user_id))} : lecture seule.</p>`}`,
     actions: mine ? [{ label: 'Annuler' }, { label: 'Enregistrer', kind: 'primary', onClick: async m => {
       const body = { id: o.id, categorie: $('#ecat', m).value, nature: $('#enat', m).value, note: $('#enote', m).value };
       if ($('#ecom', m)) body.commune = $('#ecom', m).checked;
@@ -1016,37 +1025,90 @@ async function shrinkImage(file) {
 
 /* ============================================================== Foyer */
 async function viewHousehold(v, q, tok) {
-  const partner = S.me.partenaire;
+  S.me = await api('me');
+  if (!live(tok)) return;
   const months = S.months.length ? S.months : (await api('dashboard')).mois_disponibles;
   if (!live(tok)) return;
   const mois = q.mois || months[months.length - 1] || '';
   let d = null;
-  if (partner && partner.active && months.length) { try { d = await api('dashboard', { query: { vue: 'foyer', mois } }); } catch (e) { d = null; } }
+  if (autresActifs().length && months.length) { try { d = await api('dashboard', { query: { vue: 'foyer', mois } }); } catch (e) { d = null; } }
   if (!live(tok)) return;
-  const foyer = S.me.foyer;
+  const foyer = S.me.foyer, admin = S.me.moi.admin, max = S.me.max_membres || 8;
   const plaisirOrEss = S.catList.filter(c => ['essentiel', 'plaisir', 'inconnu'].includes(c.nature));
-  v.innerHTML = `<div class="page-head"><div class="grow"><h1>${esc(foyer.nom)}</h1><p>Chacun garde ses comptes ; le foyer voit les totaux que vous choisissez de partager.</p></div></div>
-  ${!partner ? `<section class="card"><h2>Inviter votre partenaire</h2><p class="sec">Il ou elle aura son propre accès et son propre mot de passe.</p><form id="finv" class="row wrap" style="margin-top:10px"><input class="in" id="pnom" placeholder="Prénom" style="max-width:220px" required><button class="btn primary">Créer l’invitation</button></form></section>`
-    : !partner.active ? `<section class="card"><h2>${esc(partner.nom)} n’a pas encore activé son compte</h2><p class="sec">Générez un nouveau code d’invitation si le premier est perdu ou expiré.</p><button class="btn" id="binv" style="margin-top:8px">Nouveau code d’invitation</button></section>` : ''}
-  ${d && d.equite ? `<div class="filters" style="margin-top:12px"><select class="in sm" id="emois" style="width:auto">${months.slice().reverse().map(m => `<option value="${m}" ${m === mois ? 'selected' : ''}>${esc(fm(m))}</option>`).join('')}</select></div>${equityCard(d.equite)}` : partner && partner.active ? `<div class="note" style="margin-top:12px">L’équité s’affiche quand vous partagez tous les deux vos totaux (Réglages › Confidentialité) et que chacun a importé ses relevés du mois.</div>` : ''}
+  const ETAT = { actif: ['actif', 'k-bravo'], invite: ['invitation en attente', 'k-attention'], desactive: ['désactivé', ''] };
+  const ligne = m => `<div class="doc"><span class="avatar">${esc(m.nom.slice(0, 1).toUpperCase())}</span><div class="grow" style="min-width:0"><b>${esc(m.nom)}</b>${m.moi ? ' <span class="mut small">(vous)</span>' : ''} <span class="chip ${ETAT[m.etat][1]}">${ETAT[m.etat][0]}</span>${m.role === 'admin' ? ' <span class="chip">administrateur</span>' : ''}
+      <div class="small mut">${m.etat === 'actif' ? 'Totaux ' + (m.partage_totaux ? 'partagés' : 'privés') + ' · détail ' + (m.partage_details ? 'partagé' : 'privé') + (m.equite ? '' : ' · hors partage des dépenses') : m.etat === 'invite' ? 'N’a pas encore choisi son mot de passe' : 'Ne peut plus se connecter ; ses données sont conservées'}${admin && m.email ? ' · ' + esc(m.email) : ''}${admin && m.etat === 'invite' && m.invitation_expire ? ' · code valable jusqu’au ' + esc(new Date(m.invitation_expire * 1000).toLocaleDateString('fr-FR')) : ''}</div></div>
+      ${admin && !m.moi ? `<div class="row">${m.etat === 'invite' ? `<button class="btn sm" data-reinv="${m.id}">Nouveau code</button>` : ''}<button class="btn sm ghost" data-gerer="${m.id}" title="Gérer ${esc(m.nom)}" aria-label="Gérer ${esc(m.nom)}">${ic('settings', 'sm')}</button></div>` : ''}</div>`;
+  v.innerHTML = `<div class="page-head"><div class="grow"><h1>${esc(foyer.nom)}</h1><p>Chacun garde ses comptes ; le foyer voit les totaux que chacun choisit de partager.</p></div></div>
+  <section class="card"><div class="card-head"><div class="grow"><h2>Les personnes du foyer</h2><p>${pl(membres().length, 'personne')} sur ${max} au plus · chacune a son propre accès et personne ne voit le détail des autres sans leur accord.</p></div></div>
+    ${membres().map(ligne).join('')}
+    ${admin && membres().length < max ? `<h3 style="margin:16px 0 6px">Ajouter une personne</h3>
+      <form id="finv" class="grid g4" style="align-items:end"><div class="field"><label class="f" for="inom">Prénom</label><input class="in" id="inom" required maxlength="40" autocomplete="off"></div>
+        <div class="field"><label class="f" for="iemail">Adresse e-mail (facultatif)</label><input class="in" id="iemail" type="email" inputmode="email" autocomplete="off" placeholder="pour lui envoyer l’invitation"></div>
+        <div class="field"><label class="f" for="irole">Rôle</label><select class="in" id="irole"><option value="membre">Membre</option><option value="admin">Administrateur</option></select></div>
+        <div class="field"><button class="btn primary" style="width:100%">${ic('users', 'sm')}Inviter</button></div></form>
+      <p class="small mut">Membre : gère ses propres relevés, alertes et documents. Administrateur : peut aussi inviter, régler le foyer et l’envoi des e-mails.${S.me.mail_pret ? ' Avec une adresse e-mail, l’invitation part toute seule.' : ' L’envoi des e-mails n’est pas réglé : vous transmettrez le code vous-même.'}</p>` : ''}
+    ${admin ? '' : '<p class="small mut" style="margin-top:8px">Seul un administrateur du foyer peut ajouter ou gérer des personnes.</p>'}</section>
+  ${d && d.equite ? `<div class="filters" style="margin-top:16px"><select class="in sm" id="emois" style="width:auto" aria-label="Mois">${months.slice().reverse().map(m => `<option value="${m}" ${m === mois ? 'selected' : ''}>${esc(fm(m))}</option>`).join('')}</select></div>${equityCard(d.equite)}`
+    : autresActifs().length ? '<div class="note" style="margin-top:16px">L’équité s’affiche dès que deux personnes au moins partagent leurs totaux (Réglages › Confidentialité) et ont importé leurs relevés du mois.</div>' : ''}
   <div class="grid g2" style="margin-top:16px">
     <section class="card"><h2>Règle de partage</h2><p class="sec small" style="margin:4px 0 10px">Comment répartir les dépenses communes ?</p>
-      <div class="seg" id="mode"><button data-mode="prorata" class="${foyer.mode === 'prorata' ? 'on' : ''}">Au prorata des revenus</button><button data-mode="egal" class="${foyer.mode === 'egal' ? 'on' : ''}">À parts égales</button></div>
-      <p class="small mut" style="margin-top:10px">Prorata : celui qui gagne 60 % des revenus du foyer paie 60 % des dépenses communes, et chacun garde le même « reste pour soi » en proportion. À parts égales : plus simple, mais plus lourd pour le revenu le plus bas.</p>
-      <h3 style="margin:14px 0 6px">Partage actuel</h3><p class="small">${partner ? `${esc(partner.nom)} : totaux ${partner.partage_totaux ? '<b>partagés</b>' : 'privés'}, détail ${partner.partage_details ? '<b>partagé</b>' : 'privé'}.` : '—'} Vous : totaux ${S.me.profil.partage_totaux ? '<b>partagés</b>' : 'privés'}, détail ${S.me.profil.partage_details ? '<b>partagé</b>' : 'privé'}. <a href="#/reglages">Modifier</a></p></section>
+      <div class="seg" id="mode"><button data-mode="prorata" class="${foyer.mode === 'prorata' ? 'on' : ''}" ${admin ? '' : 'disabled'}>Au prorata des revenus</button><button data-mode="egal" class="${foyer.mode === 'egal' ? 'on' : ''}" ${admin ? '' : 'disabled'}>À parts égales</button></div>
+      <p class="small mut" style="margin-top:10px">Prorata : qui gagne 60 % des revenus du foyer paie 60 % des dépenses communes, et chacun garde le même « reste pour soi » en proportion. À parts égales : plus simple, mais plus lourd pour le revenu le plus bas. Une personne peut se retirer du partage (enfant, colocataire) dans ses Réglages.</p></section>
     <section class="card"><h2>Dépenses communes</h2><p class="sec small" style="margin:4px 0 10px">Catégories comptées automatiquement comme communes (chaque opération reste modifiable).</p>
-      <div style="columns:2;column-gap:16px">${plaisirOrEss.map(c => `<label class="check" style="break-inside:avoid"><input type="checkbox" data-com="${c.id}" ${foyer.communes.includes(c.id) ? 'checked' : ''}><span>${esc(c.icone + ' ' + c.label)}</span></label>`).join('')}</div>
-      <button class="btn" id="bcom" style="margin-top:8px">Enregistrer</button></section>
+      <div style="columns:2;column-gap:16px">${plaisirOrEss.map(c => `<label class="check" style="break-inside:avoid"><input type="checkbox" data-com="${c.id}" ${foyer.communes.includes(c.id) ? 'checked' : ''} ${admin ? '' : 'disabled'}><span>${esc(c.icone + ' ' + c.label)}</span></label>`).join('')}</div>
+      ${admin ? '<button class="btn" id="bcom" style="margin-top:8px">Enregistrer</button>' : '<p class="small mut">Réglé par un administrateur du foyer.</p>'}</section>
   </div>`;
   const em = $('#emois', v); if (em) em.addEventListener('change', e => go('foyer', { mois: e.target.value }));
   const fi = $('#finv', v);
-  if (fi) fi.addEventListener('submit', async e => { e.preventDefault(); try { const r = await api('partner.add', { method: 'POST', body: { nom: $('#pnom').value } }); S.me = await api('me'); showInvite(r); route(); } catch (err) { toast(err.message, false); } });
-  const bi = $('#binv', v);
-  if (bi) bi.addEventListener('click', async () => { try { showInvite(await api('invite.new', { method: 'POST' })); } catch (err) { toast(err.message, false); } });
-  $$('[data-mode]', v).forEach(b => b.addEventListener('click', async () => { try { await api('foyer.save', { method: 'POST', body: { mode: b.dataset.mode } }); S.me.foyer.mode = b.dataset.mode; route(); } catch (e) { toast(e.message, false); } }));
-  $('#bcom', v).addEventListener('click', async () => { const list = $$('[data-com]', v).filter(x => x.checked).map(x => x.dataset.com); try { await api('foyer.save', { method: 'POST', body: { communes: list } }); S.me.foyer.communes = list; toast('Dépenses communes mises à jour (opérations reclassées).'); route(); } catch (e) { toast(e.message, false); } });
+  if (fi) fi.addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = e.submitter || $('button', fi); btn.disabled = true;
+    try { const r = await api('member.invite', { method: 'POST', body: { nom: $('#inom').value, email: $('#iemail').value, role: $('#irole').value } }); showInvite(r); route(); }
+    catch (err) { toast(err.message, false); btn.disabled = false; }
+  });
+  $$('[data-reinv]', v).forEach(b => b.addEventListener('click', async () => { try { showInvite(await api('member.reinvite', { method: 'POST', body: { id: +b.dataset.reinv } })); route(); } catch (err) { toast(err.message, false); } }));
+  $$('[data-gerer]', v).forEach(b => b.addEventListener('click', () => { const m = membres().find(x => x.id === +b.dataset.gerer); if (m) manageMember(m); }));
+  if (admin) {
+    $$('[data-mode]', v).forEach(b => b.addEventListener('click', async () => { try { await api('foyer.save', { method: 'POST', body: { mode: b.dataset.mode } }); S.me.foyer.mode = b.dataset.mode; route(); } catch (e) { toast(e.message, false); } }));
+    $('#bcom', v).addEventListener('click', async () => { const list = $$('[data-com]', v).filter(x => x.checked).map(x => x.dataset.com); try { await api('foyer.save', { method: 'POST', body: { communes: list } }); S.me.foyer.communes = list; toast('Dépenses communes mises à jour (opérations reclassées).'); route(); } catch (e) { toast(e.message, false); } });
+  }
 }
-function showInvite(r) { modal({ title: 'Invitation pour ' + r.nom, html: `<p>Transmettez ce code à ${esc(r.nom)} (valable 30 jours, à usage unique). Sur l’écran de connexion : « J’ai un code d’invitation », puis choix de son propre mot de passe.</p><div class="code">${esc(r.invitation)}</div>`, actions: [{ label: 'Copier le code', onClick: () => { copyText(r.invitation); return false; } }, { label: 'Fermer', kind: 'primary' }] }); }
+function showInvite(r) {
+  const lien = location.origin + location.pathname + '#/activer?code=' + encodeURIComponent(r.invitation);
+  modal({ title: 'Invitation pour ' + r.nom, html: `${r.email_envoye ? `<div class="note ok small" style="margin-bottom:10px">${ic('check', 'sm')} Invitation envoyée à ${esc(r.email)}.</div>` : ''}
+    <p>${r.email_envoye ? 'Si l’e-mail n’arrive pas, transmettez' : 'Transmettez'} ce code à ${esc(r.nom)} (valable 30 jours, à usage unique). Sur l’écran de connexion : « J’ai un code d’invitation », puis choix de son propre mot de passe.</p><div class="code">${esc(r.invitation)}</div>
+    <p class="small sec" style="margin-top:10px">Ou ce lien, à ouvrir depuis la maison : <span style="word-break:break-all">${esc(lien)}</span></p>`,
+    actions: [{ label: 'Copier le lien', onClick: () => { copyText(lien); return false; } }, { label: 'Copier le code', onClick: () => { copyText(r.invitation); return false; } }, { label: 'Fermer', kind: 'primary' }] });
+}
+function manageMember(m) {
+  modal({ title: m.nom, html: `
+    <div class="grid g2"><div class="field"><label class="f" for="mnom">Prénom</label><input class="in" id="mnom" value="${esc(m.nom)}" maxlength="40"></div>
+      <div class="field"><label class="f" for="mrole">Rôle</label><select class="in" id="mrole"><option value="membre" ${m.role === 'membre' ? 'selected' : ''}>Membre</option><option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Administrateur</option></select></div></div>
+    <label class="check"><input type="checkbox" id="moff" ${m.etat === 'desactive' ? 'checked' : ''}><span>Compte désactivé <span class="small mut">— plus aucune connexion possible ; ses données restent en place</span></span></label>
+    <h3 style="margin:18px 0 6px">Retirer ${esc(m.nom)} du foyer</h3>
+    <p class="small mut">Efface son compte, ses relevés, ses opérations, ses alertes et ses documents. Irréversible.</p>
+    <label class="check"><input type="checkbox" id="mkeep" checked><span>Garder ses documents partagés avec le foyer (bail, factures…) : ils passent à votre nom</span></label>
+    <div class="row wrap"><input class="in" type="password" id="mpw" placeholder="Votre mot de passe" style="max-width:220px" autocomplete="current-password"><button class="btn danger" id="mdel">${ic('trash', 'sm')}Retirer du foyer</button></div>`,
+    actions: [{ label: 'Annuler' }, { label: 'Enregistrer', kind: 'primary', onClick: async md => {
+      await api('member.update', { method: 'POST', body: { id: m.id, nom: $('#mnom', md).value, role: $('#mrole', md).value, desactive: $('#moff', md).checked } });
+      toast('Modifications enregistrées.');
+      route();
+    } }],
+    onOpen: (md, close) => {
+      $('#mdel', md).addEventListener('click', async () => {
+        const pw = $('#mpw', md).value;
+        if (!pw) return toast('Saisissez votre mot de passe pour confirmer.', false);
+        if (!await confirmBox('Retirer ' + m.nom + ' ?', 'Son compte et toutes ses données seront effacés définitivement.', 'Retirer', true)) return;
+        try {
+          const r = await api('member.delete', { method: 'POST', body: { id: m.id, mot_de_passe: pw, garder_partages: $('#mkeep', md).checked } });
+          close();
+          toast(m.nom + ' a été retiré(e) du foyer.' + (r.documents_repris ? ' ' + pl(r.documents_repris, 'document partagé repris', 'documents partagés repris') + '.' : ''));
+          route();
+        } catch (e) { toast(e.message, false); }
+      });
+    } });
+}
 
 /* ============================================================== Courriers */
 async function viewLetters(v) {
@@ -1105,7 +1167,7 @@ async function viewRights(v, q, tok) {
 async function viewSettings(v, q, tok) {
   S.me = await api('me');
   if (!live(tok)) return;
-  const p = S.me.profil, partner = S.me.partenaire;
+  const p = S.me.profil, admin = S.me.moi.admin;
   const budgets = S.me.budgets || {};
   const budCats = S.catList.filter(c => ['plaisir', 'essentiel'].includes(c.nature) && !['loyer', 'credit_immo', 'impots', 'frais_bancaires', 'administratif', 'credit_conso'].includes(c.id));
   const theme = store.get('theme', 'auto');
@@ -1118,7 +1180,7 @@ async function viewSettings(v, q, tok) {
     <button class="btn primary" data-save="courrier">Enregistrer</button></section>
   <section class="card"><h2>Reconnaissance automatique</h2><p class="sec small" style="margin:4px 0 12px">Comment ces noms apparaissent sur vos relevés (séparés par des virgules).</p>
     <div class="field"><label class="f" for="am">Mes noms (virements entre mes comptes)</label><input class="in" id="am" value="${esc(p.alias_moi.join(', '))}"></div>
-    <div class="field"><label class="f" for="ap">${esc(partner ? partner.nom : 'Mon partenaire')} (virements entre vous)</label><input class="in" id="ap" value="${esc(p.alias_partenaire.join(', '))}"><div class="help">Ajoutez le nom de famille s’il apparaît : ces virements sont neutres pour le foyer.</div></div>
+    <div class="field"><label class="f" for="ap">Autres personnes du foyer (virements entre vous)</label><input class="in" id="ap" value="${esc(p.alias_partenaire.join(', '))}"><div class="help">Les prénoms et les noms que chacun déclare sont déjà reconnus${autres().length ? ' (' + esc(listeNoms(autres().map(m => m.nom))) + ')' : ''} ; ajoutez ici une autre écriture qui apparaît sur vos relevés (« M OU MME … »). Ces virements sont neutres pour le foyer.</div></div>
     <div class="field"><label class="f" for="ae">Mon employeur</label><input class="in" id="ae" value="${esc(p.alias_employeur.join(', '))}" placeholder="tel qu’il apparaît sur le virement de salaire"></div>
     <label class="check"><input type="checkbox" id="arec" checked><span>Reclasser mes opérations existantes</span></label>
     <button class="btn primary" data-save="alias">Enregistrer</button></section>
@@ -1136,9 +1198,10 @@ async function viewSettings(v, q, tok) {
   <section class="card"><h2>Ce qui est « utile » pour vous</h2><p class="sec small" style="margin:4px 0 12px">Changez la nature par défaut d’une catégorie (ex. la salle de sport en « Essentiel »).</p>
     <div class="tbl-wrap" style="max-height:340px;overflow-y:auto"><table class="tbl"><tbody>${S.catList.filter(c => ['essentiel', 'plaisir', 'evitable', 'inconnu'].includes(c.nature)).map(c => `<tr><td>${esc(c.icone + ' ' + c.label)}</td><td><select class="in sm" data-nat="${c.id}">${['essentiel', 'plaisir', 'evitable', 'inconnu'].map(n => `<option value="${n}" ${((p.natures || {})[c.id] || c.nature) === n ? 'selected' : ''}>${esc(natLabel(n))}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
     <button class="btn primary" style="margin-top:10px" data-save="natures">Enregistrer et reclasser</button></section>
-  <section class="card"><h2>Confidentialité dans le couple</h2>
+  <section class="card"><h2>Confidentialité dans le foyer</h2>
     <label class="check"><input type="checkbox" id="pt" ${p.partage_totaux ? 'checked' : ''}><span><b>Partager mes totaux avec le foyer</b><br><span class="small mut">Revenus, dépenses par nature, dépenses communes : utiles pour la vue Foyer et l’équité.</span></span></label>
-    <label class="check"><input type="checkbox" id="pd" ${p.partage_details ? 'checked' : ''}><span><b>Partager le détail de mes opérations</b><br><span class="small mut">${esc(partner ? partner.nom : 'Votre partenaire')} pourra les consulter (sans les modifier). Permet aussi de repérer les abonnements payés en double.</span></span></label>
+    <label class="check"><input type="checkbox" id="pd" ${p.partage_details ? 'checked' : ''}><span><b>Partager le détail de mes opérations</b><br><span class="small mut">Les autres personnes du foyer pourront les consulter (sans les modifier). Permet aussi de repérer les abonnements payés en double.</span></span></label>
+    <label class="check"><input type="checkbox" id="peq" ${p.equite !== false ? 'checked' : ''}><span><b>Participer au partage des dépenses communes</b><br><span class="small mut">Décochez pour un enfant ou une personne hébergée qui ne contribue pas aux charges.</span></span></label>
     <button class="btn primary" data-save="partage">Enregistrer</button>
     <h3 style="margin:16px 0 6px">Affichage</h3><div class="seg" id="sth">${[['auto', 'Automatique'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<button data-th="${k}" class="${theme === k ? 'on' : ''}">${l}</button>`).join('')}</div></section>
   <section class="card"><h2>Alertes par e-mail</h2>
@@ -1150,11 +1213,12 @@ async function viewSettings(v, q, tok) {
     <h3 style="margin:16px 0 6px">Changer d’adresse</h3>
     <div class="field"><input class="in" id="nemail" type="email" inputmode="email" placeholder="nouvelle adresse" autocomplete="email"></div>
     <div class="row wrap"><input class="in" type="password" id="nemailpw" placeholder="mot de passe actuel" autocomplete="current-password" style="max-width:220px"><button class="btn" id="bnemail">Changer l’adresse</button></div></section>
-  <section class="card"><h2>Envoi des e-mails</h2><p class="sec small" style="margin:4px 0 10px">Réglage commun aux deux comptes : par où partent les e-mails de Boussole.</p><div id="mailform" class="sec small">Chargement…</div></section>
+  <section class="card"><h2>Envoi des e-mails</h2><p class="sec small" style="margin:4px 0 10px">Réglage commun à tout le foyer : par où partent les e-mails de Boussole.</p><div id="mailform" class="sec small">${admin ? 'Chargement…' : 'Réglé par un administrateur du foyer.'}</div></section>
   <section class="card"><h2>Sécurité</h2>
     <div class="field" style="margin-top:10px"><label class="f" for="op">Mot de passe actuel</label><input class="in" type="password" id="op" autocomplete="current-password"></div>
     <div class="field"><label class="f" for="np">Nouveau mot de passe</label><input class="in" type="password" id="np" autocomplete="new-password"></div>
     <div class="row wrap"><button class="btn primary" id="bpw">Changer le mot de passe</button><button class="btn" id="brec">Nouveau code de secours</button></div>
+    <div id="sauvegarde"></div>
     <h3 style="margin:16px 0 6px">Journal de mon compte</h3><div id="journal" class="small sec">…</div></section>
   <section class="card"><h2>Mes données</h2><p class="sec small" style="margin:4px 0 12px">Vos données vous appartiennent.</p>
     <div class="row wrap"><a class="btn" href="api.php?a=export" download>${ic('download', 'sm')}Exporter mes opérations (CSV)</a></div>
@@ -1175,7 +1239,7 @@ async function viewSettings(v, q, tok) {
     }
     if (k === 'fragile') { const r = $('input[name=frag]:checked', v); if (r) save({ fragile: r.value }, 'Statut enregistré : plafonds recalculés.'); }
     if (k === 'natures') { const nat = {}; $$('[data-nat]', v).forEach(s => { nat[s.dataset.nat] = s.value; }); save({ natures: nat, reclasser: true }, 'Natures enregistrées : opérations reclassées.'); }
-    if (k === 'partage') save({ partage_totaux: $('#pt').checked, partage_details: $('#pd').checked });
+    if (k === 'partage') save({ partage_totaux: $('#pt').checked, partage_details: $('#pd').checked, equite: $('#peq').checked });
   }));
   $('#sbud', v).addEventListener('click', async () => {
     try {
@@ -1194,7 +1258,7 @@ async function viewSettings(v, q, tok) {
     try { const r = await api('email.change', { method: 'POST', body: { email: val('#nemail'), mot_de_passe: val('#nemailpw') } }); S.me.moi.email = r.email; toast('Adresse changée : ' + r.email + '. C’est aussi votre nouvel identifiant.'); route(); }
     catch (err) { toast(err.message, false); }
   });
-  mailSettings($('#mailform', v));
+  if (admin) mailSettings($('#mailform', v));
   $('#bpw', v).addEventListener('click', async () => { try { await api('password', { method: 'POST', body: { ancien: val('#op'), nouveau: val('#np') } }); toast('Mot de passe changé.'); $('#op').value = ''; $('#np').value = ''; } catch (e) { toast(e.message, false); } });
   $('#brec', v).addEventListener('click', async () => {
     const pw = val('#op');
@@ -1207,6 +1271,12 @@ async function viewSettings(v, q, tok) {
   });
   try {
     const j = await api('security');
+    const sv = j.sauvegarde, se = j.sauvegarde_echec;
+    if (sv || se) {
+      const quand = t => new Date(t * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+      const vieux = sv && Date.now() / 1000 - sv.t > 8 * 86400;
+      $('#sauvegarde', v).innerHTML = `<h3 style="margin:16px 0 6px">Sauvegardes</h3>${sv ? `<p class="small ${vieux ? '' : 'pos'}" style="${vieux ? 'color:var(--warn)' : ''}">${ic(vieux ? 'alert' : 'check', 'sm')} Dernière sauvegarde réussie : ${esc(quand(sv.t))} · ${pl(sv.docs, 'document')}${sv.nb ? ' · ' + pl(sv.nb, 'sauvegarde conservée', 'sauvegardes conservées') : ''}${sv.cle ? '' : ' · sans la clé de chiffrement'}</p>` : ''}${se && (!sv || se.t > sv.t) ? `<p class="small" style="color:var(--crit-mark)">${ic('alert', 'sm')} Échec le ${esc(quand(se.t))} : ${esc(se.erreur)}</p>` : ''}`;
+    }
     const EV = { connexion: 'Connexion', echec_connexion: 'Mot de passe erroné', deconnexion: 'Déconnexion', import: 'Import', document_ouvert: 'Document ouvert', document_ajoute: 'Document ajouté', document_supprime: 'Document supprimé', reglages: 'Réglages', mot_de_passe_change: 'Mot de passe changé', activation: 'Activation', installation: 'Installation', export_csv: 'Export', dossier_telecharge: 'Dossier téléchargé', echec_code_secours: 'Code de secours erroné', mot_de_passe_reinitialise: 'Mot de passe réinitialisé', nouveau_code_secours: 'Nouveau code de secours', invitation: 'Invitation', suppression_releve: 'Relevé supprimé', donnees_effacees: 'Données effacées', reglages_foyer: 'Réglages du foyer', email_echec: 'Échec d’envoi d’e-mail', email_alertes: 'Alertes envoyées par e-mail', compte_bloque: 'Compte bloqué', reinit_demande: 'Lien « mot de passe oublié » demandé', email_change: 'Adresse e-mail changée', reglages_email: 'Réglages d’envoi des e-mails', email_test: 'E-mail de test' };
     $('#journal', v).innerHTML = j.journal.length ? `<div class="tbl-wrap" style="max-height:220px;overflow-y:auto"><table class="tbl"><tbody>${j.journal.map(e => `<tr><td class="nowrap">${esc(new Date(e.t * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}</td><td>${esc(EV[e.ev] || e.ev)}${e.ev.startsWith('echec') ? ' <span class="flag">!</span>' : ''}<div class="mut" style="font-size:11.5px">${esc(e.info || '')} ${esc(e.ip)}</div></td></tr>`).join('')}</tbody></table></div><p class="small mut" style="margin-top:6px">Une connexion que vous ne reconnaissez pas ? Changez immédiatement votre mot de passe.</p>` : 'Aucun évènement.';
   } catch (e) { /* journal non essentiel */ }

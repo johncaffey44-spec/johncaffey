@@ -150,6 +150,14 @@ function migrate(PDO $db): void {
         $db->exec('UPDATE alerts SET mailed = 1');
         $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email <> ''");
         $db->exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', '2')");
+        $v = 2;
+    }
+    if ($v < 3) {
+        // foyer de plusieurs personnes : rôle (admin / membre) et compte désactivable ; les comptes existants restent administrateurs
+        $cols = array_column($db->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+        if (!in_array('role', $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'");
+        if (!in_array('disabled', $cols, true)) $db->exec('ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0');
+        $db->exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', '3')");
     }
 }
 
@@ -212,13 +220,49 @@ function pw_problem(string $pw, string $name): ?string {
 
 function users(): array { return db()->query('SELECT * FROM users ORDER BY id')->fetchAll(); }
 function user_by_id(int $id): ?array { $s = db()->prepare('SELECT * FROM users WHERE id = ?'); $s->execute([$id]); $u = $s->fetch(); return $u ?: null; }
-function partner_of(int $uid): ?array { $s = db()->prepare('SELECT * FROM users WHERE id <> ? ORDER BY id LIMIT 1'); $s->execute([$uid]); $u = $s->fetch(); return $u ?: null; }
+function is_admin(array $u): bool { return ($u['role'] ?? 'admin') === 'admin'; }
+function need_admin(array $u): void { if (!is_admin($u)) fail(403, 'Réservé aux administrateurs du foyer.'); }
+function is_active(array $u): bool { return $u['pw'] !== '' && (int)($u['disabled'] ?? 0) === 0; }
+/** Les autres personnes du foyer (comptes désactivés exclus). */
+function others(int $uid): array { return array_values(array_filter(users(), function ($x) use ($uid) { return (int)$x['id'] !== $uid && (int)($x['disabled'] ?? 0) === 0; })); }
+/** Personnes actives qui partagent leurs totaux avec le foyer (réciprocité : seulement si je partage aussi les miens). */
+function sharing_totals(array $u): array {
+    if (!profile($u)['partage_totaux']) return [];
+    return array_values(array_filter(others((int)$u['id']), function ($x) { return is_active($x) && profile($x)['partage_totaux']; }));
+}
+/** Personnes actives qui partagent le détail de leurs opérations. */
+function sharing_details(int $uid): array {
+    return array_values(array_filter(others($uid), function ($x) { return is_active($x) && profile($x)['partage_details']; }));
+}
+function admins_actifs(): int { $n = 0; foreach (users() as $x) if (is_admin($x) && is_active($x)) $n++; return $n; }
+/** Identifiant interne unique (le prénom ; « sam2 » si deux personnes s'appellent Sam). */
+function unique_login(string $name): string {
+    $base = slug($name) ?: 'membre';
+    $login = $base; $i = 2;
+    $s = db()->prepare('SELECT COUNT(*) FROM users WHERE login = ?');
+    while (true) { $s->execute([$login]); if ((int)$s->fetchColumn() === 0) return $login; $login = $base . $i++; }
+}
+/** Fiche d'une personne pour l'interface ; adresse et dernière connexion réservées aux administrateurs. */
+function member_public(array $x, bool $admin, int $me): array {
+    $p = profile($x);
+    $etat = (int)($x['disabled'] ?? 0) === 1 ? 'desactive' : ($x['pw'] === '' ? 'invite' : 'actif');
+    $o = ['id' => (int)$x['id'], 'nom' => $x['name'], 'role' => $x['role'] ?? 'admin', 'etat' => $etat, 'active' => $etat === 'actif', 'moi' => (int)$x['id'] === $me,
+        'partage_totaux' => (bool)$p['partage_totaux'], 'partage_details' => (bool)$p['partage_details'], 'equite' => (bool)$p['equite']];
+    if ($admin) { $o['email'] = (string)$x['email']; $o['derniere_connexion'] = (int)$x['last_login']; $o['invitation_expire'] = $etat === 'invite' ? (int)$x['invite_exp'] : 0; }
+    return $o;
+}
+/** Envoie (si possible) l'e-mail d'invitation ; rend true s'il est parti. */
+function send_invite(array $from, string $nom, string $email, string $code): bool {
+    if ($email === '' || !mail_ready()) return false;
+    [$ms, $mt, $mh] = mail_invite($nom, (string)$from['name'], (string)foyer()['nom'], $code, app_url() . '#/activer?code=' . rawurlencode($code));
+    return mail_send(mail_cfg(true), $email, $ms, $mt, $mh) === null;
+}
 
 function profile(array $u): array {
     $p = json_dec($u['profile'] ?? '{}');
     return $p + ['nom_complet' => '', 'adresse' => '', 'ville' => '', 'banque' => '', 'compte' => '', 'alias_moi' => [], 'alias_partenaire' => [], 'alias_employeur' => [],
         'jour_paie' => 0, 'solde' => null, 'solde_date' => null, 'epargne_dispo' => null, 'fragile' => 'non', 'partage_details' => false, 'partage_totaux' => true, 'natures' => [],
-        'alertes_email' => 'importantes', 'email_contenu' => 'titres'];
+        'alertes_email' => 'importantes', 'email_contenu' => 'titres', 'equite' => true];
 }
 function profile_save(int $uid, array $p): void { db()->prepare('UPDATE users SET profile = ? WHERE id = ?')->execute([json_enc($p), $uid]); }
 
@@ -296,7 +340,7 @@ function veille_tick(bool $force = false): int {
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return 0;
     db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('veille', ?)")->execute([(string)time()]);
     $n = 0;
-    foreach (users() as $u) if ($u['pw'] !== '') { refresh_alerts((int)$u['id']); $n++; }
+    foreach (users() as $u) if (is_active($u)) { refresh_alerts((int)$u['id']); $n++; }
     flock($lock, LOCK_UN);
     fclose($lock);
     return $n;
@@ -311,7 +355,11 @@ function class_ctx(array $u): array {
     foreach ($s->fetchAll() as $r) $rules[] = ['p' => $r['pattern'], 'sens' => $r['sens'], 'category' => $r['category'], 'nature' => $r['nature'], 'common' => $r['common'] === null ? null : (int)$r['common']];
     foreach ($rules as &$r) if ($r['common'] === null) unset($r['common']);
     unset($r);
-    return ['rules' => $rules, 'me' => alias_list($p['alias_moi']), 'partner' => alias_list($p['alias_partenaire']), 'employer' => alias_list($p['alias_employeur']),
+    $mes = alias_list(array_merge([$u['name']], (array)$p['alias_moi']));
+    $foyerNoms = (array)$p['alias_partenaire'];
+    foreach (others((int)$u['id']) as $x) $foyerNoms = array_merge($foyerNoms, [$x['name']], (array)profile($x)['alias_moi']);
+    $foyerNoms = array_values(array_diff(alias_list($foyerNoms), $mes));
+    return ['rules' => $rules, 'me' => alias_list($p['alias_moi']), 'partner' => $foyerNoms, 'employer' => alias_list($p['alias_employeur']),
         'nature_over' => (array)$p['natures'], 'common_cats' => (array)foyer()['communes']];
 }
 
@@ -387,13 +435,12 @@ function refresh_alerts(int $uid): void {
     $from = date('Y-m-d', strtotime('-15 months'));
     $txs = tx_load($uid, $from);
     $rec = an_recurring($txs);
-    $partner = partner_of($uid);
-    $pRec = null;
-    if ($partner && profile($partner)['partage_details'] && $p['partage_details']) $pRec = an_recurring(tx_load((int)$partner['id'], $from));
+    $autres = [];
+    if ($p['partage_details']) foreach (sharing_details($uid) as $x) $autres[] = ['nom' => $x['name'], 'rec' => an_recurring(tx_load((int)$x['id'], $from))];
     $alerts = $txs ? alerts_build($txs, [
         'profile' => $p, 'fees' => an_fees($txs, $p), 'recurring' => $rec, 'forecast' => an_forecast($txs, $rec, $p, start_balance($u), date('Y-m-d')),
         'docs' => array_values(array_filter(docs_visible($uid), function ($d) use ($uid) { return (int)$d['user_id'] === $uid; })),
-        'budgets' => budgets_of($uid), 'subs' => subs_state($uid), 'partner_recurring' => $pRec, 'partner_name' => $partner['name'] ?? null,
+        'budgets' => budgets_of($uid), 'subs' => subs_state($uid), 'others_recurring' => $autres,
         'today' => date('Y-m-d'), 'revenu_moyen' => avg_income($txs),
     ]) : [];
     $db = db();
@@ -460,6 +507,7 @@ function auth(): array {
     $_SESSION['last'] = time();
     $u = user_by_id($uid);
     if (!$u || $u['pw'] === '') { $_SESSION = []; fail(401, 'Compte introuvable.', ['code' => 'auth']); }
+    if ((int)($u['disabled'] ?? 0) === 1) { $_SESSION = []; fail(401, 'Ce compte a été désactivé par un administrateur du foyer.', ['code' => 'auth']); }
     session_write_close();                     // libère la session : les requêtes parallèles ne se bloquent pas
     return $u;
 }
@@ -529,12 +577,12 @@ case 'status': {
     $installed = (int)db()->query('SELECT COUNT(*) FROM users')->fetchColumn() > 0;
     $uid = (int)($_SESSION['uid'] ?? 0);
     $me = null;
-    if ($uid && time() - (int)($_SESSION['last'] ?? 0) <= $SESSION_IDLE && ($u = user_by_id($uid)) && $u['pw'] !== '') {
+    if ($uid && time() - (int)($_SESSION['last'] ?? 0) <= $SESSION_IDLE && ($u = user_by_id($uid)) && is_active($u)) {
         $_SESSION['last'] = time();
         $me = ['id' => (int)$u['id'], 'nom' => $u['name']];
     }
     $pending = [];
-    foreach (users() as $u) if ($u['pw'] === '' && $u['invite'] !== '') $pending[] = $u['name'];
+    foreach (users() as $u) if ($u['pw'] === '' && $u['invite'] !== '' && (int)($u['disabled'] ?? 0) === 0) $pending[] = $u['name'];
     $toBytes = function (string $v): int { $v = trim($v); $n = (int)$v; $u = strtolower(substr($v, -1)); return $u === 'g' ? $n << 30 : ($u === 'm' ? $n << 20 : ($u === 'k' ? $n << 10 : $n)); };
     if ($installed) veille_tick();
     out(200, ['version' => BOUSSOLE, 'installe' => $installed, 'moi' => $me, 'csrf' => $me ? $_SESSION['csrf'] : null, 'https' => is_https(), 'mail' => $installed && mail_ready(),
@@ -558,15 +606,15 @@ case 'setup': {
     $db->beginTransaction();
     $db->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('foyer', ?)")->execute([json_enc(['nom' => $foyerNom, 'mode' => 'prorata', 'communes' => COMMON_DEFAULT])]);
     $rec = new_code(16);
-    $p1 = ['alias_moi' => [$n1], 'alias_partenaire' => $n2 !== '' ? [$n2] : []];
+    $p1 = ['alias_moi' => [$n1]];
     $db->prepare('INSERT INTO users (login, name, email, pw, recovery, profile, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         ->execute([slug($n1), $n1, $email, password_hash($pw, PASSWORD_DEFAULT), password_hash(code_norm($rec), PASSWORD_DEFAULT), json_enc($p1), time()]);
     $uid = (int)$db->lastInsertId();
     $invite = null;
     if ($n2 !== '') {
         $invite = new_code(12);
-        $db->prepare('INSERT INTO users (login, name, pw, invite, invite_exp, profile, created_at) VALUES (?, ?, \'\', ?, ?, ?, ?)')
-            ->execute([slug($n2), $n2, password_hash(code_norm($invite), PASSWORD_DEFAULT), time() + 30 * 86400, json_enc(['alias_moi' => [$n2], 'alias_partenaire' => [$n1]]), time()]);
+        $db->prepare('INSERT INTO users (login, name, pw, invite, invite_exp, profile, role, created_at) VALUES (?, ?, \'\', ?, ?, ?, \'admin\', ?)')
+            ->execute([slug($n2), $n2, password_hash(code_norm($invite), PASSWORD_DEFAULT), time() + 30 * 86400, json_enc(['alias_moi' => [$n2]]), time()]);
     }
     $db->commit();
     vault_key($DATA_DIR);
@@ -582,6 +630,7 @@ case 'login': {
     throttle_check();
     $u = user_by_ident((string)($in['identifiant'] ?? $in['nom'] ?? ''));
     $pw = (string)($in['mot_de_passe'] ?? '');
+    if ($u && (int)($u['disabled'] ?? 0) === 1 && $u['pw'] !== '' && password_verify($pw, $u['pw'])) fail(403, 'Ce compte a été désactivé par un administrateur du foyer.');
     if ($u && (int)$u['locked_until'] > time()) fail(423, 'Compte bloqué après plusieurs erreurs. Réessayez dans ' . (int)ceil(((int)$u['locked_until'] - time()) / 60) . ' minute(s), ou utilisez votre code de secours.');
     if (!$u || $u['pw'] === '' || !password_verify($pw, $u['pw'])) {
         throttle_fail();
@@ -609,11 +658,11 @@ case 'activate': {
     $code = code_norm((string)($in['code'] ?? ''));
     $pw = (string)($in['mot_de_passe'] ?? '');
     $found = null;
-    foreach (users() as $u) if ($u['pw'] === '' && $u['invite'] !== '' && (int)$u['invite_exp'] > time() && password_verify($code, $u['invite'])) { $found = $u; break; }
+    foreach (users() as $u) if ($u['pw'] === '' && $u['invite'] !== '' && (int)($u['disabled'] ?? 0) === 0 && (int)$u['invite_exp'] > time() && password_verify($code, $u['invite'])) { $found = $u; break; }
     if (!$found) { throttle_fail(); fail(400, 'Code d’invitation invalide ou expiré.'); }
     $email = email_norm($in['email'] ?? '');
     if (!valid_email($email)) fail(400, 'Indiquez une adresse e-mail valide : elle sert d’identifiant et reçoit vos alertes.');
-    if (email_taken($email, (int)$found['id'])) fail(409, 'Cette adresse est déjà utilisée par l’autre compte du foyer.');
+    if (email_taken($email, (int)$found['id'])) fail(409, 'Cette adresse est déjà utilisée par une autre personne du foyer.');
     if (isset($in['confirmation']) && (string)$in['confirmation'] !== $pw) fail(400, 'Les deux mots de passe ne correspondent pas.');
     if (($m = pw_problem($pw, $found['name'])) !== null) fail(400, $m);
     $rec = new_code(16);
@@ -627,6 +676,7 @@ case 'recover': {
     $in = body();
     throttle_check();
     $u = user_by_ident((string)($in['identifiant'] ?? $in['nom'] ?? ''));
+    if ($u && (int)($u['disabled'] ?? 0) === 1) fail(403, 'Ce compte a été désactivé par un administrateur du foyer.');
     if (!$u || $u['recovery'] === '' || !password_verify(code_norm((string)($in['code'] ?? '')), $u['recovery'])) { throttle_fail(); if ($u) ev((int)$u['id'], 'echec_code_secours'); fail(400, 'Adresse e-mail ou code de secours incorrect.'); }
     $pw = (string)($in['mot_de_passe'] ?? '');
     if (($m = pw_problem($pw, $u['name'])) !== null) fail(400, $m);
@@ -643,7 +693,7 @@ case 'forgot': {
     throttle_fail();                          // chaque demande compte : pas d'envois en rafale depuis une même adresse IP
     if (!mail_ready()) fail(503, 'L’envoi des e-mails n’est pas configuré sur ce serveur : utilisez votre code de secours.');
     $u = user_by_ident((string)($in['identifiant'] ?? ''));
-    if ($u && $u['pw'] !== '' && valid_email((string)$u['email']) && (int)$u['reset_exp'] < time() + 25 * 60) {
+    if ($u && is_active($u) && valid_email((string)$u['email']) && (int)$u['reset_exp'] < time() + 25 * 60) {
         $tok = bin2hex(random_bytes(24));
         db()->prepare('UPDATE users SET reset_hash = ?, reset_exp = ? WHERE id = ?')->execute([hash('sha256', $tok), time() + 30 * 60, (int)$u['id']]);
         [$ms, $mt, $mh] = mail_reset((string)$u['name'], app_url() . '#/reinit?jeton=' . $tok);
@@ -661,7 +711,7 @@ case 'reset': {
     if (!preg_match('/^[a-f0-9]{48}$/', $tok)) { throttle_fail(); fail(400, 'Lien invalide.'); }
     $s = db()->prepare('SELECT * FROM users WHERE reset_hash = ? AND reset_exp > ?'); $s->execute([hash('sha256', $tok), time()]);
     $u = $s->fetch();
-    if (!$u) { throttle_fail(); fail(400, 'Lien invalide ou expiré : refaites une demande depuis l’écran de connexion.'); }
+    if (!$u || (int)($u['disabled'] ?? 0) === 1) { throttle_fail(); fail(400, 'Lien invalide ou expiré : refaites une demande depuis l’écran de connexion.'); }
     $pw = (string)($in['mot_de_passe'] ?? '');
     if (isset($in['confirmation']) && (string)$in['confirmation'] !== $pw) fail(400, 'Les deux mots de passe ne correspondent pas.');
     if (($m = pw_problem($pw, $u['name'])) !== null) fail(400, $m);
@@ -695,10 +745,18 @@ case 'logout': {
 case 'me': {
     $u = auth();
     $p = profile($u);
-    $partner = partner_of((int)$u['id']);
+    $admin = is_admin($u);
+    $membres = [];
+    foreach (users() as $x) $membres[] = member_public($x, $admin, (int)$u['id']);
     db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('app_url', ?)")->execute([current_url()]);
-    out(200, ['moi' => ['id' => (int)$u['id'], 'nom' => $u['name'], 'email' => $u['email'], 'derniere_connexion' => (int)$u['last_login']], 'profil' => $p, 'foyer' => foyer(), 'mail_pret' => mail_ready(),
-        'partenaire' => $partner ? ['id' => (int)$partner['id'], 'nom' => $partner['name'], 'active' => $partner['pw'] !== '', 'partage_details' => (bool)profile($partner)['partage_details'], 'partage_totaux' => (bool)profile($partner)['partage_totaux']] : null,
+    $sauv = null;
+    if ($admin) {
+        $ok = json_dec((string)(db()->query("SELECT v FROM meta WHERE k = 'sauvegarde'")->fetchColumn() ?: ''));
+        $ko = json_dec((string)(db()->query("SELECT v FROM meta WHERE k = 'sauvegarde_echec'")->fetchColumn() ?: ''));
+        if ($ok || $ko) $sauv = ['derniere' => $ok ? (int)$ok['t'] : null, 'echec' => $ko ? ['t' => (int)$ko['t'], 'erreur' => (string)($ko['erreur'] ?? '')] : null];
+    }
+    out(200, ['moi' => ['id' => (int)$u['id'], 'nom' => $u['name'], 'email' => $u['email'], 'derniere_connexion' => (int)$u['last_login'], 'role' => $u['role'] ?? 'admin', 'admin' => $admin],
+        'profil' => $p, 'foyer' => foyer(), 'mail_pret' => mail_ready(), 'membres' => $membres, 'max_membres' => $MAX_USERS, 'sauvegarde' => $sauv,
         'categories' => array_map(function ($c, $id) { return ['id' => $id, 'label' => $c[0], 'nature' => $c[1], 'icone' => $c[2]]; }, $cats, array_keys($cats)),
         'natures' => NATURES, 'types_frais' => fee_types(), 'types_docs' => array_map(function ($t, $id) { return ['id' => $id, 'label' => $t[0], 'icone' => $t[1], 'conservation' => $t[2], 'champs' => $t[5]]; }, doc_types(), array_keys(doc_types())),
         'courriers' => letters_catalog(), 'budgets' => budgets_of((int)$u['id']), 'verifie' => LEGAL_VERIFIE]);
@@ -716,7 +774,7 @@ case 'me.save': {
     if (array_key_exists('solde', $in)) { $p['solde'] = $in['solde'] === null || $in['solde'] === '' ? null : (int)$in['solde']; $p['solde_date'] = $p['solde'] === null ? null : (date_parse_any((string)($in['solde_date'] ?? '')) ?? date('Y-m-d')); }
     if (array_key_exists('epargne_dispo', $in)) $p['epargne_dispo'] = $in['epargne_dispo'] === null || $in['epargne_dispo'] === '' ? null : max(0, (int)$in['epargne_dispo']);
     if (array_key_exists('fragile', $in) && in_array($in['fragile'], ['non', 'fragile', 'ocf', 'sbb'], true)) $p['fragile'] = $in['fragile'];
-    foreach (['partage_details', 'partage_totaux'] as $k) if (array_key_exists($k, $in)) $p[$k] = (bool)$in[$k];
+    foreach (['partage_details', 'partage_totaux', 'equite'] as $k) if (array_key_exists($k, $in)) $p[$k] = (bool)$in[$k];
     if (array_key_exists('alertes_email', $in) && in_array($in['alertes_email'], ['aucune', 'critiques', 'importantes', 'toutes'], true)) $p['alertes_email'] = $in['alertes_email'];
     if (array_key_exists('email_contenu', $in) && in_array($in['email_contenu'], ['titres', 'discret'], true)) $p['email_contenu'] = $in['email_contenu'];
     if (array_key_exists('natures', $in)) {
@@ -727,13 +785,14 @@ case 'me.save': {
     profile_save((int)$u['id'], $p);
     $reclass = !empty($in['reclasser']);
     if ($reclass) reclassify((int)$u['id']);
+    if (array_key_exists('alias_moi', $in)) foreach (others((int)$u['id']) as $x) if ($x['pw'] !== '') reclassify((int)$x['id']);
     refresh_alerts((int)$u['id']);
     ev((int)$u['id'], 'reglages');
     out(200, ['ok' => true, 'profil' => $p]);
 }
 
 case 'foyer.save': {
-    $u = auth(); $in = body();
+    $u = auth(); need_admin($u); $in = body();
     $f = foyer();
     if (array_key_exists('nom', $in)) $f['nom'] = clean_str($in['nom'], 60) ?: 'Notre foyer';
     if (array_key_exists('mode', $in) && in_array($in['mode'], ['prorata', 'egal'], true)) $f['mode'] = $in['mode'];
@@ -749,7 +808,7 @@ case 'email.change': {
     if (!password_verify((string)($in['mot_de_passe'] ?? ''), $u['pw'])) fail(400, 'Mot de passe incorrect.');
     $email = email_norm($in['email'] ?? '');
     if (!valid_email($email)) fail(400, 'Adresse e-mail invalide.');
-    if (email_taken($email, (int)$u['id'])) fail(409, 'Cette adresse est déjà utilisée par l’autre compte du foyer.');
+    if (email_taken($email, (int)$u['id'])) fail(409, 'Cette adresse est déjà utilisée par une autre personne du foyer.');
     $old = (string)$u['email'];
     db()->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$email, (int)$u['id']]);
     ev((int)$u['id'], 'email_change');
@@ -762,7 +821,7 @@ case 'email.change': {
 }
 
 case 'mail.get': {
-    auth();
+    $u = auth(); need_admin($u);
     $c = mail_cfg();
     $key = (string)(db()->query("SELECT v FROM meta WHERE k = 'veille_cle'")->fetchColumn() ?: '');
     if ($key === '') { $key = bin2hex(random_bytes(16)); db()->prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('veille_cle', ?)")->execute([$key]); }
@@ -774,7 +833,7 @@ case 'mail.get': {
 }
 
 case 'mail.save': {
-    $u = auth(); $in = body();
+    $u = auth(); need_admin($u); $in = body();
     $c = mail_cfg();
     if (isset($in['mode']) && in_array($in['mode'], ['off', 'php', 'smtp'], true)) $c['mode'] = $in['mode'];
     if ($c['mode'] === 'php' && !mail_php_ok()) fail(400, 'La fonction mail() de PHP ne sait pas s’authentifier (Windows) : choisissez « Serveur SMTP ».');
@@ -827,29 +886,92 @@ case 'recovery.new': {
     out(200, ['ok' => true, 'code_secours' => $rec]);
 }
 
-case 'invite.new': {
-    // seulement si le compte du partenaire n'a JAMAIS été activé : on ne peut pas prendre la main sur un compte existant
-    $u = auth(); body();
-    $p = partner_of((int)$u['id']);
-    if (!$p) fail(404, 'Aucun second compte dans ce foyer.');
-    if ($p['pw'] !== '') fail(409, $p['name'] . ' a déjà activé son compte : en cas d’oubli, son code de secours permet de choisir un nouveau mot de passe.');
-    $invite = new_code(12);
-    db()->prepare('UPDATE users SET invite = ?, invite_exp = ? WHERE id = ?')->execute([password_hash(code_norm($invite), PASSWORD_DEFAULT), time() + 30 * 86400, (int)$p['id']]);
-    ev((int)$u['id'], 'invitation', 'pour ' . $p['name']);
-    out(200, ['ok' => true, 'invitation' => $invite, 'nom' => $p['name']]);
+case 'member.invite': {
+    $u = auth(); need_admin($u); $in = body();
+    if (count(users()) >= $MAX_USERS) fail(409, 'Le foyer compte déjà ' . $MAX_USERS . ' personnes (réglage $MAX_USERS de config.local.php).');
+    $nom = clean_str($in['nom'] ?? '', 40);
+    if (slug($nom) === '') fail(400, 'Indiquez un prénom.');
+    $email = email_norm($in['email'] ?? '');
+    if ($email !== '' && !valid_email($email)) fail(400, 'Adresse e-mail invalide.');
+    if ($email !== '' && email_taken($email)) fail(409, 'Cette adresse est déjà utilisée par une personne du foyer.');
+    $role = ($in['role'] ?? '') === 'admin' ? 'admin' : 'membre';
+    $code = new_code(12);
+    db()->prepare('INSERT INTO users (login, name, email, pw, invite, invite_exp, profile, role, created_at) VALUES (?, ?, ?, \'\', ?, ?, ?, ?, ?)')
+        ->execute([unique_login($nom), $nom, $email, password_hash(code_norm($code), PASSWORD_DEFAULT), time() + 30 * 86400, json_enc(['alias_moi' => [$nom]]), $role, time()]);
+    $id = (int)db()->lastInsertId();
+    $envoye = send_invite($u, $nom, $email, $code);
+    ev((int)$u['id'], 'invitation', 'pour ' . $nom . ($envoye ? ' (e-mail envoyé)' : ''));
+    foreach (users() as $x) if ($x['pw'] !== '') reclassify((int)$x['id']);       // son prénom devient un virement « foyer »
+    out(200, ['ok' => true, 'invitation' => $code, 'nom' => $nom, 'email' => $email, 'email_envoye' => $envoye, 'membre' => member_public(user_by_id($id), true, (int)$u['id'])]);
 }
 
-case 'partner.add': {
-    $u = auth(); $in = body();
-    if (count(users()) >= $MAX_USERS) fail(409, 'Le foyer compte déjà ' . $MAX_USERS . ' personnes.');
-    $n2 = clean_str($in['nom'] ?? '', 40);
-    if (slug($n2) === '' || slug($n2) === $u['login']) fail(400, 'Prénom invalide.');
-    $invite = new_code(12);
-    db()->prepare('INSERT INTO users (login, name, pw, invite, invite_exp, profile, created_at) VALUES (?, ?, \'\', ?, ?, ?, ?)')
-        ->execute([slug($n2), $n2, password_hash(code_norm($invite), PASSWORD_DEFAULT), time() + 30 * 86400, json_enc(['alias_moi' => [$n2], 'alias_partenaire' => [$u['name']]]), time()]);
-    $p = profile($u); $p['alias_partenaire'] = array_values(array_unique(array_merge($p['alias_partenaire'], [$n2]))); profile_save((int)$u['id'], $p);
-    ev((int)$u['id'], 'invitation', 'pour ' . $n2);
-    out(200, ['ok' => true, 'invitation' => $invite, 'nom' => $n2]);
+case 'member.reinvite': {
+    // nouveau code seulement pour un compte jamais activé : on ne prend jamais la main sur un compte existant
+    $u = auth(); need_admin($u); $in = body();
+    $x = user_by_id((int)($in['id'] ?? 0));
+    if (!$x) fail(404, 'Personne introuvable.');
+    if ($x['pw'] !== '') fail(409, $x['name'] . ' a déjà activé son compte : en cas d’oubli, son code de secours ou le lien « mot de passe oublié » lui permettent d’en choisir un nouveau.');
+    if (array_key_exists('email', $in)) {
+        $email = email_norm($in['email']);
+        if ($email !== '' && !valid_email($email)) fail(400, 'Adresse e-mail invalide.');
+        if ($email !== '' && email_taken($email, (int)$x['id'])) fail(409, 'Cette adresse est déjà utilisée par une personne du foyer.');
+        db()->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([$email, (int)$x['id']]);
+        $x['email'] = $email;
+    }
+    $code = new_code(12);
+    db()->prepare('UPDATE users SET invite = ?, invite_exp = ?, disabled = 0 WHERE id = ?')->execute([password_hash(code_norm($code), PASSWORD_DEFAULT), time() + 30 * 86400, (int)$x['id']]);
+    $envoye = send_invite($u, (string)$x['name'], (string)$x['email'], $code);
+    ev((int)$u['id'], 'invitation', 'nouveau code pour ' . $x['name']);
+    out(200, ['ok' => true, 'invitation' => $code, 'nom' => $x['name'], 'email' => $x['email'], 'email_envoye' => $envoye]);
+}
+
+case 'member.update': {
+    $u = auth(); need_admin($u); $in = body();
+    $x = user_by_id((int)($in['id'] ?? 0));
+    if (!$x) fail(404, 'Personne introuvable.');
+    $self = (int)$x['id'] === (int)$u['id'];
+    $role = $x['role'] ?? 'admin';
+    $off = (int)($x['disabled'] ?? 0);
+    if (isset($in['role']) && in_array($in['role'], ['admin', 'membre'], true)) $role = $in['role'];
+    if (array_key_exists('desactive', $in)) $off = $in['desactive'] ? 1 : 0;
+    if ($self && $off) fail(400, 'Vous ne pouvez pas désactiver votre propre compte.');
+    $etaitAdminActif = is_admin($x) && is_active($x);
+    if ($etaitAdminActif && ($role !== 'admin' || $off) && admins_actifs() <= 1) fail(409, 'Il faut au moins un administrateur actif dans le foyer : nommez-en un autre d’abord.');
+    $nom = $x['name'];
+    if (isset($in['nom']) && slug(clean_str($in['nom'], 40)) !== '') $nom = clean_str($in['nom'], 40);
+    db()->prepare('UPDATE users SET role = ?, disabled = ?, name = ? WHERE id = ?')->execute([$role, $off, $nom, (int)$x['id']]);
+    ev((int)$u['id'], 'membre_modifie', $nom . ' : ' . $role . ($off ? ', désactivé' : ''));
+    if ($nom !== $x['name']) foreach (users() as $y) if ($y['pw'] !== '') reclassify((int)$y['id']);           // son nouveau prénom est reconnu dans les virements
+    if ($off !== (int)($x['disabled'] ?? 0) || $nom !== $x['name']) foreach (users() as $y) if (is_active($y)) refresh_alerts((int)$y['id']);
+    out(200, ['ok' => true, 'membre' => member_public(user_by_id((int)$x['id']), true, (int)$u['id'])]);
+}
+
+case 'member.delete': {
+    // efface le compte et toutes ses données ; ses documents partagés peuvent être repris par l'administrateur
+    $u = auth(); need_admin($u); $in = body();
+    if (!password_verify((string)($in['mot_de_passe'] ?? ''), $u['pw'])) fail(400, 'Mot de passe incorrect.');
+    $x = user_by_id((int)($in['id'] ?? 0));
+    if (!$x) fail(404, 'Personne introuvable.');
+    if ((int)$x['id'] === (int)$u['id']) fail(400, 'Pour effacer vos propres données, utilisez Réglages › Mes données.');
+    if (is_admin($x) && is_active($x) && admins_actifs() <= 1) fail(409, 'C’est le dernier administrateur actif du foyer.');
+    $xid = (int)$x['id'];
+    $repris = 0;
+    if (!empty($in['garder_partages'])) {
+        $q = db()->prepare('UPDATE docs SET user_id = ? WHERE user_id = ? AND shared = 1');
+        $q->execute([(int)$u['id'], $xid]);
+        $repris = $q->rowCount();
+    }
+    $s = db()->prepare('SELECT store FROM docs WHERE user_id = ?'); $s->execute([$xid]);
+    foreach ($s->fetchAll() as $d) @unlink($DATA_DIR . '/vault/' . basename((string)$d['store']));
+    $db = db();
+    $db->beginTransaction();
+    foreach (['tx', 'statements', 'docs', 'alerts', 'rules', 'budgets', 'subs'] as $t) $db->prepare('DELETE FROM ' . $t . ' WHERE user_id = ?')->execute([$xid]);
+    $db->prepare('DELETE FROM users WHERE id = ?')->execute([$xid]);
+    $db->commit();
+    foreach (glob($DATA_DIR . '/sessions/sess_*') ?: [] as $f) { $c = (string)@file_get_contents($f); if (preg_match('/uid\|i:' . $xid . ';/', $c)) @unlink($f); }
+    ev((int)$u['id'], 'membre_supprime', $x['name'] . ($repris ? ' (' . $repris . ' document(s) partagé(s) repris)' : ''));
+    foreach (users() as $y) if (is_active($y)) { reclassify((int)$y['id']); refresh_alerts((int)$y['id']); }
+    out(200, ['ok' => true, 'documents_repris' => $repris]);
 }
 
 /* ---------------------------------------------------------------- import des relevés */
@@ -976,7 +1098,7 @@ case 'import.commit': {
     $db->commit();
     ev($uid, 'import', $new . ' opération(s), ' . $dup . ' doublon(s)');
     refresh_alerts($uid);
-    if ($p = partner_of($uid)) refresh_alerts((int)$p['id']);
+    foreach (sharing_details($uid) as $x) refresh_alerts((int)$x['id']);
     $s = db()->prepare("SELECT COUNT(*) FROM alerts WHERE user_id = ? AND statut = 'ouverte' AND niveau = 'critique'"); $s->execute([$uid]);
     out(200, ['ok' => true, 'releve' => $sid, 'nouvelles' => $new, 'doublons' => $dup, 'document' => $docId, 'alertes_critiques' => (int)$s->fetchColumn()]);
 }
@@ -1006,9 +1128,13 @@ case 'tx': {
     $uid = (int)$u['id'];
     $who = (string)($_GET['qui'] ?? 'moi');
     $ids = [$uid];
-    $partner = partner_of($uid);
-    if ($who !== 'moi' && $partner && profile($partner)['partage_details']) $ids = $who === 'partenaire' ? [(int)$partner['id']] : [$uid, (int)$partner['id']];
-    elseif ($who !== 'moi') fail(403, ($partner['name'] ?? 'Votre partenaire') . ' ne partage pas le détail de ses opérations.');
+    $visibles = [];
+    foreach (sharing_details($uid) as $x) $visibles[(int)$x['id']] = $x;
+    if ($who === 'foyer') $ids = array_merge([$uid], array_keys($visibles));
+    elseif ($who !== 'moi') {
+        if (!ctype_digit($who) || !isset($visibles[(int)$who])) fail(403, 'Cette personne ne partage pas le détail de ses opérations.');
+        $ids = [(int)$who];
+    }
     $sql = 'SELECT * FROM tx WHERE user_id IN (' . implode(',', array_map('intval', $ids)) . ')'; $args = [];
     $m = (string)($_GET['mois'] ?? '');
     if (preg_match('/^\d{4}-\d{2}$/', $m)) { $sql .= ' AND date LIKE ?'; $args[] = $m . '-%'; }
@@ -1068,10 +1194,12 @@ case 'dashboard': {
     $uid = (int)$u['id'];
     $p = profile($u);
     $vue = ($_GET['vue'] ?? 'moi') === 'foyer' ? 'foyer' : 'moi';
-    $partner = partner_of($uid);
     $from = date('Y-m-d', strtotime('-15 months'));
     $mine = tx_load($uid, $from);
-    $theirs = ($partner && profile($partner)['partage_totaux'] && $p['partage_totaux']) ? tx_load((int)$partner['id'], $from) : [];
+    $partageurs = $vue === 'foyer' ? sharing_totals($u) : [];
+    $leurs = [];
+    $theirs = [];
+    foreach ($partageurs as $x) { $leurs[(int)$x['id']] = tx_load((int)$x['id'], $from); $theirs = array_merge($theirs, $leurs[(int)$x['id']]); }
     $txs = $vue === 'foyer' ? array_merge($mine, $theirs) : $mine;
     $months = an_months($txs);
     $mois = (string)($_GET['mois'] ?? '');
@@ -1081,18 +1209,21 @@ case 'dashboard': {
     $trend = [];
     foreach (array_slice($months, -12) as $m) { $s = an_summary(an_month($txs, $m)); $trend[] = ['mois' => $m, 'revenus' => $s['revenus'], 'depenses' => $s['depenses'], 'epargne' => $s['epargne'], 'nature' => $s['nature'], 'reste' => $s['reste']]; }
     $epDispo = $p['epargne_dispo'];
-    if ($vue === 'foyer' && $partner && $theirs) {
-        $pe = profile($partner)['epargne_dispo'];
-        $epDispo = ($epDispo === null && $pe === null) ? null : (int)$epDispo + (int)$pe;
+    if ($vue === 'foyer') foreach ($partageurs as $x) {
+        $pe = profile($x)['epargne_dispo'];
+        if ($pe !== null) $epDispo = (int)$epDispo + (int)$pe;
     }
     $score = an_score($cur, ['epargne_dispo' => $epDispo, 'essentiel_moyen' => avg_essentials($txs)]);
     $fees = an_fees($mine, $p);
     $rec = an_recurring($mine);
     $fc = an_forecast($mine, $rec, $p, start_balance($u), date('Y-m-d'));
     $equity = null;
-    if ($vue === 'foyer' && $partner && $theirs) {
+    $equiteListe = [];
+    if ($p['equite']) $equiteListe[] = [$u, $mine];
+    foreach ($partageurs as $x) if (profile($x)['equite']) $equiteListe[] = [$x, $leurs[(int)$x['id']]];
+    if ($vue === 'foyer' && count($equiteListe) >= 2) {
         $people = [];
-        foreach ([[$u, $mine], [$partner, $theirs]] as [$x, $list]) {
+        foreach ($equiteListe as [$x, $list]) {
             $ml = an_month($list, $mois);
             $sm = an_summary($ml); $verse = 0; $recu = 0;
             foreach ($ml as $t) if ($t['category'] === 'virement_foyer') { if ($t['amount'] < 0) $verse -= $t['amount']; else $recu += $t['amount']; }
@@ -1121,7 +1252,8 @@ case 'dashboard': {
         'frais' => ['annee' => $fees['annee'], 'a_reclamer' => $fees['a_reclamer'], 'mois' => $fees['months'][$mois] ?? null], 'projection' => $vue === 'moi' ? $fc : null,
         'equite' => $equity, 'alertes' => $alerts, 'alertes_compte' => $counts, 'budgets' => $budgets, 'prochaine_action' => $next,
         'recurrents' => ['n' => count($abos), 'mensuel' => $fixes, 'prochains' => array_slice(array_values(array_filter($fc['echeances'] ?? [], function ($e) { return $e['montant'] < 0; })), 0, 6)],
-        'partage' => ['partenaire' => $partner['name'] ?? null, 'inclus' => (bool)$theirs], 'solde_depart' => start_balance($u), 'derniere_operation' => an_last_date($mine)]);
+        'partage' => ['inclus' => array_column($partageurs, 'name'), 'prives' => array_values(array_map(function ($x) { return $x['name']; }, array_filter(others($uid), function ($x) use ($partageurs) { return is_active($x) && !in_array((int)$x['id'], array_map('intval', array_column($partageurs, 'id')), true); }))),
+            'moi_partage' => (bool)$p['partage_totaux']], 'solde_depart' => start_balance($u), 'derniere_operation' => an_last_date($mine)]);
 }
 
 /* ---------------------------------------------------------------- alertes */
@@ -1291,7 +1423,7 @@ case 'doc.update': {
     $u = auth(); $in = body();
     $s = db()->prepare('SELECT * FROM docs WHERE id = ? AND user_id = ?'); $s->execute([(int)($in['id'] ?? 0), (int)$u['id']]);
     $d = $s->fetch();
-    if (!$d) fail(404, 'Document introuvable (ou appartenant à votre partenaire).');
+    if (!$d) fail(404, 'Document introuvable (ou appartenant à une autre personne du foyer).');
     $types = doc_types();
     $type = isset($in['type'], $types[$in['type']]) ? $in['type'] : $d['type'];
     $date = array_key_exists('date', $in) ? (date_parse_any((string)$in['date']) ?? $d['doc_date']) : $d['doc_date'];
@@ -1311,7 +1443,7 @@ case 'doc.delete': {
     $u = auth(); $in = body();
     $s = db()->prepare('SELECT * FROM docs WHERE id = ? AND user_id = ?'); $s->execute([(int)($in['id'] ?? 0), (int)$u['id']]);
     $d = $s->fetch();
-    if (!$d) fail(404, 'Document introuvable (ou appartenant à votre partenaire).');
+    if (!$d) fail(404, 'Document introuvable (ou appartenant à une autre personne du foyer).');
     @unlink($DATA_DIR . '/vault/' . basename((string)$d['store']));
     db()->prepare('DELETE FROM docs WHERE id = ?')->execute([(int)$d['id']]);
     db()->prepare('UPDATE statements SET doc_id = NULL WHERE doc_id = ?')->execute([(int)$d['id']]);
@@ -1382,7 +1514,11 @@ case 'docs.zip': {
 case 'security': {
     $u = auth();
     $s = db()->prepare('SELECT ev, ip, ua, info, t FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 60'); $s->execute([(int)$u['id']]);
-    out(200, ['journal' => $s->fetchAll(), 'https' => is_https(), 'chiffrement' => vault_cipher()]);
+    $sauv = json_dec((string)(db()->query("SELECT v FROM meta WHERE k = 'sauvegarde'")->fetchColumn() ?: ''));
+    $echec = json_dec((string)(db()->query("SELECT v FROM meta WHERE k = 'sauvegarde_echec'")->fetchColumn() ?: ''));
+    out(200, ['journal' => $s->fetchAll(), 'https' => is_https(), 'chiffrement' => vault_cipher(),
+        'sauvegarde' => $sauv ? ['t' => (int)$sauv['t'], 'docs' => (int)($sauv['docs'] ?? 0), 'cle' => (bool)($sauv['cle'] ?? true), 'garder' => (int)($sauv['garder'] ?? 0), 'nb' => (int)($sauv['nb'] ?? 0)] : null,
+        'sauvegarde_echec' => $echec ? ['t' => (int)$echec['t'], 'erreur' => (string)($echec['erreur'] ?? '')] : null]);
 }
 
 case 'export': {

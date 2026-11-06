@@ -17,7 +17,7 @@ function letter_items(array $ids, array $byId): array {
 
 /**
  * $c : profile, fees, recurring, forecast, docs, budgets [cat => centimes], subs [clé => ['state','t']],
- *      partner_recurring (liste ou null), partner_name, today
+ *      others_recurring ([[nom, recurrents], …] des personnes qui partagent leur détail), today
  */
 function alerts_build(array $txs, array $c): array {
     $A = [];
@@ -169,15 +169,26 @@ function alerts_build(array $txs, array $c): array {
         $add('abos_total:' . substr($last, 0, 7), 'info', 'abonnement', 'Abonnements : ' . money_fmt($abos) . ' par mois, ' . money_fmt((int)round($abos * 12)) . ' par an',
             implode(', ', array_slice($aboList, 0, 8)) . '. Passez-les en revue une fois par trimestre : on garde ce qu’on utilise vraiment, on alterne les plateformes au lieu de les cumuler.', substr($last, 0, 7), [$lien('#/abonnements', 'Faire le tri')]);
     }
-    // doublons d'abonnements dans le couple
-    if (!empty($c['partner_recurring'])) {
+    // abonnements payés en double (ou plus) dans le foyer
+    if (!empty($c['others_recurring'])) {
         $mine = [];
         foreach ($rec as $r) if ($r['actif'] && $r['category'] === 'abonnements') $mine[$r['key']] = $r;
-        foreach ((array)$c['partner_recurring'] as $p) {
-            if (!$p['actif'] || !isset($mine[$p['key']])) continue;
-            $r = $mine[$p['key']];
-            $add('abo_double:' . $p['key'], 'info', 'abonnement', 'Vous payez tous les deux ' . $r['merchant'],
-                'Vous : ' . money_fmt($r['mensuel']) . ' par mois ; ' . ($c['partner_name'] ?? 'votre partenaire') . ' : ' . money_fmt($p['mensuel']) . ' par mois. Une offre partagée (duo, famille) coûte généralement bien moins que deux abonnements : jusqu’à ' . money_fmt(min($r['annuel'], $p['annuel'])) . ' par an d’économie.',
+        $aussi = [];
+        foreach ((array)$c['others_recurring'] as $o) {
+            foreach ((array)$o['rec'] as $p) {
+                if (!$p['actif'] || !isset($mine[$p['key']])) continue;
+                $aussi[$p['key']][] = ['nom' => (string)$o['nom'], 'mensuel' => (int)$p['mensuel'], 'annuel' => (int)$p['annuel']];
+            }
+        }
+        foreach ($aussi as $key => $autres) {
+            $r = $mine[$key];
+            $noms = array_column($autres, 'nom');
+            $qui = count($noms) === 1 ? 'Vous et ' . $noms[0] . ' payez' : 'Vous, ' . implode(', ', array_slice($noms, 0, -1)) . ' et ' . end($noms) . ' payez';
+            $detail = 'Vous : ' . money_fmt($r['mensuel']) . ' par mois';
+            $eco = $r['annuel'];
+            foreach ($autres as $x) { $detail .= ' ; ' . $x['nom'] . ' : ' . money_fmt($x['mensuel']) . ' par mois'; $eco = min($eco, $x['annuel']); }
+            $add('abo_double:' . $key, 'info', 'abonnement', $qui . ' chacun ' . $r['merchant'],
+                $detail . '. Une offre partagée (duo, famille) coûte généralement bien moins que plusieurs abonnements : au moins ' . money_fmt($eco * count($autres)) . ' par an d’économie possible.',
                 null, [$lien('#/abonnements', 'Voir les abonnements')]);
         }
     }

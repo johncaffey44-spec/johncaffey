@@ -116,9 +116,23 @@ ok($fc['premier_negatif'] !== null, 'découvert anticipé avec 150 € au 6 nove
 $fc2 = an_forecast($txs, $rec, ['jour_paie' => 1], ['solde' => 300000, 'date' => '2026-11-06', 'source' => 'saisi'], '2026-11-06');
 ok($fc2['premier_negatif'] === null && $fc2['par_jour'] > 0, 'pas de découvert avec 3 000 €');
 
-section('Équité du couple');
+section('Équité des dépenses communes');
 $e = an_equity([['id' => 1, 'nom' => 'A', 'revenus' => 300000, 'communes' => 100000, 'verse' => 0, 'recu' => 0], ['id' => 2, 'nom' => 'B', 'revenus' => 100000, 'communes' => 0, 'verse' => 0, 'recu' => 0]], 'prorata');
 ok($e['reequilibrage'] !== null && $e['reequilibrage']['de'] === 'B' && $e['reequilibrage']['montant'] === 25000, 'prorata des revenus : B verse 250 € à A');
+$e3 = an_equity([['id' => 1, 'nom' => 'A', 'revenus' => 200000, 'communes' => 120000, 'verse' => 0, 'recu' => 0], ['id' => 2, 'nom' => 'B', 'revenus' => 200000, 'communes' => 0, 'verse' => 0, 'recu' => 0],
+    ['id' => 3, 'nom' => 'C', 'revenus' => 200000, 'communes' => 0, 'verse' => 0, 'recu' => 0]], 'egal');
+$somme = 0; foreach ($e3['virements'] as $v) { if ($v['a'] === 'A') $somme += $v['montant']; }
+ok(count($e3['virements']) === 2 && $somme === 80000, 'trois personnes à parts égales : B et C versent chacun 400 € à A');
+$e4 = an_equity([['id' => 1, 'nom' => 'A', 'revenus' => 0, 'communes' => 0, 'verse' => 0, 'recu' => 0], ['id' => 2, 'nom' => 'B', 'revenus' => 0, 'communes' => 0, 'verse' => 0, 'recu' => 0]], 'prorata');
+ok($e4['virements'] === [] && $e4['reequilibrage'] === null, 'aucune dépense commune : aucun virement');
+
+section('Abonnements en double dans le foyer');
+$recA = [['key' => 'NETFLIX', 'merchant' => 'NETFLIX', 'category' => 'abonnements', 'actif' => true, 'mensuel' => 1349, 'annuel' => 16188, 'hausse' => null, 'nouveau' => false, 'dernier' => '2026-10-05', 'tx_ids' => []]];
+$recB = [['key' => 'NETFLIX', 'merchant' => 'NETFLIX', 'category' => 'abonnements', 'actif' => true, 'mensuel' => 1349, 'annuel' => 16188]];
+$al3 = alerts_build($txs, ['profile' => [], 'fees' => $f, 'recurring' => array_merge($rec, $recA), 'forecast' => null, 'docs' => [], 'budgets' => [], 'subs' => [], 'today' => '2026-11-06',
+    'others_recurring' => [['nom' => 'Sam', 'rec' => $recB], ['nom' => 'Lou', 'rec' => $recB]]]);
+$dbl = array_values(array_filter($al3, function ($x) { return $x['cle'] === 'abo_double:NETFLIX'; }));
+ok(count($dbl) === 1 && has($dbl[0]['titre'], 'Vous, Sam et Lou') && has($dbl[0]['texte'], 'Lou'), 'Netflix payé trois fois : une seule alerte qui nomme tout le monde');
 
 section('Courriers');
 foreach (array_keys(letters_catalog()) as $lid) {

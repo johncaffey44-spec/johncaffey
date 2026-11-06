@@ -492,10 +492,21 @@ function an_equity(array $people, string $mode = 'prorata'): array {
         $target = (int)round($totCom * $share);
         $out[] = $p + ['part' => round($share * 100, 1), 'contribution' => $contrib, 'cible' => $target, 'ecart' => $contrib - $target];
     }
-    $settle = null;
-    if (count($out) === 2 && $totCom > 0) {
-        [$a, $b] = $out;
-        if (abs($a['ecart']) >= 100) $settle = $a['ecart'] > 0 ? ['de' => $b['nom'], 'a' => $a['nom'], 'montant' => $a['ecart']] : ['de' => $a['nom'], 'a' => $b['nom'], 'montant' => -$a['ecart']];
+    // virements à faire : ceux qui ont trop peu payé versent à ceux qui ont trop payé (le moins de virements possible)
+    $virements = [];
+    if ($totCom > 0 && count($out) >= 2) {
+        $plus = []; $moins = [];
+        foreach ($out as $p) { if ($p['ecart'] > 0) $plus[] = [$p['nom'], $p['ecart']]; elseif ($p['ecart'] < 0) $moins[] = [$p['nom'], -$p['ecart']]; }
+        usort($plus, function ($x, $y) { return $y[1] <=> $x[1]; });
+        usort($moins, function ($x, $y) { return $y[1] <=> $x[1]; });
+        $i = 0; $j = 0;
+        while ($i < count($moins) && $j < count($plus)) {
+            $v = min($moins[$i][1], $plus[$j][1]);
+            if ($v >= 100) $virements[] = ['de' => $moins[$i][0], 'a' => $plus[$j][0], 'montant' => $v];
+            $moins[$i][1] -= $v; $plus[$j][1] -= $v;
+            if ($moins[$i][1] <= 0) $i++;
+            if ($plus[$j][1] <= 0) $j++;
+        }
     }
-    return ['mode' => $mode, 'total_communes' => $totCom, 'personnes' => $out, 'reequilibrage' => $settle];
+    return ['mode' => $mode, 'total_communes' => $totCom, 'personnes' => $out, 'virements' => $virements, 'reequilibrage' => $virements[0] ?? null];
 }
