@@ -313,12 +313,12 @@ switch ($action) {
         // Le QR encode une vraie URL : scanné par l'appareil photo d'un téléphone vierge,
         // il ouvre la page d'installation ; scanné par l'app, le code et le serveur en sont extraits.
         $abs        = base_url();
-        $installUrl = $abs . 'gardien-api.php?install=1&code=' . rawurlencode($code);
+        $installUrl = $abs . self_name() . '?install=1&code=' . rawurlencode($code);
         out(200, ['code' => $code, 'expiresIn' => $PAIR_MINUTES * 60,
             'qr'         => $installUrl,
             'installUrl' => $installUrl,
-            'serverUrl'  => $abs . 'gardien-api.php',
-            'apkUrl'     => $abs . 'gardien-api.php?apk=1']);
+            'serverUrl'  => $abs . self_name(),
+            'apkUrl'     => $abs . self_name() . '?apk=1']);
     }
 
     case 'rename-device': {
@@ -518,12 +518,18 @@ function rrmdir(string $dir): void {
     @rmdir($dir);
 }
 
-/** URL de base du dossier qui contient gardien-api.php (se termine par /). */
+/** URL de base du dossier qui contient ce script (se termine par /). */
 function base_url(): string {
     $scheme = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
     $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
     $dir = preg_replace('#/[^/]*$#', '/', (string)($_SERVER['REQUEST_URI'] ?? '/'));
     return $scheme . '://' . $host . $dir;
+}
+
+/** Nom réel du fichier servi (gardien-api.php, api.php…) : le backend marche sous n'importe quel nom. */
+function self_name(): string {
+    $s = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    return ($s !== '' && str_ends_with($s, '.php')) ? $s : 'gardien-api.php';
 }
 
 /**
@@ -532,8 +538,8 @@ function base_url(): string {
  */
 function install_page(string $code): never {
     $base      = base_url();
-    $apkUrl    = $base . 'gardien-api.php?apk=1';
-    $serverUrl = $base . 'gardien-api.php';
+    $apkUrl    = $base . self_name() . '?apk=1';
+    $serverUrl = $base . self_name();
     $apkExists = is_file(__DIR__ . '/gardien.apk');
     $deep      = 'gardien://pair?u=' . rawurlencode($serverUrl) . '&c=' . rawurlencode($code);
     $c         = htmlspecialchars($code, ENT_QUOTES);

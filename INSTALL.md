@@ -17,8 +17,14 @@ gardien/
 ├─ Installer-Gardien.ps1    (appelé par le .cmd)
 ├─ install.sh              installeur Linux (Apache/nginx) — bonus
 ├─ INSTALL.md              ce guide
+├─ gardien-standalone/     Gardien SEUL, backend nommé api.php, accès par IP (voir son LISEZMOI)
 └─ gardien-antivol/         projet Android Studio (les sources de l'app, pour recompiler)
 ```
+
+> **Gardien tout seul, accessible par IP** (comme tes autres outils internes) : utilise le dossier
+> `gardien-standalone/` — son backend s'appelle `api.php`, le tableau de bord `index.html`. Dépose
+> `api.php` + `index.html` + `gardien.apk` dans un dossier IIS et ouvre `http://<IP-du-serveur>/<dossier>/`.
+> Détails dans `gardien-standalone/LISEZMOI.md`.
 
 ---
 

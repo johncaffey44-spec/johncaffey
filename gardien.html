@@ -209,7 +209,19 @@ label.lbl{display:block;font-weight:560;margin:0 0 6px;color:var(--text-2);font-
 
 <script>
 "use strict";
-const API = new URL('gardien-api.php', location.href).href;
+// Détecté au démarrage : fonctionne que le backend s'appelle api.php (Gardien seul) ou
+// gardien-api.php (à côté du planning). Résolu par rapport à l'URL de la page (donc par IP aussi).
+let API = new URL('gardien-api.php', location.href).href;
+async function detectApi(){
+  for(const name of ['api.php','gardien-api.php']){
+    try{
+      const u=new URL(name,location.href).href;
+      const r=await fetch(u,{cache:'no-store'});
+      const j=await r.json().catch(()=>null);
+      if(j&&j.service==='gardien'){API=u;return;}
+    }catch(e){}
+  }
+}
 const $ = s => document.querySelector(s);
 const el = (t,c,h) => { const n=document.createElement(t); if(c)n.className=c; if(h!=null)n.innerHTML=h; return n; };
 const esc = s => String(s??'').replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
@@ -312,8 +324,9 @@ const timeStr=iso=>iso?new Date(iso).toLocaleTimeString('fr-FR',{hour:'2-digit',
 const dateTimeStr=iso=>iso?new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 
 async function boot(){
+  await detectApi();
   let st;
-  try{st=await api('status');}catch(e){return showGate('login','Serveur injoignable. Vérifiez que gardien-api.php est à côté de cette page.');}
+  try{st=await api('status');}catch(e){return showGate('login','Serveur injoignable. Vérifiez que api.php (ou gardien-api.php) est à côté de cette page.');}
   if(!st.setup){if(st.needSetupToken)$('#setupTokWrap').classList.remove('hide');return showGate('setup');}
   if(!st.authed)return showGate('login');
   startApp(st);
