@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Gardien · Antivol</title>
+<style>
+/* ============ jetons (cohérents avec D8 Production · Planning) ============ */
+:root{
+  --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:"Cascadia Mono",Consolas,ui-monospace,Menlo,monospace;
+  --bg:#f2f4f6;--surface:#fff;--surface-2:#f7f8fa;--surface-3:#edf0f3;
+  --border:#e1e5ea;--border-2:#ccd2da;
+  --text:#191d23;--text-2:#485261;--text-3:#6d7783;
+  --primary:#1487c9;--primary-2:#0e6da4;--primary-soft:#e7f3fb;
+  --danger:#cf4040;--danger-soft:#fdeceb;--warn:#b4700c;--warn-soft:#fdf2e0;
+  --ok:#2c8f55;--ok-soft:#e7f5ec;--info:#5a6a7d;--info-soft:#eef1f5;
+  --side:#15171b;--side-2:#1c1f25;--side-3:#272b33;--side-tx:#c9cfd8;--side-mu:#7c8593;
+  --r:11px;--r-sm:7px;
+  --sh:0 1px 2px rgba(16,24,40,.06),0 2px 8px rgba(16,24,40,.05);
+  --sh-lg:0 18px 48px rgba(16,24,40,.24);
+}
+html[data-theme=dark]{
+  --bg:#0e1014;--surface:#171a20;--surface-2:#1b1f26;--surface-3:#222730;
+  --border:#2a2f38;--border-2:#3a414b;
+  --text:#e6e9ee;--text-2:#b2bac5;--text-3:#8a939f;
+  --primary:#3ba4e0;--primary-2:#6ab9e9;--primary-soft:#123047;
+  --danger:#ea6a6a;--danger-soft:#381e20;--warn:#e3a145;--warn-soft:#372a13;
+  --ok:#49bd7b;--ok-soft:#14301f;--info:#98a4b3;--info-soft:#212730;
+  --side:#08090b;--side-2:#111318;--side-3:#1c1f26;--side-tx:#c9cfd8;--side-mu:#7c8593;
+  --sh:0 1px 2px rgba(0,0,0,.5);--sh-lg:0 18px 48px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:14px/1.45 var(--font);color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--primary);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{margin:0;font-weight:640;letter-spacing:-.01em}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:8px;border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-4px}
+.ic.sm{width:14px;height:14px}.ic.lg{width:22px;height:22px}
+.mut{color:var(--text-3)}.row{display:flex;align-items:center;gap:8px}.wrap{flex-wrap:wrap}.spacer{flex:1}
+.hide{display:none!important}.trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+/* ============ boutons / champs ============ */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border:1px solid var(--border-2);background:var(--surface);
+  border-radius:var(--r-sm);cursor:pointer;font-weight:560;color:var(--text);transition:.12s;white-space:nowrap}
+.btn:hover{background:var(--surface-3);border-color:var(--text-3)}
+.btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:var(--primary-2);border-color:var(--primary-2)}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.danger:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent;border-color:transparent}
+.btn.ghost:hover{background:var(--surface-3)}
+.btn.sm{padding:6px 10px;font-size:13px}
+.field{display:block;width:100%;padding:9px 12px;border:1px solid var(--border-2);border-radius:var(--r-sm);
+  background:var(--surface);transition:.12s}
+.field:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+label.lbl{display:block;font-weight:560;margin:0 0 6px;color:var(--text-2);font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:560;
+  background:var(--info-soft);color:var(--info)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}.badge.off{background:var(--surface-3);color:var(--text-3)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--text-3);flex:none}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+
+/* ============ écrans d'accueil (setup / login) ============ */
+.gate{min-height:100%;display:grid;place-items:center;padding:24px}
+.gate .box{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:var(--sh-lg);padding:28px}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:4px}
+.brand .mark{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,var(--primary),var(--primary-2));
+  display:grid;place-items:center;color:#fff;box-shadow:var(--sh)}
+.brand h1{font-size:19px}
+.gate .sub{color:var(--text-3);font-size:13px;margin:2px 0 20px}
+.gate .err{background:var(--danger-soft);color:var(--danger);padding:9px 12px;border-radius:var(--r-sm);font-size:13px;margin-bottom:14px}
+
+/* ============ coquille application ============ */
+#app{min-height:100%;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:12px;padding:11px 18px;background:var(--side);color:var(--side-tx);
+  border-bottom:1px solid #000}
+.topbar .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary-2));
+  display:grid;place-items:center;color:#fff}
+.topbar h1{font-size:16px;color:#fff}
+.topbar .btn{background:var(--side-3);border-color:transparent;color:var(--side-tx)}
+.topbar .btn:hover{background:var(--side-2);color:#fff}
+.main{flex:1;display:grid;grid-template-columns:340px 1fr;min-height:0}
+.listcol{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.listhead{display:flex;align-items:center;gap:8px;padding:13px 15px;border-bottom:1px solid var(--border)}
+.listhead h2{font-size:14px}
+.devlist{overflow:auto;padding:8px;display:flex;flex-direction:column;gap:7px}
+.devcard{text-align:left;width:100%;border:1px solid var(--border);background:var(--surface);border-radius:var(--r-sm);
+  padding:11px 12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;transition:.12s}
+.devcard:hover{border-color:var(--border-2);background:var(--surface-2)}
+.devcard.sel{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.devcard .nm{font-weight:600;display:flex;align-items:center;gap:7px}
+.devcard .meta{display:flex;gap:10px;color:var(--text-3);font-size:12px;flex-wrap:wrap}
+.detailcol{overflow:auto;padding:20px;min-height:0}
+.empty{height:100%;display:grid;place-items:center;color:var(--text-3);text-align:center;padding:30px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh)}
+.card.pad{padding:16px}
+.grid-cmd{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:9px}
+.cmd{display:flex;flex-direction:column;align-items:center;gap:7px;padding:14px 8px;border:1px solid var(--border-2);
+  border-radius:var(--r-sm);background:var(--surface);cursor:pointer;font-weight:560;transition:.12s;text-align:center}
+.cmd:hover{background:var(--surface-2);border-color:var(--primary);color:var(--primary)}
+.cmd.danger:hover{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
+.cmd .ic{width:24px;height:24px}
+.stat{display:flex;flex-direction:column;gap:2px}
+.stat .k{font-size:12px;color:var(--text-3)}
+.stat .v{font-weight:600;font-size:15px}
+.mapwrap{border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;background:var(--surface-3);position:relative}
+.mapwrap iframe{width:100%;height:260px;border:0;display:block}
+.log{font-size:13px;max-height:260px;overflow:auto}
+.log .line{display:flex;gap:10px;padding:7px 2px;border-bottom:1px solid var(--border)}
+.log .line:last-child{border-bottom:0}
+.log .t{color:var(--text-3);white-space:nowrap;font-variant-numeric:tabular-nums}
+.sectitle{font-size:12px;font-weight:640;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);margin:0 0 10px}
+
+/* ============ fenêtres modales ============ */
+.overlay{position:fixed;inset:0;background:rgba(10,14,20,.5);display:grid;place-items:center;padding:20px;z-index:50;backdrop-filter:blur(2px)}
+.modal{width:100%;max-width:440px;background:var(--surface);border-radius:var(--r);box-shadow:var(--sh-lg);overflow:hidden}
+.modal header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
+.modal header h3{font-size:16px}
+.modal .body{padding:18px}
+.modal footer{padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:9px;justify-content:flex-end;background:var(--surface-2)}
+.codebox{font:600 28px/1.2 var(--mono);letter-spacing:.06em;text-align:center;padding:16px;border:2px dashed var(--border-2);
+  border-radius:var(--r-sm);background:var(--surface-2);user-select:all}
+.info{background:var(--info-soft);color:var(--info);padding:11px 13px;border-radius:var(--r-sm);font-size:13px;display:flex;gap:9px}
+.info.visible{background:var(--primary-soft);color:var(--primary-2)}
+
+/* ============ toast ============ */
+#toasts{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:90}
+.toast{background:var(--side);color:#fff;padding:10px 15px;border-radius:var(--r-sm);box-shadow:var(--sh-lg);font-size:13px;
+  display:flex;align-items:center;gap:9px;animation:pop .2s}
+.toast.ok{background:var(--ok)}.toast.err{background:var(--danger)}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}}
+
+@media(max-width:760px){
+  .main{grid-template-columns:1fr}
+  .listcol{border-right:0;border-bottom:1px solid var(--border);max-height:38vh}
+  .listcol.hasSel{display:none}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21c4-5 7-7.5 7-11a7 7 0 10-14 0c0 3.5 3 6 7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10.5 19a1.5 1.5 0 003 0"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M5 5h14v10H9l-4 4z"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2 6m2 2v-5h-5"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14a8 8 0 01-10-10 8 8 0 1010 10z"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M15 5h4v14h-4M14 12H4m0 0l3-3m-3 3l3 3"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-batt" viewBox="0 0 24 24"><rect x="3" y="8" width="16" height="9" rx="2"/><path d="M21 11v3"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H20m-3 0v3m-2-3v2"/></symbol>
+</defs></svg>
+
+<!-- ============ ÉCRAN DE MISE EN SERVICE ============ -->
+<div id="setup" class="gate hide">
+  <div class="box">
+    <div class="brand"><div class="mark"><svg class="ic lg"><use href="#i-shield"/></svg></div><h1>Gardien</h1></div>
+    <p class="sub">Première mise en service : créez le mot de passe du tableau de bord. C'est lui qui protège l'accès à vos appareils.</p>
+    <div id="setupErr" class="err hide"></div>
+    <div id="setupTokWrap" class="hide" style="margin-bottom:14px">
+      <label class="lbl">Jeton de mise en service</label>
+      <input id="setupTok" class="field" placeholder="fourni dans gardien-api.php">
+    </div>
+    <label class="lbl">Mot de passe administrateur</label>
+    <input id="setupPw" class="field" type="password" autocomplete="new-password" placeholder="8 caractères minimum">
+    <label class="lbl" style="margin-top:12px">Confirmer</label>
+    <input id="setupPw2" class="field" type="password" autocomplete="new-password">
+    <button id="setupBtn" class="btn primary" style="width:100%;justify-content:center;margin-top:18px">Créer et se connecter</button>
+  </div>
+</div>
+
+<!-- ============ ÉCRAN DE CONNEXION ============ -->
+<div id="login" class="gate hide">
+  <div class="box">
+    <div class="brand"><div class="mark"><svg class="ic lg"><use href="#i-shield"/></svg></div><h1>Gardien</h1></div>
+    <p class="sub">Tableau de bord antivol — vos propres appareils.</p>
+    <div id="loginErr" class="err hide"></div>
+    <label class="lbl">Mot de passe administrateur</label>
+    <input id="loginPw" class="field" type="password" autocomplete="current-password" placeholder="••••••••">
+    <button id="loginBtn" class="btn primary" style="width:100%;justify-content:center;margin-top:18px">Se connecter</button>
+  </div>
+</div>
+
+<!-- ============ APPLICATION ============ -->
+<div id="app" class="hide">
+  <div class="topbar">
+    <div class="mark"><svg class="ic"><use href="#i-shield"/></svg></div>
+    <h1>Gardien</h1>
+    <span class="badge off" id="hbBadge" title="Intervalle de relève des appareils">relève 20 s</span>
+    <div class="spacer"></div>
+    <button class="btn sm" id="themeBtn" title="Thème clair / sombre"><svg class="ic sm"><use href="#i-moon"/></svg></button>
+    <button class="btn sm" id="pwBtn" title="Changer le mot de passe"><svg class="ic sm"><use href="#i-key"/></svg></button>
+    <button class="btn sm" id="logoutBtn"><svg class="ic sm"><use href="#i-out"/></svg>Quitter</button>
+  </div>
+  <div class="main">
+    <div class="listcol" id="listcol">
+      <div class="listhead">
+        <h2>Mes appareils</h2>
+        <span class="badge off" id="devCount">0</span>
+        <div class="spacer"></div>
+        <button class="btn ghost sm" id="refreshBtn" title="Rafraîchir"><svg class="ic sm"><use href="#i-refresh"/></svg></button>
+        <button class="btn primary sm" id="addBtn"><svg class="ic sm"><use href="#i-plus"/></svg>Ajouter</button>
+      </div>
+      <div class="devlist" id="devlist"></div>
+    </div>
+    <div class="detailcol" id="detailcol">
+      <div class="empty" id="emptyState">
+        <div>
+          <svg class="ic" style="width:46px;height:46px;opacity:.4"><use href="#i-phone"/></svg>
+          <p style="margin:12px 0 4px;font-weight:600;color:var(--text-2)">Aucun appareil sélectionné</p>
+          <p class="mut" style="max-width:320px">Choisissez un appareil à gauche, ou cliquez sur <b>Ajouter</b> pour appairer un nouveau téléphone.</p>
+        </div>
+      </div>
+      <div id="detail" class="hide"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const API = new URL('gardien-api.php', location.href).href;
+const $ = s => document.querySelector(s);
+const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h != null) n.innerHTML = h; return n; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+async function api(action, data = {}) {
+  const r = await fetch(API, {
+    method: 'POST', credentials: 'same-origin', cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ action }, data)),
+  });
+  let body = null; try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw Object.assign(new Error((body && body.error) || ('Erreur ' + r.status)), { status: r.status });
+  return body || {};
+}
+
+function toast(msg, kind) {
+  const t = el('div', 'toast ' + (kind || ''), esc(msg));
+  $('#toasts').appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = '.3s'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+const icon = (id, cls) => `<svg class="ic ${cls||''}"><use href="#i-${id}"/></svg>`;
+
+/* ---------------- thème ---------------- */
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('gardien-theme', t); } catch (e) {}
+  const b = $('#themeBtn'); if (b) b.innerHTML = icon(t === 'dark' ? 'sun' : 'moon', 'sm');
+}
+try { applyTheme(localStorage.getItem('gardien-theme') || (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light')); } catch (e) {}
+
+/* ---------------- état ---------------- */
+const S = { devices: [], currentId: null, detail: null, heartbeat: 20, stale: 120, listTimer: 0, detailTimer: 0 };
+
+/* ---------------- formatage ---------------- */
+function ago(iso) {
+  if (!iso) return 'jamais';
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 45) return 'à l’instant';
+  if (s < 90) return 'il y a 1 min';
+  if (s < 3600) return 'il y a ' + Math.round(s / 60) + ' min';
+  if (s < 7200) return 'il y a 1 h';
+  if (s < 86400) return 'il y a ' + Math.round(s / 3600) + ' h';
+  return 'le ' + new Date(iso).toLocaleDateString('fr-FR') + ' à ' + new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+const timeStr = iso => iso ? new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+const dateTimeStr = iso => iso ? new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+
+/* ======================================================= démarrage */
+async function boot() {
+  let st;
+  try { st = await api('status'); }
+  catch (e) { return showGate('login', 'Serveur injoignable. Vérifiez que gardien-api.php est bien déposé à côté de cette page.'); }
+  if (!st.setup) { if (st.needSetupToken) $('#setupTokWrap').classList.remove('hide'); return showGate('setup'); }
+  if (!st.authed) return showGate('login');
+  startApp(st);
+}
+function showGate(which, err) {
+  $('#app').classList.add('hide');
+  $('#setup').classList.toggle('hide', which !== 'setup');
+  $('#login').classList.toggle('hide', which !== 'login');
+  if (err) { const e = $('#' + which + 'Err'); if (e) { e.textContent = err; e.classList.remove('hide'); } }
+  setTimeout(() => { const f = which === 'setup' ? $('#setupPw') : $('#loginPw'); f && f.focus(); }, 60);
+}
+
+/* setup */
+$('#setupBtn').onclick = async () => {
+  const pw = $('#setupPw').value, pw2 = $('#setupPw2').value, tok = $('#setupTok').value;
+  const err = $('#setupErr'); err.classList.add('hide');
+  if (pw.length < 8) return (err.textContent = 'Mot de passe trop court (8 caractères minimum).', err.classList.remove('hide'));
+  if (pw !== pw2) return (err.textContent = 'Les deux mots de passe ne correspondent pas.', err.classList.remove('hide'));
+  try { await api('setup', { password: pw, setupToken: tok }); const st = await api('status'); startApp(st); }
+  catch (e) { err.textContent = e.message; err.classList.remove('hide'); }
+};
+$('#setupPw2').addEventListener('keydown', e => { if (e.key === 'Enter') $('#setupBtn').click(); });
+
+/* login */
+$('#loginBtn').onclick = async () => {
+  const pw = $('#loginPw').value, err = $('#loginErr'); err.classList.add('hide');
+  try { await api('login', { password: pw }); const st = await api('status'); startApp(st); }
+  catch (e) { err.textContent = e.message; err.classList.remove('hide'); $('#loginPw').select(); }
+};
+$('#loginPw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#loginBtn').click(); });
+
+/* ======================================================= application */
+function startApp(st) {
+  S.heartbeat = st.heartbeat || 20;
+  $('#setup').classList.add('hide'); $('#login').classList.add('hide'); $('#app').classList.remove('hide');
+  $('#hbBadge').textContent = 'relève ' + S.heartbeat + ' s';
+  refreshList();
+  clearInterval(S.listTimer); S.listTimer = setInterval(refreshList, 5000);
+}
+$('#logoutBtn').onclick = async () => { try { await api('logout'); } catch (e) {} clearInterval(S.listTimer); clearInterval(S.detailTimer); location.reload(); };
+$('#themeBtn').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+$('#refreshBtn').onclick = () => { refreshList(); if (S.currentId) refreshDetail(); };
+$('#addBtn').onclick = openPairing;
+$('#pwBtn').onclick = openChangePw;
+
+async function refreshList() {
+  let r; try { r = await api('list-devices'); } catch (e) { if (e.status === 401) return location.reload(); return; }
+  S.devices = r.devices || []; S.stale = r.stale || 120;
+  $('#devCount').textContent = S.devices.length;
+  const box = $('#devlist'); box.innerHTML = '';
+  if (!S.devices.length) {
+    box.appendChild(el('div', 'mut', '<div style="padding:18px;text-align:center">Aucun appareil.<br>Cliquez sur <b>Ajouter</b>.</div>'));
+  }
+  for (const d of S.devices) {
+    const c = el('button', 'devcard' + (d.id === S.currentId ? ' sel' : ''));
+    const batt = d.battery == null ? '' : `<span>${icon('batt','sm')} ${d.battery}%${d.charging ? ' ⚡' : ''}</span>`;
+    const loc = d.location ? `<span>${icon('pin','sm')} position connue</span>` : `<span class="mut">position inconnue</span>`;
+    c.innerHTML = `<div class="nm"><span class="dot ${d.online?'on':''}"></span>${icon('phone','sm')}<span class="trunc">${esc(d.name)}</span>
+        ${d.pending ? `<span class="badge warn" style="margin-left:auto">${d.pending} en attente</span>` : ''}</div>
+      <div class="meta">${esc(d.model||'—')}</div>
+      <div class="meta">${batt}${loc}<span>${d.online?'<span style="color:var(--ok)">en ligne</span>':('vu '+ago(d.lastSeen))}</span></div>`;
+    c.onclick = () => selectDevice(d.id);
+    box.appendChild(c);
+  }
+}
+
+function selectDevice(id) {
+  S.currentId = id;
+  $('#listcol').classList.add('hasSel');
+  document.querySelectorAll('.devcard').forEach(c => c.classList.remove('sel'));
+  $('#emptyState').classList.add('hide'); $('#detail').classList.remove('hide');
+  refreshList(); refreshDetail();
+  clearInterval(S.detailTimer); S.detailTimer = setInterval(refreshDetail, 5000);
+}
+function backToList() {
+  S.currentId = null; S.detail = null; clearInterval(S.detailTimer);
+  $('#listcol').classList.remove('hasSel');
+  $('#detail').classList.add('hide'); $('#emptyState').classList.remove('hide');
+  refreshList();
+}
+
+async function refreshDetail() {
+  if (!S.currentId) return;
+  let r; try { r = await api('device', { id: S.currentId }); }
+  catch (e) { if (e.status === 404) return backToList(); return; }
+  S.detail = r; renderDetail(r);
+}
+
+function mapEmbed(loc) {
+  const d = Math.max(0.0015, Math.min(0.02, (loc.acc || 100) / 60000));
+  const bbox = [loc.lng - d, loc.lat - d, loc.lng + d, loc.lat + d].join(',');
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${loc.lat},${loc.lng}`;
+  const osm = `https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}#map=17/${loc.lat}/${loc.lng}`;
+  const gmaps = `https://www.google.com/maps?q=${loc.lat},${loc.lng}`;
+  return `<div class="mapwrap"><iframe loading="lazy" referrerpolicy="no-referrer" src="${src}"></iframe></div>
+    <div class="row wrap mut" style="margin-top:9px;font-size:13px">
+      <span>${icon('pin','sm')} ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}</span>
+      ${loc.acc!=null?`<span>précision ~${Math.round(loc.acc)} m</span>`:''}
+      <span>relevé ${ago(loc.at)}</span>
+      <span class="spacer"></span>
+      <a href="${osm}" target="_blank" rel="noreferrer">OpenStreetMap ↗</a>
+      <a href="${gmaps}" target="_blank" rel="noreferrer">Google Maps ↗</a>
+    </div>`;
+}
+
+function renderDetail(r) {
+  const d = r.device;
+  const online = d.lastSeen && (Date.now() - new Date(d.lastSeen).getTime()) / 1000 <= (r.stale || 120);
+  const cmds = [
+    { t: 'locate', ic: 'pin', label: 'Localiser' },
+    { t: 'ring', ic: 'bell', label: 'Faire sonner' },
+    { t: 'lock', ic: 'lock', label: 'Verrouiller' },
+    { t: 'message', ic: 'msg', label: 'Message' },
+    { t: 'photo', ic: 'cam', label: 'Photo' },
+    { t: 'wipe', ic: 'trash', label: 'Effacer', danger: true },
+  ];
+  const detail = $('#detail');
+  detail.innerHTML = `
+    <div class="row wrap" style="margin-bottom:16px">
+      <button class="btn ghost sm" id="backBtn" style="display:none">${icon('back','sm')}</button>
+      <div>
+        <div class="row"><span class="dot ${online?'on':''}"></span>
+          <h2 style="font-size:20px">${esc(d.name)}</h2>
+          <button class="btn ghost sm" id="renameBtn" title="Renommer">✎</button></div>
+        <div class="mut">${esc(d.model||'Modèle inconnu')} · ${online?'<span style="color:var(--ok)">en ligne</span>':('vu '+ago(d.lastSeen))}</div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn sm" id="rmBtn">${icon('trash','sm')} Retirer</button>
+    </div>
+
+    <div class="card pad" style="margin-bottom:16px">
+      <div class="row wrap" style="gap:26px">
+        <div class="stat"><span class="k">Batterie</span><span class="v">${d.battery==null?'—':d.battery+'%'+(d.charging?' ⚡':'')}</span></div>
+        <div class="stat"><span class="k">Dernière relève</span><span class="v">${d.lastSeen?ago(d.lastSeen):'—'}</span></div>
+        <div class="stat"><span class="k">Appairé</span><span class="v">${d.enrolledAt?dateTimeStr(d.enrolledAt):'—'}</span></div>
+      </div>
+    </div>
+
+    <p class="sectitle">Commandes</p>
+    <div class="grid-cmd" id="cmdGrid" style="margin-bottom:18px">
+      ${cmds.map(c=>`<button class="cmd ${c.danger?'danger':''}" data-cmd="${c.t}">${icon(c.ic)}<span>${c.label}</span></button>`).join('')}
+    </div>
+
+    <p class="sectitle">${icon('pin','sm')} Dernière position</p>
+    <div style="margin-bottom:18px">${d.location?mapEmbed(d.location):'<div class="card pad mut">Aucune position connue. Envoyez la commande <b>Localiser</b>.</div>'}</div>
+
+    <div class="row" style="gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">
+        <p class="sectitle">Journal des commandes</p>
+        <div class="card pad log">${(r.commands||[]).slice().reverse().map(c=>`
+          <div class="line"><span class="t">${dateTimeStr(c.resultAt||c.createdAt)}</span>
+            <span class="spacer"></span><b>${esc(c.type)}</b>
+            <span class="badge ${c.status==='done'?'ok':c.status==='failed'?'warn':'off'}">${c.status==='done'?'exécutée':c.status==='failed'?'échec':'en attente'}</span></div>
+          ${c.result?`<div class="line mut" style="font-size:12px">${esc(c.result)}</div>`:''}`).join('')||'<div class="mut">Rien pour l’instant.</div>'}
+        </div>
+      </div>
+      <div style="flex:1;min-width:240px">
+        <p class="sectitle">Évènements</p>
+        <div class="card pad log">${(r.events||[]).slice().reverse().map(e=>`
+          <div class="line"><span class="t">${dateTimeStr(e.at)}</span><span>${esc(e.text)}</span></div>`).join('')||'<div class="mut">—</div>'}
+        </div>
+      </div>
+    </div>`;
+
+  detail.querySelector('#backBtn') && (detail.querySelector('#backBtn').onclick = backToList);
+  if (window.matchMedia('(max-width:760px)').matches) { const bb = detail.querySelector('#backBtn'); if (bb) bb.style.display = 'inline-flex'; }
+  detail.querySelector('#renameBtn').onclick = () => renameDevice(d);
+  detail.querySelector('#rmBtn').onclick = () => removeDevice(d);
+  detail.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => sendCommand(d, b.dataset.cmd, online));
+}
+
+/* ---------------- commandes ---------------- */
+async function sendCommand(d, type, online) {
+  if (type === 'message') return promptMessage(d);
+  if (type === 'wipe') return confirmWipe(d);
+  if (type === 'ring') return promptRing(d);
+  if (type === 'photo') return promptPhoto(d);
+  try {
+    await api('send-command', { id: d.id, type });
+    toast(cmdLabel(type) + ' envoyée' + (online ? '' : ' (hors ligne : à la reconnexion)'), 'ok');
+    refreshDetail();
+  } catch (e) { toast(e.message, 'err'); }
+}
+const cmdLabel = t => ({ locate: 'Localisation', ring: 'Sonnerie', lock: 'Verrouillage', message: 'Message', photo: 'Photo', wipe: 'Effacement' }[t] || t);
+
+function modal(title, iconId, bodyHtml, footerHtml) {
+  const root = $('#modalRoot');
+  root.innerHTML = `<div class="overlay"><div class="modal">
+    <header>${icon(iconId)}<h3>${esc(title)}</h3></header>
+    <div class="body">${bodyHtml}</div><footer>${footerHtml}</footer></div></div>`;
+  root.querySelector('.overlay').addEventListener('mousedown', e => { if (e.target.classList.contains('overlay')) closeModal(); });
+  return root.querySelector('.modal');
+}
+function closeModal() { $('#modalRoot').innerHTML = ''; }
+
+function promptMessage(d) {
+  const m = modal('Message sur l’écran', 'msg',
+    `<p class="mut" style="margin:0 0 12px">Ce texte s’affiche en plein écran sur <b>${esc(d.name)}</b>, par-dessus le verrouillage.</p>
+     <textarea id="msgTxt" class="field" rows="3" maxlength="500" placeholder="Ex. : Téléphone perdu — merci d’appeler le 06…"></textarea>`,
+    `<button class="btn" onclick="closeModal()">Annuler</button><button class="btn primary" id="msgOk">${icon('msg','sm')} Afficher</button>`);
+  const ta = m.querySelector('#msgTxt'); ta.focus();
+  m.querySelector('#msgOk').onclick = async () => {
+    const text = ta.value.trim(); if (!text) return;
+    try { await api('send-command', { id: d.id, type: 'message', text }); closeModal(); toast('Message envoyé', 'ok'); refreshDetail(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+function promptRing(d) {
+  const m = modal('Faire sonner', 'bell',
+    `<p class="mut" style="margin:0 0 12px">Joue une alarme forte sur <b>${esc(d.name)}</b>, même en silencieux.</p>
+     <label class="lbl">Durée</label>
+     <select id="ringSec" class="field"><option value="15">15 secondes</option><option value="30" selected>30 secondes</option><option value="60">1 minute</option><option value="120">2 minutes</option></select>`,
+    `<button class="btn" onclick="closeModal()">Annuler</button><button class="btn primary" id="ringOk">${icon('bell','sm')} Sonner</button>`);
+  m.querySelector('#ringOk').onclick = async () => {
+    try { await api('send-command', { id: d.id, type: 'ring', seconds: +m.querySelector('#ringSec').value }); closeModal(); toast('Sonnerie envoyée', 'ok'); refreshDetail(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+function promptPhoto(d) {
+  const m = modal('Prendre une photo', 'cam',
+    `<div class="info visible">${icon('shield','sm')}<span>Une notification « Gardien a pris une photo » s’affiche sur l’appareil. C’est volontaire : Gardien ne photographie jamais en cachette.</span></div>
+     <label class="lbl" style="margin-top:14px">Caméra</label>
+     <select id="camSel" class="field"><option value="front">Avant (selfie)</option><option value="back">Arrière</option></select>`,
+    `<button class="btn" onclick="closeModal()">Annuler</button><button class="btn primary" id="camOk">${icon('cam','sm')} Photographier</button>`);
+  m.querySelector('#camOk').onclick = async () => {
+    try { await api('send-command', { id: d.id, type: 'photo', camera: m.querySelector('#camSel').value }); closeModal(); toast('Photo demandée', 'ok'); refreshDetail(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+function confirmWipe(d) {
+  const m = modal('Effacer l’appareil', 'trash',
+    `<div class="info" style="background:var(--danger-soft);color:var(--danger)">${icon('trash','sm')}<span><b>Irréversible.</b> Réinitialise <b>${esc(d.name)}</b> en configuration d’usine. À n’utiliser qu’en dernier recours (vol avéré).</span></div>
+     <label class="lbl" style="margin-top:14px">Tapez <b>EFFACER</b> pour confirmer</label>
+     <input id="wipeC" class="field" autocomplete="off" placeholder="EFFACER">`,
+    `<button class="btn" onclick="closeModal()">Annuler</button><button class="btn danger" id="wipeOk" disabled>${icon('trash','sm')} Effacer définitivement</button>`);
+  const inp = m.querySelector('#wipeC'), ok = m.querySelector('#wipeOk');
+  inp.oninput = () => ok.disabled = inp.value !== 'EFFACER'; inp.focus();
+  ok.onclick = async () => {
+    try { await api('send-command', { id: d.id, type: 'wipe', confirm: 'EFFACER' }); closeModal(); toast('Effacement envoyé', 'ok'); refreshDetail(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+function renameDevice(d) {
+  const m = modal('Renommer', 'phone',
+    `<label class="lbl">Nom de l’appareil</label><input id="rnI" class="field" value="${esc(d.name)}" maxlength="60">`,
+    `<button class="btn" onclick="closeModal()">Annuler</button><button class="btn primary" id="rnOk">Enregistrer</button>`);
+  const inp = m.querySelector('#rnI'); inp.focus(); inp.select();
+  m.querySelector('#rnOk').onclick = async () => {
+    try { await api('rename-device', { id: d.id, name: inp.value.trim() }); closeModal(); refreshDetail(); refreshList(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+function removeDevice(d) {
+  const m = modal('Retirer du parc', 'trash',
+    `<p class="mut">Retire <b>${esc(d.name)}</b> du tableau de bord et invalide son jeton. L’application reste installée sur le téléphone ; il faudra la réappairer pour le piloter de nouveau.</p>`,
+    `<button class="btn" onclick="closeModal()">Annuler</button><button class="btn danger" id="rmOk">Retirer</button>`);
+  m.querySelector('#rmOk').onclick = async () => {
+    try { await api('remove-device', { id: d.id }); closeModal(); toast('Appareil retiré', 'ok'); backToList(); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+/* ---------------- appairage ---------------- */
+async function openPairing() {
+  const m = modal('Ajouter un appareil', 'plus',
+    `<div class="info visible">${icon('shield','sm')}<span>Installez l’app <b>Gardien</b> sur votre téléphone, puis saisissez l’adresse du serveur et ce code. L’app restera <b>visible</b> (icône + notification permanente).</span></div>
+     <div style="text-align:center;margin:16px 0 6px"><div class="mut" style="font-size:13px;margin-bottom:8px">Code d’appairage (valable 30 min, usage unique)</div>
+       <div class="codebox" id="pairCode">· · · ·</div></div>
+     <div class="mut" style="font-size:13px;text-align:center" id="pairUrl"></div>`,
+    `<button class="btn" onclick="closeModal()">Fermer</button><button class="btn primary" id="pairNew">${icon('refresh','sm')} Nouveau code</button>`);
+  async function gen() {
+    m.querySelector('#pairCode').textContent = '…';
+    try {
+      const r = await api('new-pairing', { name: 'Nouvel appareil' });
+      m.querySelector('#pairCode').textContent = r.code;
+      try { const q = JSON.parse(r.qr); m.querySelector('#pairUrl').innerHTML = 'Serveur : <b>' + esc(q.url) + '</b>'; } catch (e) {}
+    } catch (e) { m.querySelector('#pairCode').textContent = '⚠'; toast(e.message, 'err'); }
+  }
+  m.querySelector('#pairNew').onclick = gen;
+  gen();
+}
+
+/* ---------------- mot de passe ---------------- */
+function openChangePw() {
+  const m = modal('Changer le mot de passe', 'key',
+    `<label class="lbl">Mot de passe actuel</label><input id="cpCur" class="field" type="password" autocomplete="current-password">
+     <label class="lbl" style="margin-top:12px">Nouveau (8 car. min.)</label><input id="cpNext" class="field" type="password" autocomplete="new-password">`,
+    `<button class="btn" onclick="closeModal()">Annuler</button><button class="btn primary" id="cpOk">Enregistrer</button>`);
+  m.querySelector('#cpOk').onclick = async () => {
+    try { await api('change-password', { current: m.querySelector('#cpCur').value, next: m.querySelector('#cpNext').value }); closeModal(); toast('Mot de passe modifié', 'ok'); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+window.closeModal = closeModal;
+boot();
+</script>
+</body>
+</html>
