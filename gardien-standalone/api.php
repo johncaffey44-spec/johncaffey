@@ -544,42 +544,91 @@ function install_page(string $code): never {
     $deep      = 'gardien://pair?u=' . rawurlencode($serverUrl) . '&c=' . rawurlencode($code);
     $c         = htmlspecialchars($code, ENT_QUOTES);
     $s         = htmlspecialchars($serverUrl, ENT_QUOTES);
-    $dl        = $apkExists
-        ? '<a class="btn primary" id="dl" href="' . htmlspecialchars($apkUrl, ENT_QUOTES) . '" download="gardien.apk">Telecharger l\'application</a>'
-        : '<p class="warn">L\'application n\'est pas encore deposee sur ce serveur. Demandez le fichier a votre administrateur, ou installez-le manuellement.</p>';
-    // Téléchargement automatique à l'ouverture (scan du QR) : iframe cachée vers l'APK (attachment).
-    // Un seul téléchargement, et le bouton visible reste en place comme secours manuel.
-    $auto      = $apkExists
-        ? '<iframe src="' . htmlspecialchars($apkUrl, ENT_QUOTES) . '" style="display:none" title="telechargement"></iframe>'
-        : '';
+    $apkUrlEsc = htmlspecialchars($apkUrl, ENT_QUOTES);
+    $deepEsc   = htmlspecialchars($deep, ENT_QUOTES);
+    $downloadBtn = $apkExists
+        ? '<a class="btn primary" id="dl" href="' . $apkUrlEsc . '" download="gardien.apk"><svg viewBox="0 0 24 24" class="ic"><path d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5M6 18.5h12"/></svg>Télécharger l\'application</a>'
+        : '<div class="alert">L\'application n\'est pas encore déposée sur ce serveur. Demandez le fichier à votre administrateur.</div>';
+    // Téléchargement automatique à l'ouverture (scan du QR) : iframe cachée vers l'APK (attachment),
+    // un seul téléchargement ; le bouton visible reste en secours.
+    $auto      = $apkExists ? '<iframe src="' . $apkUrlEsc . '" style="display:none" title="telechargement"></iframe>' : '';
+    $codeBlock = $c !== '' ? '<div class="codewrap"><span class="lbl">Code d\'appairage</span><div class="code">' . $c . '</div></div>' : '';
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: no-store');
-    echo '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
-       . '<meta name="viewport" content="width=device-width, initial-scale=1"><title>Installer Gardien</title><style>'
-       . ':root{--b:#1487c9;--b2:#0e6da4}*{box-sizing:border-box}'
-       . 'body{margin:0;font:16px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;color:#191d23;background:#f2f4f6}'
-       . 'header{background:var(--b2);color:#fff;padding:22px 20px;display:flex;align-items:center;gap:10px}'
-       . 'header b{font-size:20px}.wrap{max-width:520px;margin:0 auto;padding:18px}'
-       . '.card{background:#fff;border:1px solid #e1e5ea;border-radius:12px;padding:18px;margin:14px 0;box-shadow:0 1px 3px rgba(16,24,40,.06)}'
-       . '.step{font-weight:650;color:var(--b2);margin:0 0 8px}'
-       . '.btn{display:block;text-align:center;padding:14px;border-radius:9px;font-weight:600;text-decoration:none;margin:8px 0}'
-       . '.btn.primary{background:var(--b);color:#fff}.btn.ghost{background:#fff;color:var(--b);border:1px solid var(--b)}'
-       . '.code{font:700 26px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-align:center;background:#f7f8fa;border:2px dashed #ccd2da;border-radius:8px;padding:14px;user-select:all}'
-       . '.mut{color:#6d7783;font-size:14px}.warn{color:#b4700c;background:#fdf2e0;padding:10px;border-radius:8px}'
-       . '</style></head><body>'
-       . '<header><span style="font-size:24px">🛡</span><b>Gardien</b></header><div class="wrap">'
-       . '<div class="card"><p class="step">1. Installer l\'application</p>'
-       . '<p class="mut">Le telechargement demarre automatiquement.</p>'
-       . $dl
-       . '<p class="mut">S\'il ne demarre pas, touchez le bouton. Si Android bloque : autorisez « Installer des applications inconnues » pour votre navigateur, puis ouvrez le fichier telecharge.</p></div>'
-       . '<div class="card"><p class="step">2. Ouvrir et appairer</p>'
-       . '<a class="btn ghost" href="' . htmlspecialchars($deep, ENT_QUOTES) . '">Ouvrir dans Gardien</a>'
-       . '<p class="mut">Une fois l\'app installee, ce bouton l\'ouvre deja remplie. Sinon, saisissez a la main :</p>'
-       . '<p class="mut">Serveur : <b>' . $s . '</b></p>'
-       . ($c !== '' ? '<p class="mut">Code :</p><div class="code">' . $c . '</div>' : '')
-       . '</div>'
-       . '<p class="mut" style="text-align:center">Gardien est <b>visible</b> sur l\'appareil (icone + notification permanente). Pour vos propres appareils uniquement.</p>'
-       . '</div>' . $auto . '</body></html>';
+    echo <<<HTML
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Installer Gardien</title>
+<style>
+  :root{--b:#1487c9;--b2:#0e6da4;--bg:#eef1f4;--card:#fff;--tx:#1a1f26;--mut:#6b7684;--bd:#e4e8ed;
+    --ok:#2c8f55;--warn:#b4700c;--warn-bg:#fdf3e2;--sh:0 1px 2px rgba(16,24,40,.05),0 8px 24px rgba(16,24,40,.07)}
+  @media (prefers-color-scheme:dark){:root{--bg:#0c0e12;--card:#161a20;--tx:#e8ebef;--mut:#95a0ad;--bd:#262b33;
+    --b:#3ba4e0;--b2:#64b6e8;--warn:#e3a145;--warn-bg:#352611;--sh:0 1px 2px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.55)}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif;
+    color:var(--tx);background:var(--bg);-webkit-font-smoothing:antialiased;line-height:1.5}
+  .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .hero{background:linear-gradient(135deg,var(--b),var(--b2));color:#fff;padding:36px 22px 32px;text-align:center}
+  .badge{width:66px;height:66px;margin:0 auto 14px;border-radius:19px;background:rgba(255,255,255,.17);
+    display:flex;align-items:center;justify-content:center}
+  .badge svg{width:36px;height:36px;fill:none;stroke:#fff;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .hero h1{margin:0;font-size:25px;font-weight:690;letter-spacing:-.02em}
+  .hero p{margin:5px 0 0;opacity:.92;font-size:14px}
+  .wrap{max-width:460px;margin:-18px auto 0;padding:0 16px 30px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px;margin:16px 0;box-shadow:var(--sh)}
+  .head{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+  .num{width:30px;height:30px;border-radius:50%;background:var(--b);color:#fff;font-weight:700;font-size:15px;
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .head h2{margin:0;font-size:17px;font-weight:650}
+  .btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:15px;border-radius:12px;
+    font-weight:620;font-size:16px;text-decoration:none;margin:10px 0;transition:transform .12s}
+  .btn.primary{background:var(--b);color:#fff;box-shadow:0 6px 16px rgba(20,135,201,.28)}
+  .btn.primary:active{transform:translateY(1px)}
+  .btn.ghost{background:transparent;color:var(--b);border:1.5px solid var(--b)}
+  .mut{color:var(--mut);font-size:13.5px;margin:8px 0 0}
+  .srv{font-size:13.5px;margin:12px 0 0;color:var(--mut)}.srv b{color:var(--tx);word-break:break-all}
+  .codewrap{margin:12px 0 0}
+  .lbl{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 6px}
+  .code{font:700 27px/1.1 ui-monospace,"Cascadia Mono",Consolas,monospace;letter-spacing:.08em;text-align:center;
+    background:var(--bg);border:2px dashed var(--bd);border-radius:12px;padding:16px;user-select:all;color:var(--tx)}
+  .alert{background:var(--warn-bg);color:var(--warn);padding:13px;border-radius:12px;font-size:14px;font-weight:500}
+  .foot{display:flex;gap:9px;align-items:flex-start;color:var(--mut);font-size:12.5px;margin:18px 4px 0;line-height:1.45}
+  .foot svg{width:17px;height:17px;flex:none;margin-top:1px;stroke:var(--ok);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+  <div class="hero">
+    <div class="badge"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg></div>
+    <h1>Gardien</h1>
+    <p>Installation de l'application antivol</p>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <div class="head"><div class="num">1</div><h2>Installer l'application</h2></div>
+      <p class="mut">Le téléchargement démarre automatiquement.</p>
+      {$downloadBtn}
+      <p class="mut">S'il ne démarre pas, touchez le bouton. Si Android prévient (Play Protect ou « sources inconnues »), choisissez <b>Installer quand même</b>.</p>
+    </div>
+    <div class="card">
+      <div class="head"><div class="num">2</div><h2>Ouvrir et appairer</h2></div>
+      <a class="btn ghost" href="{$deepEsc}"><svg viewBox="0 0 24 24" class="ic"><path d="M14 5h5v5M19 5l-9 9M19 13v6H5V5h6"/></svg>Ouvrir dans Gardien</a>
+      <p class="mut">Une fois l'app installée, ce bouton l'ouvre déjà remplie — l'appairage se fait tout seul. Sinon, saisissez à la main&nbsp;:</p>
+      <p class="srv">Serveur&nbsp;: <b>{$s}</b></p>
+      {$codeBlock}
+    </div>
+    <div class="foot">
+      <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+      <span>Gardien reste <b>visible</b> sur l'appareil (icône + notification permanente). Pour vos propres appareils uniquement.</span>
+    </div>
+  </div>
+  {$auto}
+</body>
+</html>
+HTML;
     exit;
 }
 
