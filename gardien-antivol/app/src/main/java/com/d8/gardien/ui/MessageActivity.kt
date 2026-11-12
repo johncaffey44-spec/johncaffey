@@ -32,7 +32,7 @@ class MessageActivity : Activity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val text = intent.getStringExtra(EXTRA_TEXT).orEmpty().ifBlank { "Message de l'administrateur." }
+        val msg = intent.getStringExtra(EXTRA_TEXT).orEmpty().ifBlank { "Message de l'administrateur." }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -48,7 +48,7 @@ class MessageActivity : Activity() {
             gravity = Gravity.CENTER
         })
         root.addView(TextView(this).apply {
-            this.text = text
+            this.text = msg
             setTextColor(Color.WHITE)
             textSize = 26f
             gravity = Gravity.CENTER
