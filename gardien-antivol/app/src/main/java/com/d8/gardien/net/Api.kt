@@ -88,4 +88,17 @@ object Api {
         }
         return HeartbeatResult(cmds, r.optInt("heartbeat", 20))
     }
+
+    /** Envoie une photo (JPEG encodé en base64) au serveur, en réponse à une commande « photo ». */
+    fun uploadPhoto(serverUrl: String, deviceId: String, deviceToken: String, commandId: String, camera: String, jpegBase64: String): Boolean {
+        val r = post(serverUrl, JSONObject().apply {
+            put("action", "upload-photo")
+            put("deviceId", deviceId)
+            put("deviceToken", deviceToken)
+            put("commandId", commandId)
+            put("camera", camera)
+            put("image", jpegBase64)
+        })
+        return r.optBoolean("ok", false)
+    }
 }

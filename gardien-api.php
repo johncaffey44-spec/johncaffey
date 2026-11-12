@@ -23,38 +23,42 @@
  *   2. $ALLOWED_NETS limite l'accès du DASHBOARD aux plages IP internes. Les
  *      appareils, eux, peuvent joindre le serveur depuis l'extérieur (mobile),
  *      donc leur authentification repose sur un jeton par appareil, pas sur l'IP.
- *   3. Le dossier data/gardien contient tout (appareils, jetons, positions) :
- *      placez data hors racine web si possible ($DATA_DIR) et sauvegardez-le.
+ *   3. Le dossier data/gardien contient tout (appareils, jetons, positions,
+ *      photos) : placez data hors racine web si possible ($DATA_DIR), et
+ *      sauvegardez-le.
  * -----------------------------------------------------------------------------
  */
 declare(strict_types=1);
 
 /* ------------------------------------------------------------------ réglages */
-$DATA_DIR       = __DIR__ . '/data';          // partagé avec le planning ; idéalement hors racine web
-$GDIR           = $DATA_DIR . '/gardien';     // sous-dossier propre à Gardien
-$ALLOWED_NETS   = ['127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']; // dashboard
-$DEVICE_OPEN    = true;                        // true : les appareils joignent le serveur depuis n'importe quelle IP (réseau mobile)
-$SETUP_TOKEN    = '';                          // si non vide, exigé pour créer le 1er compte admin (sécurise la mise en service)
-$SESSION_IDLE   = 12 * 3600;                   // déconnexion admin après N s sans échange
-$MIN_PASSWORD   = 8;
-$MAX_FAILS      = 8;                            // échecs de connexion admin tolérés par IP…
-$FAIL_WINDOW    = 900;                          // …sur cette durée (s)
-$PAIR_MINUTES   = 30;                           // validité d'un code d'appairage
-$HEARTBEAT_SEC  = 20;                           // intervalle de relève conseillé aux appareils
-$DEVICE_STALE   = 120;                          // au-delà de N s sans relève, l'appareil est « hors ligne »
-$LOC_HISTORY    = 500;                          // positions conservées par appareil
-$EVENT_KEEP     = 1000;                         // lignes de journal conservées par appareil
-$MAX_BYTES      = 8 * 1024 * 1024;              // taille maximale d'une requête (photos : voir note CameraX)
-$TIMEZONE       = 'Europe/Paris';
+$DATA_DIR        = __DIR__ . '/data';          // partagé avec le planning ; idéalement hors racine web
+$GDIR            = $DATA_DIR . '/gardien';     // sous-dossier propre à Gardien
+$ALLOWED_NETS    = ['127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']; // dashboard
+$DEVICE_OPEN     = true;                        // true : les appareils joignent le serveur depuis n'importe quelle IP
+$SETUP_TOKEN     = '';                          // si non vide, exigé pour créer le 1er compte admin
+$SESSION_IDLE    = 12 * 3600;                   // déconnexion admin après N s sans échange
+$MIN_PASSWORD    = 8;
+$MAX_FAILS       = 8;                            // échecs de connexion admin tolérés par IP…
+$FAIL_WINDOW     = 900;                          // …sur cette durée (s)
+$PAIR_MINUTES    = 30;                           // validité d'un code d'appairage
+$HEARTBEAT_SEC   = 20;                           // intervalle de relève conseillé aux appareils
+$DEVICE_STALE    = 120;                          // au-delà de N s sans relève, l'appareil est « hors ligne »
+$LOC_HISTORY     = 500;                          // positions conservées par appareil
+$EVENT_KEEP      = 1000;                         // lignes de journal conservées par appareil
+$MAX_BYTES       = 10 * 1024 * 1024;             // taille maximale d'une requête (photos comprises)
+$MAX_PHOTO_BYTES = 8 * 1024 * 1024;             // taille maximale d'une photo décodée
+$PHOTO_KEEP      = 60;                           // photos conservées par appareil
+$BATTERY_LOW     = 15;                           // seuil (%) d'alerte batterie faible
+$TIMEZONE        = 'Europe/Paris';
 
 date_default_timezone_set($TIMEZONE);
-header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
 header('Cache-Control: no-store');
 
 /* ------------------------------------------------------------------ utilitaires */
 function out(int $code, array $body): never {
+    header('Content-Type: application/json; charset=utf-8');
     http_response_code($code);
     echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
@@ -105,18 +109,14 @@ function mutate_json(string $path, callable $fn): array {
     fclose($h);
     return $data;
 }
-function client_ip(): string {
-    return (string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
-}
+function client_ip(): string { return (string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'); }
 function ip_in_cidr(string $ip, string $cidr): bool {
     if (!str_contains($cidr, '/')) return $ip === $cidr;
     [$net, $bits] = explode('/', $cidr, 2);
     $bits = (int)$bits;
-    $ipb = @inet_pton($ip);
-    $netb = @inet_pton($net);
+    $ipb = @inet_pton($ip); $netb = @inet_pton($net);
     if ($ipb === false || $netb === false || strlen($ipb) !== strlen($netb)) return false;
-    $bytes = intdiv($bits, 8);
-    $rem   = $bits % 8;
+    $bytes = intdiv($bits, 8); $rem = $bits % 8;
     if ($bytes && strncmp($ipb, $netb, $bytes) !== 0) return false;
     if ($rem) {
         $mask = chr(0xFF << (8 - $rem) & 0xFF);
@@ -131,7 +131,6 @@ function ip_allowed(string $ip, array $nets): bool {
 function now_iso(): string { return date('c'); }
 function token(int $bytes = 32): string { return bin2hex(random_bytes($bytes)); }
 function sha(string $s): string { return hash('sha256', $s); }
-/** Code d'appairage lisible : 8 caractères base32 sans voyelles ambiguës. */
 function pairing_code(): string {
     $alphabet = '0123456789BCDFGHJKLMNPQRSTVWXZ';
     $c = '';
@@ -143,73 +142,96 @@ function sstr(mixed $v, int $max = 200): string {
     $s = trim(preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $s) ?? '');
     return mb_substr($s, 0, $max);
 }
+function username_ok(string $u): bool { return (bool)preg_match('/^[A-Za-z0-9._-]{3,32}$/', $u); }
 
 /* ------------------------------------------------------------------ amorçage */
 if (!is_dir($GDIR) && !@mkdir($GDIR, 0770, true) && !is_dir($GDIR)) {
     out(500, ['error' => 'Impossible de créer le dossier de données']);
 }
 if (!is_writable($GDIR)) out(500, ['error' => 'Dossier de données non accessible en écriture']);
-// On verrouille le dossier data côté serveur web (Apache/IIS) comme le fait api.php.
-if (!is_file("$DATA_DIR/.htaccess")) @file_put_contents("$DATA_DIR/.htaccess", "Require all denied\nDeny from all\n");
+// refus d'accès direct au dossier data (Apache puis IIS), comme api.php.
+// Les photos sont servies par PHP (?img=…), jamais par accès direct : cette protection ne les gêne pas.
+if (!file_exists("$DATA_DIR/.htaccess")) @file_put_contents("$DATA_DIR/.htaccess", "Require all denied\nDeny from all\n");
+if (!file_exists("$DATA_DIR/web.config")) @file_put_contents("$DATA_DIR/web.config",
+    '<?xml version="1.0" encoding="UTF-8"?><configuration><system.webServer><security><requestFiltering>'
+  . '<fileExtensions allowUnlisted="false" /></requestFiltering></security></system.webServer></configuration>');
 
-$ADMIN   = "$GDIR/admin.json";        // { hash, createdAt }
-$DEVICES = "$GDIR/devices.json";      // { deviceId: {...} }
-$PAIRS   = "$GDIR/pairings.json";     // { codeHash: {name, expires, createdAt} }
-$FAILS   = "$GDIR/auth-fails.json";   // { ip: {count, until} }
+$ADMINS  = "$GDIR/admins.json";       // { username: {hash, role, createdAt} }  (role: owner|admin)
+$DEVICES = "$GDIR/devices.json";
+$PAIRS   = "$GDIR/pairings.json";
+$FAILS   = "$GDIR/auth-fails.json";
 $SESSDIR = "$GDIR/sessions";
-$CMDDIR  = "$GDIR/commands";          // commands/<deviceId>.json : [ {id,type,...} ]
-$LOCDIR  = "$GDIR/locations";         // locations/<deviceId>.json : [ {lat,lng,acc,at} ]
-$EVTDIR  = "$GDIR/events";            // events/<deviceId>.json : [ {at,kind,text} ]
+$CMDDIR  = "$GDIR/commands";
+$LOCDIR  = "$GDIR/locations";
+$EVTDIR  = "$GDIR/events";
+$PHOTODIR = "$GDIR/photos";           // photos/<deviceId>/<photoId>.jpg + _index.json
 @is_dir($SESSDIR) || @mkdir($SESSDIR, 0770, true);
 
-/* ------------------------------------------------------------------ requête */
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
-    // Un GET sert juste de sonde de présence pour le dashboard (comme api.php).
-    out(200, ['ok' => true, 'service' => 'gardien', 'setup' => is_file($ADMIN), 'heartbeat' => $HEARTBEAT_SEC]);
+/* ============================ service d'IMAGES (GET) ======================= */
+/* Les <img> du tableau de bord chargent les photos par GET ; le cookie de
+   session admin est envoyé automatiquement (même origine). */
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+    $img = sstr($_GET['img'] ?? '', 120);
+    if ($img !== '') {
+        if (!ip_allowed(client_ip(), $ALLOWED_NETS) || !current_session()) { http_response_code(403); exit; }
+        if (!preg_match('#^([a-f0-9]{1,40})/([a-f0-9]{1,40})$#', $img, $m)) { http_response_code(400); exit; }
+        $file = "$PHOTODIR/{$m[1]}/{$m[2]}.jpg";
+        if (!is_file($file)) { http_response_code(404); exit; }
+        header('Content-Type: image/jpeg');
+        header('Cache-Control: private, max-age=86400');
+        readfile($file);
+        exit;
+    }
+    // sonde de présence pour le dashboard
+    out(200, ['ok' => true, 'service' => 'gardien', 'setup' => is_file($ADMINS), 'heartbeat' => $HEARTBEAT_SEC]);
 }
+
+/* ------------------------------------------------------------------ requête POST */
 $in     = body_in();
 $action = sstr($in['action'] ?? '', 40);
 $ip     = client_ip();
 
 /* ======================= chemin APPAREIL (jeton par appareil) ============== */
-/* Ces actions viennent du téléphone : authentification par jeton, pas par IP. */
-if ($action === 'enroll' || $action === 'heartbeat') {
+if ($action === 'enroll' || $action === 'heartbeat' || $action === 'upload-photo') {
     if (!$DEVICE_OPEN && !ip_allowed($ip, $ALLOWED_NETS)) out(403, ['error' => 'Accès refusé']);
     device_endpoint($action, $in);
-    exit; // device_endpoint termine toujours par out()
+    exit;
 }
 
 /* ======================= chemin ADMIN (dashboard) ========================== */
 if (!ip_allowed($ip, $ALLOWED_NETS)) out(403, ['error' => 'Accès au tableau de bord refusé depuis cette adresse']);
 
-/* --- première mise en service : créer le compte admin --- */
 if ($action === 'status') {
-    out(200, ['setup' => is_file($ADMIN), 'needSetupToken' => $SETUP_TOKEN !== '', 'heartbeat' => $HEARTBEAT_SEC, 'authed' => (bool)current_session()]);
+    $me = current_session();
+    out(200, ['setup' => is_file($ADMINS), 'needSetupToken' => $SETUP_TOKEN !== '', 'heartbeat' => $HEARTBEAT_SEC,
+        'authed' => (bool)$me, 'user' => $me['user'] ?? null, 'role' => $me['role'] ?? null]);
 }
 if ($action === 'setup') {
-    if (is_file($ADMIN)) out(409, ['error' => 'Déjà configuré']);
+    if (is_file($ADMINS)) out(409, ['error' => 'Déjà configuré']);
     if ($SETUP_TOKEN !== '' && !hash_equals($SETUP_TOKEN, sstr($in['setupToken'] ?? '', 200))) {
         out(403, ['error' => 'Jeton de mise en service invalide']);
     }
+    $user = sstr($in['username'] ?? 'admin', 32) ?: 'admin';
+    if (!username_ok($user)) out(400, ['error' => 'Identifiant invalide (3–32 caractères : lettres, chiffres . _ -)']);
     $pw = (string)($in['password'] ?? '');
     if (mb_strlen($pw) < $MIN_PASSWORD) out(400, ['error' => "Mot de passe trop court (≥ $MIN_PASSWORD caractères)"]);
-    write_json($ADMIN, ['hash' => password_hash($pw, PASSWORD_DEFAULT), 'createdAt' => now_iso()]);
-    $sid = start_session();
-    out(200, ['ok' => true, 'sid' => $sid]);
+    write_json($ADMINS, [$user => ['hash' => password_hash($pw, PASSWORD_DEFAULT), 'role' => 'owner', 'createdAt' => now_iso()]]);
+    $sid = start_session($user, 'owner');
+    out(200, ['ok' => true, 'sid' => $sid, 'user' => $user, 'role' => 'owner']);
 }
-
-/* --- connexion admin --- */
 if ($action === 'login') {
     fail_gate();
-    if (!is_file($ADMIN)) out(409, ['error' => 'Non configuré']);
-    $admin = read_json($ADMIN);
-    if (!password_verify((string)($in['password'] ?? ''), (string)($admin['hash'] ?? ''))) {
-        fail_bump();
-        out(401, ['error' => 'Mot de passe incorrect']);
-    }
+    if (!is_file($ADMINS)) out(409, ['error' => 'Non configuré']);
+    $user = sstr($in['username'] ?? '', 32);
+    $admins = read_json($ADMINS);
+    $a = $admins[$user] ?? null;
+    $ok = $a && password_verify((string)($in['password'] ?? ''), (string)$a['hash']);
+    // comparaison à durée ~constante même si l'utilisateur n'existe pas
+    if (!$a) password_verify((string)($in['password'] ?? ''), '$2y$12$0000000000000000000000.0000000000000000000000000000000000');
+    if (!$ok) { fail_bump(); out(401, ['error' => 'Identifiant ou mot de passe incorrect']); }
     fail_reset();
-    $sid = start_session();
-    out(200, ['ok' => true, 'sid' => $sid]);
+    $sid = start_session($user, (string)($a['role'] ?? 'admin'));
+    out(200, ['ok' => true, 'sid' => $sid, 'user' => $user, 'role' => $a['role'] ?? 'admin']);
 }
 
 /* --- à partir d'ici : session admin obligatoire --- */
@@ -227,19 +249,16 @@ switch ($action) {
         foreach ($devs as $id => $d) {
             $last = strtotime((string)($d['lastSeen'] ?? '')) ?: 0;
             $list[] = [
-                'id'       => $id,
-                'name'     => $d['name'] ?? $id,
-                'model'    => $d['model'] ?? '',
-                'online'   => $last && (time() - $last) <= $DEVICE_STALE,
-                'lastSeen' => $d['lastSeen'] ?? null,
-                'battery'  => $d['battery'] ?? null,
-                'charging' => $d['charging'] ?? null,
-                'location' => $d['location'] ?? null,
-                'pending'  => count(pending_commands($id)),
+                'id' => $id, 'name' => $d['name'] ?? $id, 'model' => $d['model'] ?? '',
+                'online' => $last && (time() - $last) <= $DEVICE_STALE,
+                'lastSeen' => $d['lastSeen'] ?? null, 'battery' => $d['battery'] ?? null,
+                'charging' => $d['charging'] ?? null, 'location' => $d['location'] ?? null,
+                'lowBattery' => isset($d['battery']) && $d['battery'] !== null && (int)$d['battery'] <= $BATTERY_LOW && empty($d['charging']),
+                'pending' => count(pending_commands($id)),
             ];
         }
         usort($list, fn($a, $b) => strcmp((string)$b['lastSeen'], (string)$a['lastSeen']));
-        out(200, ['devices' => $list, 'heartbeat' => $HEARTBEAT_SEC, 'stale' => $DEVICE_STALE]);
+        out(200, ['devices' => $list, 'heartbeat' => $HEARTBEAT_SEC, 'stale' => $DEVICE_STALE, 'batteryLow' => $BATTERY_LOW]);
     }
 
     case 'device': {
@@ -251,9 +270,10 @@ switch ($action) {
         out(200, [
             'device'    => ['id' => $id] + $d,
             'commands'  => array_slice(read_json("$CMDDIR/$id.json"), -50),
-            'locations' => array_slice(read_json("$LOCDIR/$id.json"), -200),
+            'locations' => array_slice(read_json("$LOCDIR/$id.json"), -300),
             'events'    => array_slice(read_json("$EVTDIR/$id.json"), -100),
-            'stale'     => $DEVICE_STALE,
+            'photos'    => array_slice(read_json("$PHOTODIR/$id/_index.json"), -$PHOTO_KEEP),
+            'stale'     => $DEVICE_STALE, 'batteryLow' => $BATTERY_LOW,
         ]);
     }
 
@@ -261,24 +281,19 @@ switch ($action) {
         $name = sstr($in['name'] ?? '', 60) ?: 'Appareil';
         $code = pairing_code();
         mutate_json($PAIRS, function ($p) use ($code, $name, $PAIR_MINUTES) {
-            // purge des codes expirés au passage
             $p = array_filter($p, fn($x) => ($x['expires'] ?? 0) > time());
             $p[sha($code)] = ['name' => $name, 'expires' => time() + $PAIR_MINUTES * 60, 'createdAt' => now_iso()];
             return $p;
         });
-        // Charge utile du QR : l'appli y lit l'URL du serveur et le code.
         $base = (($_SERVER['HTTPS'] ?? '') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
               . preg_replace('#/[^/]*$#', '/', (string)($_SERVER['REQUEST_URI'] ?? '/'));
-        out(200, ['code' => $code, 'expiresIn' => $PAIR_MINUTES * 60, 'qr' => json_encode(['v' => 1, 'url' => $base . 'gardien-api.php', 'code' => $code], JSON_UNESCAPED_SLASHES)]);
+        out(200, ['code' => $code, 'expiresIn' => $PAIR_MINUTES * 60,
+            'qr' => json_encode(['v' => 1, 'url' => $base . 'gardien-api.php', 'code' => $code], JSON_UNESCAPED_SLASHES)]);
     }
 
     case 'rename-device': {
-        $id = sstr($in['id'] ?? '', 64);
-        $name = sstr($in['name'] ?? '', 60);
-        mutate_json($DEVICES, function ($d) use ($id, $name) {
-            if (isset($d[$id])) $d[$id]['name'] = $name ?: $d[$id]['name'];
-            return $d;
-        });
+        $id = sstr($in['id'] ?? '', 64); $name = sstr($in['name'] ?? '', 60);
+        mutate_json($DEVICES, function ($d) use ($id, $name) { if (isset($d[$id])) $d[$id]['name'] = $name ?: $d[$id]['name']; return $d; });
         out(200, ['ok' => true]);
     }
 
@@ -286,12 +301,12 @@ switch ($action) {
         $id = sstr($in['id'] ?? '', 64);
         mutate_json($DEVICES, function ($d) use ($id) { unset($d[$id]); return $d; });
         @unlink("$CMDDIR/$id.json"); @unlink("$LOCDIR/$id.json"); @unlink("$EVTDIR/$id.json");
+        rrmdir("$PHOTODIR/$id");
         out(200, ['ok' => true]);
     }
 
     case 'send-command': {
-        $id   = sstr($in['id'] ?? '', 64);
-        $type = sstr($in['type'] ?? '', 24);
+        $id = sstr($in['id'] ?? '', 64); $type = sstr($in['type'] ?? '', 24);
         $allowed = ['locate', 'ring', 'lock', 'message', 'photo', 'wipe'];
         if (!in_array($type, $allowed, true)) out(400, ['error' => 'Commande inconnue']);
         $devs = read_json($DEVICES);
@@ -301,30 +316,54 @@ switch ($action) {
         if ($type === 'ring')    $params['seconds'] = max(5, min(300, (int)($in['seconds'] ?? 30)));
         if ($type === 'photo')   $params['camera'] = in_array(($in['camera'] ?? 'front'), ['front', 'back'], true) ? $in['camera'] : 'front';
         if ($type === 'wipe') {
-            // Garde-fou : l'effacement d'usine est irréversible.
             if (sstr($in['confirm'] ?? '', 10) !== 'EFFACER') out(400, ['error' => 'Confirmation « EFFACER » requise']);
+            $params['scope'] = ($in['scope'] ?? 'full') === 'external' ? 'external' : 'full'; // external = carte SD uniquement
         }
-        $cmd = [
-            'id'        => token(8),
-            'type'      => $type,
-            'params'    => $params,
-            'status'    => 'pending',
-            'createdAt' => now_iso(),
-            'by'        => 'admin',
-        ];
+        $cmd = ['id' => token(8), 'type' => $type, 'params' => $params, 'status' => 'pending',
+            'createdAt' => now_iso(), 'by' => $me['user']];
         mutate_json("$CMDDIR/$id.json", function ($q) use ($cmd) { $q[] = $cmd; return array_slice($q, -200); });
-        log_event($id, 'command', "Commande « $type » envoyée");
+        log_event($id, 'command', "Commande « $type » envoyée par {$me['user']}");
         out(200, ['ok' => true, 'command' => $cmd]);
     }
 
     case 'change-password': {
-        $cur = (string)($in['current'] ?? '');
-        $next = (string)($in['next'] ?? '');
-        $admin = read_json($ADMIN);
-        if (!password_verify($cur, (string)($admin['hash'] ?? ''))) out(401, ['error' => 'Mot de passe actuel incorrect']);
+        $cur = (string)($in['current'] ?? ''); $next = (string)($in['next'] ?? '');
+        $admins = read_json($ADMINS); $u = $me['user'];
+        if (!isset($admins[$u]) || !password_verify($cur, (string)$admins[$u]['hash'])) out(401, ['error' => 'Mot de passe actuel incorrect']);
         if (mb_strlen($next) < $MIN_PASSWORD) out(400, ['error' => "Nouveau mot de passe trop court (≥ $MIN_PASSWORD)"]);
-        $admin['hash'] = password_hash($next, PASSWORD_DEFAULT);
-        write_json($ADMIN, $admin);
+        mutate_json($ADMINS, function ($a) use ($u, $next) { $a[$u]['hash'] = password_hash($next, PASSWORD_DEFAULT); return $a; });
+        out(200, ['ok' => true]);
+    }
+
+    /* ------------------- gestion des administrateurs (propriétaire) -------- */
+    case 'admins': {
+        $admins = read_json($ADMINS);
+        $list = [];
+        foreach ($admins as $u => $a) $list[] = ['username' => $u, 'role' => $a['role'] ?? 'admin', 'createdAt' => $a['createdAt'] ?? null];
+        out(200, ['admins' => $list, 'me' => $me['user'], 'role' => $me['role']]);
+    }
+    case 'add-admin': {
+        if (($me['role'] ?? '') !== 'owner') out(403, ['error' => 'Réservé au propriétaire']);
+        $u = sstr($in['username'] ?? '', 32); $pw = (string)($in['password'] ?? '');
+        if (!username_ok($u)) out(400, ['error' => 'Identifiant invalide (3–32 : lettres, chiffres . _ -)']);
+        if (mb_strlen($pw) < $MIN_PASSWORD) out(400, ['error' => "Mot de passe trop court (≥ $MIN_PASSWORD)"]);
+        $admins = read_json($ADMINS);
+        if (isset($admins[$u])) out(409, ['error' => 'Cet identifiant existe déjà']);
+        $role = ($in['role'] ?? 'admin') === 'owner' ? 'owner' : 'admin';
+        mutate_json($ADMINS, function ($a) use ($u, $pw, $role) {
+            $a[$u] = ['hash' => password_hash($pw, PASSWORD_DEFAULT), 'role' => $role, 'createdAt' => now_iso()]; return $a;
+        });
+        out(200, ['ok' => true]);
+    }
+    case 'remove-admin': {
+        if (($me['role'] ?? '') !== 'owner') out(403, ['error' => 'Réservé au propriétaire']);
+        $u = sstr($in['username'] ?? '', 32);
+        if ($u === $me['user']) out(400, ['error' => 'Impossible de supprimer son propre compte']);
+        $admins = read_json($ADMINS);
+        if (!isset($admins[$u])) out(404, ['error' => 'Compte inconnu']);
+        $owners = array_filter($admins, fn($x) => ($x['role'] ?? '') === 'owner');
+        if (($admins[$u]['role'] ?? '') === 'owner' && count($owners) <= 1) out(400, ['error' => 'Impossible de supprimer le dernier propriétaire']);
+        mutate_json($ADMINS, function ($a) use ($u) { unset($a[$u]); return $a; });
         out(200, ['ok' => true]);
     }
 }
@@ -332,9 +371,9 @@ out(400, ['error' => 'Action inconnue']);
 
 /* ================================================================ fonctions */
 
-/** Point d'entrée des appareils (enrôlement + relève). Termine par out(). */
 function device_endpoint(string $action, array $in): never {
-    global $DEVICES, $PAIRS, $CMDDIR, $LOCDIR, $HEARTBEAT_SEC, $LOC_HISTORY;
+    global $DEVICES, $PAIRS, $CMDDIR, $LOCDIR, $PHOTODIR, $HEARTBEAT_SEC, $LOC_HISTORY,
+           $MAX_PHOTO_BYTES, $PHOTO_KEEP, $BATTERY_LOW;
 
     if ($action === 'enroll') {
         $code  = strtoupper(sstr($in['code'] ?? '', 20));
@@ -343,79 +382,90 @@ function device_endpoint(string $action, array $in): never {
         $pairs = read_json($PAIRS);
         $rec   = $pairs[sha($code)] ?? null;
         if (!$rec || ($rec['expires'] ?? 0) < time()) out(403, ['error' => 'Code d’appairage invalide ou expiré']);
-        // Consomme le code (usage unique).
         mutate_json($PAIRS, function ($p) use ($code) { unset($p[sha($code)]); return $p; });
-        $deviceId    = token(10);
-        $deviceToken = token(32);
+        $deviceId = token(10); $deviceToken = token(32);
         mutate_json($DEVICES, function ($d) use ($deviceId, $deviceToken, $model, $name, $rec) {
-            $d[$deviceId] = [
-                'name'       => $name ?: ($rec['name'] ?? 'Appareil'),
-                'model'      => $model,
-                'token_hash' => sha($deviceToken),
-                'enrolledAt' => now_iso(),
-                'lastSeen'   => now_iso(),
-                'battery'    => null,
-                'charging'   => null,
-                'location'   => null,
-            ];
+            $d[$deviceId] = ['name' => $name ?: ($rec['name'] ?? 'Appareil'), 'model' => $model,
+                'token_hash' => sha($deviceToken), 'enrolledAt' => now_iso(), 'lastSeen' => now_iso(),
+                'battery' => null, 'charging' => null, 'location' => null];
             return $d;
         });
         log_event($deviceId, 'enroll', 'Appareil appairé');
         out(200, ['ok' => true, 'deviceId' => $deviceId, 'deviceToken' => $deviceToken, 'heartbeat' => $HEARTBEAT_SEC]);
     }
 
-    /* --- heartbeat : l'appareil pousse son état + récupère les commandes --- */
+    // authentification appareil (heartbeat + upload-photo)
     $deviceId = sstr($in['deviceId'] ?? '', 64);
     $tok      = sstr($in['deviceToken'] ?? '', 128);
     $devs     = read_json($DEVICES);
     $d        = $devs[$deviceId] ?? null;
     if (!$d || !hash_equals((string)($d['token_hash'] ?? ''), sha($tok))) out(401, ['error' => 'Appareil non reconnu']);
 
-    // État
+    if ($action === 'upload-photo') {
+        $cmdId  = sstr($in['commandId'] ?? '', 32);
+        $camera = in_array(($in['camera'] ?? 'front'), ['front', 'back'], true) ? $in['camera'] : 'front';
+        $data   = base64_decode((string)($in['image'] ?? ''), true);
+        if ($data === false || strlen($data) < 100) out(400, ['error' => 'Image invalide']);
+        if (strlen($data) > $MAX_PHOTO_BYTES) out(413, ['error' => 'Photo trop volumineuse']);
+        if (substr($data, 0, 2) !== "\xFF\xD8") out(400, ['error' => 'JPEG attendu']);
+        $photoId = token(8);
+        $dir = "$PHOTODIR/$deviceId";
+        if (!is_dir($dir)) @mkdir($dir, 0770, true);
+        if (@file_put_contents("$dir/$photoId.jpg", $data) === false) out(500, ['error' => 'Écriture impossible']);
+        mutate_json("$dir/_index.json", function ($x) use ($photoId, $camera, $PHOTO_KEEP, $dir) {
+            $x[] = ['id' => $photoId, 'camera' => $camera, 'at' => now_iso(), 'bytes' => @filesize("$dir/$photoId.jpg") ?: 0];
+            while (count($x) > $PHOTO_KEEP) { $old = array_shift($x); @unlink("$dir/{$old['id']}.jpg"); }
+            return $x;
+        });
+        if ($cmdId !== '') mark_command($deviceId, $cmdId, true, 'Photo reçue');
+        log_event($deviceId, 'photo', "Photo reçue ($camera)");
+        out(200, ['ok' => true, 'photoId' => $photoId]);
+    }
+
+    /* --- heartbeat --- */
     $patch = ['lastSeen' => now_iso()];
     if (isset($in['battery']))  $patch['battery']  = max(0, min(100, (int)$in['battery']));
     if (isset($in['charging'])) $patch['charging'] = (bool)$in['charging'];
 
-    // Position (le cas échéant)
+    // alerte batterie faible (une seule fois par franchissement de seuil)
+    if (isset($patch['battery'])) {
+        $was = $d['battery'] ?? 101;
+        if ($patch['battery'] <= $BATTERY_LOW && $was > $BATTERY_LOW && empty($patch['charging'])) {
+            log_event($deviceId, 'battery', "Batterie faible : {$patch['battery']} %");
+        }
+    }
+
     $loc = $in['location'] ?? null;
     if (is_array($loc) && isset($loc['lat'], $loc['lng'])) {
-        $point = [
-            'lat' => round((float)$loc['lat'], 6),
-            'lng' => round((float)$loc['lng'], 6),
-            'acc' => isset($loc['acc']) ? round((float)$loc['acc'], 1) : null,
-            'at'  => now_iso(),
-        ];
+        $point = ['lat' => round((float)$loc['lat'], 6), 'lng' => round((float)$loc['lng'], 6),
+            'acc' => isset($loc['acc']) ? round((float)$loc['acc'], 1) : null, 'at' => now_iso()];
         $patch['location'] = $point;
-        mutate_json("$LOCDIR/$deviceId.json", function ($h) use ($point, $LOC_HISTORY) {
-            $h[] = $point; return array_slice($h, -$LOC_HISTORY);
-        });
+        mutate_json("$LOCDIR/$deviceId.json", function ($h) use ($point, $LOC_HISTORY) { $h[] = $point; return array_slice($h, -$LOC_HISTORY); });
     }
     mutate_json($DEVICES, function ($all) use ($deviceId, $patch) {
         if (isset($all[$deviceId])) $all[$deviceId] = array_merge($all[$deviceId], $patch);
         return $all;
     });
 
-    // Résultats des commandes exécutées
     $results = is_array($in['results'] ?? null) ? $in['results'] : [];
-    if ($results) {
-        mutate_json("$CMDDIR/$deviceId.json", function ($q) use ($results, $deviceId) {
-            $byId = [];
-            foreach ($results as $r) if (isset($r['id'])) $byId[(string)$r['id']] = $r;
-            foreach ($q as &$c) {
-                if (isset($byId[$c['id']]) && $c['status'] === 'pending') {
-                    $r = $byId[$c['id']];
-                    $c['status'] = !empty($r['ok']) ? 'done' : 'failed';
-                    $c['resultAt'] = now_iso();
-                    if (isset($r['message'])) $c['result'] = sstr($r['message'], 300);
-                    log_event($deviceId, 'result', "« {$c['type']} » : " . ($c['status'] === 'done' ? 'exécutée' : 'échec'));
-                }
-            }
-            return $q;
-        });
-    }
+    foreach ($results as $r) if (isset($r['id'])) mark_command($deviceId, (string)$r['id'], !empty($r['ok']), sstr($r['message'] ?? '', 300));
 
-    // Commandes en attente à renvoyer
     out(200, ['ok' => true, 'commands' => pending_commands($deviceId), 'heartbeat' => $HEARTBEAT_SEC]);
+}
+
+function mark_command(string $deviceId, string $cmdId, bool $ok, string $message): void {
+    global $CMDDIR;
+    mutate_json("$CMDDIR/$deviceId.json", function ($q) use ($cmdId, $ok, $message, $deviceId) {
+        foreach ($q as &$c) {
+            if ($c['id'] === $cmdId && $c['status'] === 'pending') {
+                $c['status'] = $ok ? 'done' : 'failed';
+                $c['resultAt'] = now_iso();
+                if ($message !== '') $c['result'] = $message;
+                log_event($deviceId, 'result', "« {$c['type']} » : " . ($ok ? 'exécutée' : 'échec'));
+            }
+        }
+        return $q;
+    });
 }
 
 function pending_commands(string $id): array {
@@ -432,15 +482,18 @@ function log_event(string $id, string $kind, string $text): void {
     });
 }
 
-/* ---- sessions admin (cookie, fichiers — même principe qu'api.php) ---- */
-function start_session(): string {
+function rrmdir(string $dir): void {
+    if (!is_dir($dir)) return;
+    foreach (scandir($dir) ?: [] as $f) if ($f !== '.' && $f !== '..') { $p = "$dir/$f"; is_dir($p) ? rrmdir($p) : @unlink($p); }
+    @rmdir($dir);
+}
+
+/* ---- sessions admin (cookie, fichiers) ---- */
+function start_session(string $user, string $role): string {
     global $SESSDIR;
     $sid = token(32);
-    write_json("$SESSDIR/$sid.json", ['created' => time(), 'last' => time(), 'ip' => client_ip()]);
-    $secure = !empty($_SERVER['HTTPS']);
-    setcookie('gardien_sid', $sid, [
-        'expires' => 0, 'path' => '/', 'httponly' => true, 'samesite' => 'Strict', 'secure' => $secure,
-    ]);
+    write_json("$SESSDIR/$sid.json", ['created' => time(), 'last' => time(), 'ip' => client_ip(), 'user' => $user, 'role' => $role]);
+    setcookie('gardien_sid', $sid, ['expires' => 0, 'path' => '/', 'httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
     return $sid;
 }
 function current_session(): ?array {
@@ -465,9 +518,7 @@ function end_session(): void {
 function fail_gate(): void {
     global $FAILS, $MAX_FAILS;
     $f = read_json($FAILS)[client_ip()] ?? null;
-    if ($f && ($f['until'] ?? 0) > time() && ($f['count'] ?? 0) >= $MAX_FAILS) {
-        out(429, ['error' => 'Trop de tentatives. Réessayez plus tard.']);
-    }
+    if ($f && ($f['until'] ?? 0) > time() && ($f['count'] ?? 0) >= $MAX_FAILS) out(429, ['error' => 'Trop de tentatives. Réessayez plus tard.']);
 }
 function fail_bump(): void {
     global $FAILS, $FAIL_WINDOW;
@@ -475,9 +526,7 @@ function fail_bump(): void {
         $ip = client_ip();
         $f = $all[$ip] ?? ['count' => 0, 'until' => 0];
         if (($f['until'] ?? 0) < time()) $f = ['count' => 0, 'until' => time() + $FAIL_WINDOW];
-        $f['count']++;
-        $all[$ip] = $f;
-        // purge
+        $f['count']++; $all[$ip] = $f;
         foreach ($all as $k => $v) if (($v['until'] ?? 0) < time() - 3600) unset($all[$k]);
         return $all;
     });

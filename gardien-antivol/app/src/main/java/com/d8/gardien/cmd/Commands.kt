@@ -22,12 +22,18 @@ object Lock {
     }
 }
 
-/** Effacement d'usine (irréversible). Exige l'administration d'appareil ET une confirmation côté serveur. */
+/**
+ * Effacement d'usine (irréversible). Exige l'administration d'appareil ET une confirmation côté serveur.
+ * `externalStorage` ajoute l'effacement de la carte SD / stockage externe. À noter : avec une simple
+ * administration d'appareil (et non « propriétaire d'appareil »), wipeData réinitialise TOUJOURS
+ * l'appareil — il n'existe pas d'effacement de la seule carte SD qui laisse le téléphone utilisable.
+ */
 object Wipe {
-    fun factoryReset(context: Context): Boolean {
+    fun factoryReset(context: Context, externalStorage: Boolean = false): Boolean {
         if (!GardienDeviceAdminReceiver.isActive(context)) return false
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        return runCatching { dpm.wipeData(0) }.isSuccess
+        val flags = if (externalStorage) DevicePolicyManager.WIPE_EXTERNAL_STORAGE else 0
+        return runCatching { dpm.wipeData(flags) }.isSuccess
     }
 }
 

@@ -59,8 +59,9 @@ Installez l'APK sur le téléphone (transfert direct + « sources inconnues », 
 | 🔔 Faire sonner | ✅ | alarme forte même en silencieux, durée réglable, vibration |
 | 🔒 Verrouiller | ✅ | `DevicePolicyManager.lockNow()` (administration d'appareil) |
 | 💬 Message | ✅ | notification plein écran par-dessus le verrouillage |
-| 🗑️ Effacer | ✅ | `wipeData()` — double confirmation côté serveur |
-| 📸 Photo | ⏳ | la commande circule ; **capture CameraX + envoi au serveur à l'incrément suivant** |
+| 🗑️ Effacer | ✅ | `wipeData()` — réinitialisation d'usine (option : + carte SD), double confirmation côté serveur |
+| 📸 Photo | ✅ | capture CameraX sans aperçu (avant/arrière) + envoi au serveur, **avec notification visible** |
+| 📷 Scan QR | ✅ | appairage en scannant le QR du tableau de bord (ZXing), ou saisie manuelle |
 
 La relève se fait toutes les ~20 s (réglable côté serveur via `$HEARTBEAT_SEC`). L'appareil **pousse**
 son état et **récupère** les commandes : pas besoin d'ouvrir de port entrant sur le téléphone.
@@ -69,9 +70,10 @@ son état et **récupère** les commandes : pas besoin d'ouvrir de port entrant 
 
 - **Localisation** (dont « en permanence ») : retrouver l'appareil, y compris quand l'app n'est pas à l'écran.
 - **Notifications** : la notification permanente (visibilité) et les messages plein écran.
+- **Caméra** : prendre une photo à distance (toujours **avec une notification** sur l'appareil).
 - **Administration d'appareil** : verrouiller / effacer à distance. Révocable à tout moment dans
   *Paramètres ▸ Sécurité ▸ Applications d'administration*.
-- **Service de premier plan** (`location`+`dataSync`) : maintenir la relève en tâche de fond, **visiblement**.
+- **Service de premier plan** (`location`+`dataSync`, et `camera` le temps d'une photo) : maintenir la relève en tâche de fond, **visiblement**.
 
 ## Limites connues (honnêteté technique)
 
@@ -81,6 +83,8 @@ son état et **récupère** les commandes : pas besoin d'ouvrir de port entrant 
   `USE_FULL_SCREEN_INTENT` ; sinon le message s'affiche en bannière haute priorité.
 - Le démarrage auto après reboot d'un service de type *localisation* peut être limité par l'OS : Gardien
   retombe alors sur le type *dataSync* jusqu'à réouverture de l'app.
+- **Photo en arrière-plan** : Android 12+ exige un service de premier plan de type *caméra* (fait ici) ;
+  la capture est plus fiable quand l'app a été ouverte récemment. L'orientation EXIF n'est pas encore corrigée.
 - Trafic en clair autorisé (`usesCleartextTraffic`) pour les serveurs internes en HTTP — préférez HTTPS.
 
 ## Retirer Gardien proprement

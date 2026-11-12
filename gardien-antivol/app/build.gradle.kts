@@ -45,6 +45,12 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
+    // Capture photo sans Google Play Services
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    // Scan du QR d'appairage
+    implementation(libs.zxing.android.embedded)
     debugImplementation(libs.androidx.ui.tooling)
     // Réseau : HttpURLConnection (JDK) ; JSON : org.json (intégré à Android). Aucune dépendance réseau tierce.
     // Localisation : android.location.LocationManager (pas de Google Play Services).

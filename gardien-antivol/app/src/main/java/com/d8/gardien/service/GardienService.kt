@@ -8,6 +8,7 @@ import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.Build
 import android.os.IBinder
+import android.util.Base64
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
@@ -15,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import com.d8.gardien.Prefs
 import com.d8.gardien.cmd.LocationOnce
 import com.d8.gardien.cmd.Lock
+import com.d8.gardien.cmd.PhotoCapture
 import com.d8.gardien.cmd.Ring
 import com.d8.gardien.cmd.Wipe
 import com.d8.gardien.net.Api
@@ -23,6 +25,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -54,22 +57,28 @@ class GardienService : LifecycleService() {
         return null
     }
 
-    private fun startForegroundVisible() {
+    private fun fgsType(camera: Boolean): Int {
         val hasLoc =
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        var t = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        if (hasLoc) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        if (camera && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+            t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        return t
+    }
+
+    private fun startForegroundVisible() {
         val notif = Notifier.ongoing(this)
-        val full = if (hasLoc)
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        else ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         // Android 12+ interdit de démarrer un service de type « location » depuis l'arrière-plan
         // (ex. au démarrage de l'appareil) : on retombe alors sur « dataSync ».
-        val ok = runCatching {
-            ServiceCompat.startForeground(this, Notifier.ONGOING_ID, notif, full)
-        }.isSuccess
-        if (!ok) runCatching {
-            ServiceCompat.startForeground(this, Notifier.ONGOING_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        }
+        val ok = runCatching { ServiceCompat.startForeground(this, Notifier.ONGOING_ID, notif, fgsType(false)) }.isSuccess
+        if (!ok) runCatching { ServiceCompat.startForeground(this, Notifier.ONGOING_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) }
+    }
+
+    /** Ajoute (ou retire) temporairement le type « caméra » au service — requis sur Android 14 pour photographier. */
+    private fun elevateCamera(on: Boolean) {
+        runCatching { ServiceCompat.startForeground(this, Notifier.ONGOING_ID, Notifier.ongoing(this), fgsType(on)) }
     }
 
     private fun startLoop() {
@@ -135,11 +144,32 @@ class GardienService : LifecycleService() {
                 result(cmd.id, true, "Message affiché")
             }
             "photo" -> {
-                // Honnête : la capture photo (CameraX + envoi au serveur) arrive à l'incrément suivant.
-                result(cmd.id, false, "Photo : module de capture à finaliser")
+                val which = cmd.params.optString("camera", "front").ifBlank { "front" }
+                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    Notifier.action(ctx, "Photo", "Permission caméra non accordée sur cet appareil.")
+                    result(cmd.id, false, "Permission caméra non accordée")
+                } else {
+                    // VISIBLE par conception : notification AVANT la capture.
+                    Notifier.action(ctx, "Photo", "Gardien prend une photo (caméra $which).")
+                    withContext(Dispatchers.Main) { elevateCamera(true) }
+                    val bytes = PhotoCapture.capture(ctx, which)
+                    withContext(Dispatchers.Main) { elevateCamera(false) }
+                    if (bytes == null) {
+                        result(cmd.id, false, "Échec de la capture photo")
+                    } else {
+                        val prefs = Prefs(ctx)
+                        val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        val ok = runCatching {
+                            Api.uploadPhoto(prefs.serverUrl, prefs.deviceId, prefs.deviceToken, cmd.id, which, b64)
+                        }.getOrDefault(false)
+                        // si ok : le serveur a déjà marqué la commande « done » via upload-photo
+                        if (!ok) result(cmd.id, false, "Photo capturée, envoi échoué")
+                    }
+                }
             }
             "wipe" -> {
-                val ok = Wipe.factoryReset(ctx)
+                val external = cmd.params.optString("scope") == "external"
+                val ok = Wipe.factoryReset(ctx, external)
                 result(cmd.id, ok, if (ok) "Effacement d'usine lancé" else "Administration d'appareil non activée")
             }
             else -> result(cmd.id, false, "Commande inconnue")

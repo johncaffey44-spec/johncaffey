@@ -32,6 +32,9 @@ import androidx.core.content.ContextCompat
 import com.d8.gardien.admin.GardienDeviceAdminReceiver
 import com.d8.gardien.net.Api
 import com.d8.gardien.service.GardienService
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,15 +99,35 @@ private fun PairingForm(prefs: Prefs, onPaired: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { res ->
+        val c = res.contents
+        if (c != null) {
+            try { val j = JSONObject(c); url = j.optString("url", url); code = j.optString("code", code).uppercase() }
+            catch (e: Exception) { code = c.trim().uppercase() }
+        }
+    }
+
     Column(Modifier.padding(20.dp)) {
         SectionCard {
             Text("Appairer cet appareil", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Dans le tableau de bord Gardien, cliquez sur « Ajouter » pour obtenir l'adresse du serveur et un code à usage unique.",
+                "Dans le tableau de bord Gardien, cliquez sur « Ajouter », puis scannez le QR ou saisissez l'adresse + le code.",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    scanLauncher.launch(
+                        ScanOptions().setBeepEnabled(false).setOrientationLocked(false)
+                            .setPrompt("Scannez le QR d'appairage affiché dans le tableau de bord")
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)
+            ) { Text("Scanner le QR d'appairage") }
+            Spacer(Modifier.height(14.dp))
+            Text("ou saisissez manuellement :", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 value = url, onValueChange = { url = it.trim() },
                 label = { Text("Adresse du serveur (…/gardien-api.php)") },
@@ -183,7 +206,9 @@ private fun StatusScreen(prefs: Prefs, onUnpair: () -> Unit) {
         )
     }
     var adminActive by remember { mutableStateOf(GardienDeviceAdminReceiver.isActive(context)) }
+    var cameraGranted by remember { mutableStateOf(hasPerm(context, Manifest.permission.CAMERA)) }
 
+    val camLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraGranted = it }
     val locLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         locationGranted = hasPerm(context, Manifest.permission.ACCESS_FINE_LOCATION)
     }
@@ -230,6 +255,9 @@ private fun StatusScreen(prefs: Prefs, onUnpair: () -> Unit) {
             PermRow("Notifications", notifGranted) {
                 notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+        PermRow("Caméra (photo à distance)", cameraGranted) {
+            camLauncher.launch(Manifest.permission.CAMERA)
         }
         PermRow("Administration d'appareil (verrouiller / effacer)", adminActive) {
             val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
