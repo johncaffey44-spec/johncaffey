@@ -539,8 +539,13 @@ function install_page(string $code): never {
     $c         = htmlspecialchars($code, ENT_QUOTES);
     $s         = htmlspecialchars($serverUrl, ENT_QUOTES);
     $dl        = $apkExists
-        ? '<a class="btn primary" href="' . htmlspecialchars($apkUrl, ENT_QUOTES) . '">Telecharger l\'application</a>'
+        ? '<a class="btn primary" id="dl" href="' . htmlspecialchars($apkUrl, ENT_QUOTES) . '" download="gardien.apk">Telecharger l\'application</a>'
         : '<p class="warn">L\'application n\'est pas encore deposee sur ce serveur. Demandez le fichier a votre administrateur, ou installez-le manuellement.</p>';
+    // Téléchargement automatique à l'ouverture (scan du QR) : iframe cachée vers l'APK (attachment).
+    // Un seul téléchargement, et le bouton visible reste en place comme secours manuel.
+    $auto      = $apkExists
+        ? '<iframe src="' . htmlspecialchars($apkUrl, ENT_QUOTES) . '" style="display:none" title="telechargement"></iframe>'
+        : '';
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: no-store');
     echo '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
@@ -558,8 +563,9 @@ function install_page(string $code): never {
        . '</style></head><body>'
        . '<header><span style="font-size:24px">🛡</span><b>Gardien</b></header><div class="wrap">'
        . '<div class="card"><p class="step">1. Installer l\'application</p>'
+       . '<p class="mut">Le telechargement demarre automatiquement.</p>'
        . $dl
-       . '<p class="mut">Si Android bloque : autorisez « Installer des applications inconnues » pour votre navigateur, puis rouvrez le fichier telecharge.</p></div>'
+       . '<p class="mut">S\'il ne demarre pas, touchez le bouton. Si Android bloque : autorisez « Installer des applications inconnues » pour votre navigateur, puis ouvrez le fichier telecharge.</p></div>'
        . '<div class="card"><p class="step">2. Ouvrir et appairer</p>'
        . '<a class="btn ghost" href="' . htmlspecialchars($deep, ENT_QUOTES) . '">Ouvrir dans Gardien</a>'
        . '<p class="mut">Une fois l\'app installee, ce bouton l\'ouvre deja remplie. Sinon, saisissez a la main :</p>'
@@ -567,7 +573,7 @@ function install_page(string $code): never {
        . ($c !== '' ? '<p class="mut">Code :</p><div class="code">' . $c . '</div>' : '')
        . '</div>'
        . '<p class="mut" style="text-align:center">Gardien est <b>visible</b> sur l\'appareil (icone + notification permanente). Pour vos propres appareils uniquement.</p>'
-       . '</div></body></html>';
+       . '</div>' . $auto . '</body></html>';
     exit;
 }
 
