@@ -74,6 +74,7 @@ son état et **récupère** les commandes : pas besoin d'ouvrir de port entrant 
 - **Administration d'appareil** : verrouiller / effacer à distance. Révocable à tout moment dans
   *Paramètres ▸ Sécurité ▸ Applications d'administration*.
 - **Service de premier plan** (`location`+`dataSync`, et `camera` le temps d'une photo) : maintenir la relève en tâche de fond, **visiblement**.
+- **Ne pas limiter la batterie** (exemption d'optimisation) : empêcher le système de couper Gardien sur un téléphone utilisé au quotidien. L'utilisateur l'accorde via une boîte de dialogue système.
 
 ## Limites connues (honnêteté technique)
 
@@ -85,6 +86,11 @@ son état et **récupère** les commandes : pas besoin d'ouvrir de port entrant 
   retombe alors sur le type *dataSync* jusqu'à réouverture de l'app.
 - **Photo en arrière-plan** : Android 12+ exige un service de premier plan de type *caméra* (fait ici) ;
   la capture est plus fiable quand l'app a été ouverte récemment. L'orientation EXIF n'est pas encore corrigée.
+- **Téléphone utilisé au quotidien** : les surcouches Samsung / Xiaomi / Oppo tuent les apps en
+  arrière-plan. Gardien demande l'exemption d'optimisation batterie et se relance via un chien de
+  garde (alarme ~15 min) + au démarrage ; pensez à autoriser son **démarrage automatique** dans les
+  réglages de batterie du constructeur. **Play Protect** peut prévenir à l'installation d'une APK
+  non-Play Store : choisissez « Installer quand même ».
 - Trafic en clair autorisé (`usesCleartextTraffic`) pour les serveurs internes en HTTP — préférez HTTPS.
 
 ## Retirer Gardien proprement

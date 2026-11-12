@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -243,8 +245,10 @@ private fun StatusScreen(prefs: Prefs, onUnpair: () -> Unit) {
     }
     var adminActive by remember { mutableStateOf(GardienDeviceAdminReceiver.isActive(context)) }
     var cameraGranted by remember { mutableStateOf(hasPerm(context, Manifest.permission.CAMERA)) }
+    var battOk by remember { mutableStateOf(isIgnoringBattery(context)) }
 
     val camLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraGranted = it }
+    val battLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { battOk = isIgnoringBattery(context) }
     val locLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         locationGranted = hasPerm(context, Manifest.permission.ACCESS_FINE_LOCATION)
     }
@@ -304,6 +308,16 @@ private fun StatusScreen(prefs: Prefs, onUnpair: () -> Unit) {
                 )
             adminLauncher.launch(i)
         }
+        PermRow("Batterie : ne pas limiter Gardien", battOk) {
+            runCatching {
+                battLauncher.launch(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + context.packageName))
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        InfoBanner("Téléphone utilisé au quotidien : accordez « ne pas limiter la batterie » ci-dessus pour que Gardien ne soit pas coupé. Sur Samsung / Xiaomi / Oppo, autorisez aussi le démarrage automatique de Gardien (Paramètres ▸ Batterie / Applications). À l'installation, si Play Protect prévient, choisissez « Installer quand même ».")
 
         Spacer(Modifier.height(20.dp))
         OutlinedButton(onClick = {
@@ -371,3 +385,6 @@ private fun InfoBanner(text: String) {
 
 private fun hasPerm(context: Context, perm: String): Boolean =
     ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+
+private fun isIgnoringBattery(context: Context): Boolean =
+    (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isIgnoringBatteryOptimizations(context.packageName) ?: false

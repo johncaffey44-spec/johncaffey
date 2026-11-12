@@ -44,6 +44,7 @@ class GardienService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         startForegroundVisible()
+        Watchdog.schedule(this) // filet : relance le service s'il est tué (téléphones OEM agressifs)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

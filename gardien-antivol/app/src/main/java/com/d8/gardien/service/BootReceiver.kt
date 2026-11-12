@@ -9,9 +9,10 @@ import com.d8.gardien.Prefs
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
-        if (action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+        if (action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED || action == Watchdog.ACTION) {
             if (Prefs(context).isEnrolled) {
                 runCatching { GardienService.start(context) }
+                runCatching { Watchdog.schedule(context) } // ré-arme le filet
             }
         }
     }

@@ -80,8 +80,13 @@ gradle wrapper --gradle-version 8.9   # une seule fois
 2. Sur le téléphone, **scannez le QR avec l'appareil photo** : il ouvre une page qui
    propose de **télécharger l'app** (`gardien.apk` servie par le serveur), puis un bouton
    **« Ouvrir dans Gardien »** qui lance l'app **déjà remplie** (serveur + code) → appairage automatique.
-3. Accordez les autorisations proposées (localisation, notifications, caméra) et activez
-   l'**administration d'appareil** (pour verrouillage / effacement). C'est suivi.
+3. Accordez les autorisations proposées (localisation, notifications, caméra), **« ne pas limiter
+   la batterie »**, et activez l'**administration d'appareil** (pour verrouillage / effacement). C'est suivi.
+
+> **Téléphone utilisé au quotidien** (pas seulement un mobile de test) : même procédure. En plus,
+> accordez l'exemption de batterie dans l'app, et sur Samsung / Xiaomi / Oppo autorisez le
+> **démarrage automatique** de Gardien (réglages Batterie du constructeur) — sinon le système peut
+> couper le suivi. Si **Play Protect** prévient à l'installation, choisissez « Installer quand même ».
 
 > Le téléphone a déjà Gardien ? Ouvrez l'app → **Scanner le QR** (bouton dans l'app) : il lit
 > directement le serveur et le code. La saisie manuelle (adresse `…/gardien-api.php` + code) reste possible.

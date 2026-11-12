@@ -23,6 +23,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Survie en arrière-plan sur un téléphone utilisé au quotidien (exemption d'optimisation batterie).
+         L'utilisateur l'accorde lui-même via une boîte de dialogue système : rien de caché. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Message plein écran par-dessus le verrouillage (Android 14 : l'utilisateur peut devoir l'autoriser) -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
