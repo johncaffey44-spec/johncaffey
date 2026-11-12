@@ -35,14 +35,23 @@ gardien/
 1. Décompressez l'archive.
 2. **Double-cliquez `Installer-Gardien.cmd`** et acceptez l'élévation administrateur.
    Le script :
-   - détecte le dossier de votre planning (celui qui contient `api.php`), ou vous le demande ;
-   - y copie `gardien-api.php` et `gardien.html` ;
+   - crée un **dossier dédié dans votre racine web** : `…\wwwroot\gardien\` (comme vos autres
+     outils internes) — sans toucher au planning ;
+   - y déploie la version autonome : **`api.php`** (le backend), **`index.html`** (le tableau
+     de bord), **`gardien.apk`** (l'application) ;
    - crée `data\gardien`, le **protège** (web.config : accès direct refusé) et accorde
-     l'**écriture à IIS** (groupe `IIS_IUSRS`).
-3. À la fin, il affiche l'adresse à ouvrir, par ex. `http://localhost/gardien.html`.
+     l'**écriture à IIS** (`IIS_IUSRS`).
+3. À la fin, il affiche les adresses d'accès :
+   `http://localhost/gardien/` et **`http://<IP-du-serveur>/gardien/`**.
 
-**Méthode manuelle équivalente**, si vous préférez : copiez les deux fichiers à côté de
-`planning-d8.html`, créez `data\gardien`, et donnez à `IIS_IUSRS` le droit « Modifier » sur `data`.
+> Changer le nom du dossier :
+> ```
+> powershell -ExecutionPolicy Bypass -File Installer-Gardien.ps1 -Name antivol
+> ```
+
+**Méthode manuelle équivalente** : créez `…\wwwroot\gardien\`, copiez-y `gardien-api.php`
+renommé **`api.php`** et `gardien.html` renommé **`index.html`** (plus `gardien.apk`), créez
+`data\gardien`, et donnez à `IIS_IUSRS` le droit « Modifier » sur `data`.
 
 ## 1 bis. Serveur — Linux (si un jour vous migrez)
 
