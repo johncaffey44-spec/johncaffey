@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Réseau -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Localisation (antivol : retrouver l'appareil) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Caméra (photo antivol, prise AVEC notification visible sur l'appareil) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
+    <!-- Service de premier plan VISIBLE (notification permanente) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Survie en arrière-plan sur un téléphone utilisé au quotidien (exemption d'optimisation batterie).
+         L'utilisateur l'accorde lui-même via une boîte de dialogue système : rien de caché. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Message plein écran par-dessus le verrouillage (Android 14 : l'utilisateur peut devoir l'autoriser) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- Serveur interne souvent en HTTP sur le réseau local : le trafic en clair est autorisé.
+         HTTPS reste fortement recommandé dès que l'appareil sort du réseau interne. -->
+
+
+    <application
+        android:name=".GardienApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.Gardien">
+
+        <!-- Écran principal : appairage + état. VISIBLE dans le menu des applications. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Lien profond d'appairage : gardien://pair?u=<serveur>&c=<code>
+                 (bouton « Ouvrir dans Gardien » de la page d'installation). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="gardien" android:host="pair" />
+            </intent-filter>
+        </activity>
+
+        <!-- Message plein écran affiché par-dessus le verrouillage -->
+        <activity
+            android:name=".ui.MessageActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:showOnLockScreen="true"
+            android:theme="@style/Theme.Gardien.Message" />
+
+        <!-- Service de premier plan : relève périodique + exécution des commandes.
+             foregroundServiceType requis depuis Android 14 (targetSdk 34). -->
+        <service
+            android:name=".service.GardienService"
+            android:exported="false"
+            android:foregroundServiceType="location|dataSync|camera" />
+
+        <!-- Relance le service après un redémarrage -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Administration d'appareil : verrouillage et effacement à distance (API Android légitime).
+             L'utilisateur l'active explicitement depuis l'écran principal ; il peut la désactiver
+             à tout moment dans Paramètres › Sécurité › Applications d'administration. -->
+        <receiver
+            android:name=".admin.GardienDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>

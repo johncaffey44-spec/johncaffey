@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Thème de base (l'UI principale est en Jetpack Compose ; ce thème sert d'enveloppe). -->
+    <style name="Theme.Gardien" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/gardien_blue_dark</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+
+    <!-- Thème du message plein écran -->
+    <style name="Theme.Gardien.Message" parent="Theme.Gardien">
+        <item name="android:windowBackground">@color/gardien_blue_dark</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
