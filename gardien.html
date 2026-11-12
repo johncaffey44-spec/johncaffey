@@ -528,7 +528,7 @@ function removeDevice(d){
 }
 
 async function openPairing(){
-  const m=modal('Ajouter un appareil','plus',`<div class="info visible">${icon('shield','sm')}<span>Installez <b>Gardien</b> sur le téléphone, puis scannez le QR ou saisissez l’adresse + le code. L’app reste <b>visible</b>.</span></div>
+  const m=modal('Ajouter un appareil','plus',`<div class="info visible">${icon('shield','sm')}<span>Scannez ce QR avec <b>l’appareil photo</b> du téléphone : il ouvre la page d’installation (télécharger l’app → ouvrir → appairage auto). Si Gardien est déjà installé, scannez-le depuis l’app. L’app reste <b>visible</b>.</span></div>
     <div class="qrbox" id="pairQr"></div>
     <div style="text-align:center;margin:4px 0"><div class="mut" style="font-size:13px;margin-bottom:6px">Code (valable 30 min, usage unique)</div><div class="codebox" id="pairCode">· · · ·</div></div>
     <div class="mut" style="font-size:13px;text-align:center;margin-top:8px" id="pairUrl"></div>`,
@@ -538,7 +538,8 @@ async function openPairing(){
     try{
       const r=await api('new-pairing',{name:'Nouvel appareil'});
       m.querySelector('#pairCode').textContent=r.code;
-      try{m.querySelector('#pairQr').innerHTML=QR.svg(r.qr,190);const q=JSON.parse(r.qr);m.querySelector('#pairUrl').innerHTML='Serveur : <b>'+esc(q.url)+'</b>';}catch(e){}
+      m.querySelector('#pairQr').innerHTML=QR.svg(r.qr,190);
+      m.querySelector('#pairUrl').innerHTML='Serveur : <b>'+esc(r.serverUrl||'')+'</b>'+(r.apkUrl?' · <a href="'+esc(r.apkUrl)+'" target="_blank" rel="noreferrer">télécharger l’app</a>':'');
     }catch(e){m.querySelector('#pairCode').textContent='⚠';toast(e.message,'err');}
   }
   m.querySelector('#pairNew').onclick=gen;gen();

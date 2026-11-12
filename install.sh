@@ -21,6 +21,12 @@ echo "Destination : $DEST"
 
 cp "$HERE/gardien-api.php" "$HERE/gardien.html" "$DEST/"
 echo "Fichiers copies : gardien-api.php, gardien.html"
+if [ -f "$HERE/gardien.apk" ]; then
+  cp "$HERE/gardien.apk" "$DEST/"
+  echo "APK copiee : telechargeable depuis la page d'installation (scan du QR)."
+else
+  echo "Note : gardien.apk absente ; la page d'installation ne proposera pas le telechargement."
+fi
 
 mkdir -p "$DEST/data/gardien"
 # Protection de l'acces direct au dossier data (Apache + IIS). gardien-api.php les recree aussi.

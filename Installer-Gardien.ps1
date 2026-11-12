@@ -53,6 +53,15 @@ foreach ($f in @("gardien-api.php","gardien.html")) {
 }
 Good "Fichiers copies : gardien-api.php, gardien.html"
 
+# APK : si presente dans l'archive, on la depose aussi (telechargeable via la page d'installation).
+$apkSrc = Join-Path $here "gardien.apk"
+if (Test-Path $apkSrc) {
+  Copy-Item $apkSrc (Join-Path $Dest "gardien.apk") -Force
+  Good "APK copiee : telechargeable depuis la page d'installation (scan du QR)."
+} else {
+  Warn "gardien.apk absente de l'archive : la page d'installation ne proposera pas le telechargement."
+}
+
 # --- 3. Dossier data : creation, protection, droits d'ecriture IIS ---
 $data = Join-Path $Dest "data"
 $gdir = Join-Path $data "gardien"

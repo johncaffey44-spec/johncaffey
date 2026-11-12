@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -45,20 +46,50 @@ private val BlueDark = Color(0xFF0E6DA4)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val (du, dc) = parsePairing(intent?.dataString)
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(primary = Blue, secondary = BlueDark)
             ) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    GardienRoot()
+                    GardienRoot(du, dc)
                 }
             }
         }
     }
+
+    // Lien profond reçu alors que l'app tournait déjà (launchMode singleTask) : on repart pré-rempli.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recreate()
+    }
+}
+
+/** Extrait (serveur, code) d'un contenu scanné ou d'un lien profond : URL d'install, lien gardien://, JSON, ou code brut. */
+fun parsePairing(s: String?): Pair<String?, String?> {
+    if (s.isNullOrBlank()) return null to null
+    val t = s.trim()
+    if (t.startsWith("{")) {
+        try {
+            val j = JSONObject(t)
+            return (j.optString("url").ifBlank { null }) to (j.optString("code").ifBlank { null })?.uppercase()
+        } catch (_: Exception) { }
+    }
+    if (t.contains("://")) {
+        try {
+            val uri = Uri.parse(t)
+            val code = (uri.getQueryParameter("code") ?: uri.getQueryParameter("c"))?.uppercase()
+            var url = uri.getQueryParameter("u") ?: uri.getQueryParameter("url")
+            if (url.isNullOrBlank() && t.contains("gardien-api.php")) url = t.substringBefore("gardien-api.php") + "gardien-api.php"
+            return (url?.ifBlank { null }) to code
+        } catch (_: Exception) { }
+    }
+    return null to t.uppercase()
 }
 
 @Composable
-private fun GardienRoot() {
+private fun GardienRoot(initialUrl: String? = null, initialCode: String? = null) {
     val context = LocalContext.current
     val prefs = remember { Prefs(context) }
     var enrolled by remember { mutableStateOf(prefs.isEnrolled) }
@@ -67,7 +98,7 @@ private fun GardienRoot() {
         Header()
         Spacer(Modifier.height(8.dp))
         if (!enrolled) {
-            PairingForm(prefs) {
+            PairingForm(prefs, initialUrl, initialCode) {
                 GardienService.start(context)
                 enrolled = true
             }
@@ -90,20 +121,48 @@ private fun Header() {
 }
 
 @Composable
-private fun PairingForm(prefs: Prefs, onPaired: () -> Unit) {
+private fun PairingForm(prefs: Prefs, initialUrl: String? = null, initialCode: String? = null, onPaired: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var url by remember { mutableStateOf(prefs.serverUrl.ifBlank { "https://" }) }
-    var code by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf(initialUrl?.takeIf { it.isNotBlank() } ?: prefs.serverUrl.ifBlank { "https://" }) }
+    var code by remember { mutableStateOf(initialCode.orEmpty()) }
     var name by remember { mutableStateOf(Build.MODEL ?: "Mon appareil") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    fun runEnroll(u: String, cc: String) {
+        error = null
+        if (!u.startsWith("http") || cc.isBlank()) { error = "Renseignez l'adresse du serveur et le code."; return }
+        busy = true
+        scope.launch {
+            val r = runCatching {
+                withContext(Dispatchers.IO) {
+                    Api.enroll(u.trim(), cc.trim(), name.trim(), Build.MANUFACTURER + " " + Build.MODEL)
+                }
+            }
+            busy = false
+            r.onSuccess {
+                prefs.serverUrl = u.trim(); prefs.deviceId = it.deviceId; prefs.deviceToken = it.deviceToken
+                prefs.deviceName = name.trim(); prefs.heartbeat = it.heartbeat; onPaired()
+            }.onFailure { e -> error = e.message ?: "Échec de l'appairage" }
+        }
+    }
+
+    // Appairage automatique à l'arrivée via le lien profond (QR -> page d'install -> « Ouvrir dans Gardien »).
+    var autoTried by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!autoTried && !initialUrl.isNullOrBlank() && !initialCode.isNullOrBlank()) {
+            autoTried = true
+            runEnroll(initialUrl, initialCode)
+        }
+    }
+
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { res ->
         val c = res.contents
         if (c != null) {
-            try { val j = JSONObject(c); url = j.optString("url", url); code = j.optString("code", code).uppercase() }
-            catch (e: Exception) { code = c.trim().uppercase() }
+            val (u, cc) = parsePairing(c)
+            if (!u.isNullOrBlank()) url = u
+            if (!cc.isNullOrBlank()) code = cc
         }
     }
 
@@ -152,30 +211,7 @@ private fun PairingForm(prefs: Prefs, onPaired: () -> Unit) {
             }
             Spacer(Modifier.height(18.dp))
             Button(
-                onClick = onClick@{
-                    error = null
-                    if (!url.startsWith("http") || code.isBlank()) {
-                        error = "Renseignez l'adresse du serveur et le code."
-                        return@onClick
-                    }
-                    busy = true
-                    scope.launch {
-                        val r = runCatching {
-                            withContext(Dispatchers.IO) {
-                                Api.enroll(url.trim(), code.trim(), name.trim(), Build.MANUFACTURER + " " + Build.MODEL)
-                            }
-                        }
-                        busy = false
-                        r.onSuccess {
-                            prefs.serverUrl = url.trim()
-                            prefs.deviceId = it.deviceId
-                            prefs.deviceToken = it.deviceToken
-                            prefs.deviceName = name.trim()
-                            prefs.heartbeat = it.heartbeat
-                            onPaired()
-                        }.onFailure { e -> error = e.message ?: "Échec de l'appairage" }
-                    }
-                },
+                onClick = { runEnroll(url, code) },
                 enabled = !busy, modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp)
             ) {

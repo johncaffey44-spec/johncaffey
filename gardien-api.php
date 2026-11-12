@@ -171,6 +171,31 @@ $PHOTODIR = "$GDIR/photos";           // photos/<deviceId>/<photoId>.jpg + _inde
 /* Les <img> du tableau de bord chargent les photos par GET ; le cookie de
    session admin est envoyé automatiquement (même origine). */
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+
+    // --- Téléchargement de l'application (APK déposée à côté de gardien-api.php) ---
+    if (isset($_GET['apk'])) {
+        $apk = __DIR__ . '/gardien.apk';
+        if (!is_file($apk)) {
+            http_response_code(404);
+            header('Content-Type: text/plain; charset=utf-8');
+            echo "Application non deposee sur le serveur. Placez le fichier gardien.apk a cote de gardien-api.php.";
+            exit;
+        }
+        header('Content-Type: application/vnd.android.package-archive');
+        header('Content-Disposition: attachment; filename="gardien.apk"');
+        header('Content-Length: ' . (string)filesize($apk));
+        header('Cache-Control: private, max-age=3600');
+        readfile($apk);
+        exit;
+    }
+
+    // --- Page d'installation : ouverte quand on scanne le QR avec l'appareil photo du téléphone ---
+    if (isset($_GET['install'])) {
+        install_page(sstr($_GET['code'] ?? '', 20));
+        exit; // install_page termine par exit
+    }
+
+    // --- Service des photos (le cookie admin est envoyé par les <img> en même origine) ---
     $img = sstr($_GET['img'] ?? '', 120);
     if ($img !== '') {
         if (!ip_allowed(client_ip(), $ALLOWED_NETS) || !current_session()) { http_response_code(403); exit; }
@@ -285,10 +310,15 @@ switch ($action) {
             $p[sha($code)] = ['name' => $name, 'expires' => time() + $PAIR_MINUTES * 60, 'createdAt' => now_iso()];
             return $p;
         });
-        $base = (($_SERVER['HTTPS'] ?? '') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
-              . preg_replace('#/[^/]*$#', '/', (string)($_SERVER['REQUEST_URI'] ?? '/'));
+        // Le QR encode une vraie URL : scanné par l'appareil photo d'un téléphone vierge,
+        // il ouvre la page d'installation ; scanné par l'app, le code et le serveur en sont extraits.
+        $abs        = base_url();
+        $installUrl = $abs . 'gardien-api.php?install=1&code=' . rawurlencode($code);
         out(200, ['code' => $code, 'expiresIn' => $PAIR_MINUTES * 60,
-            'qr' => json_encode(['v' => 1, 'url' => $base . 'gardien-api.php', 'code' => $code], JSON_UNESCAPED_SLASHES)]);
+            'qr'         => $installUrl,
+            'installUrl' => $installUrl,
+            'serverUrl'  => $abs . 'gardien-api.php',
+            'apkUrl'     => $abs . 'gardien-api.php?apk=1']);
     }
 
     case 'rename-device': {
@@ -486,6 +516,59 @@ function rrmdir(string $dir): void {
     if (!is_dir($dir)) return;
     foreach (scandir($dir) ?: [] as $f) if ($f !== '.' && $f !== '..') { $p = "$dir/$f"; is_dir($p) ? rrmdir($p) : @unlink($p); }
     @rmdir($dir);
+}
+
+/** URL de base du dossier qui contient gardien-api.php (se termine par /). */
+function base_url(): string {
+    $scheme = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $dir = preg_replace('#/[^/]*$#', '/', (string)($_SERVER['REQUEST_URI'] ?? '/'));
+    return $scheme . '://' . $host . $dir;
+}
+
+/**
+ * Page d'installation, ouverte quand on scanne le QR avec l'appareil photo d'un téléphone.
+ * Propose de télécharger l'app puis de l'ouvrir pré-remplie (lien profond gardien://pair).
+ */
+function install_page(string $code): never {
+    $base      = base_url();
+    $apkUrl    = $base . 'gardien-api.php?apk=1';
+    $serverUrl = $base . 'gardien-api.php';
+    $apkExists = is_file(__DIR__ . '/gardien.apk');
+    $deep      = 'gardien://pair?u=' . rawurlencode($serverUrl) . '&c=' . rawurlencode($code);
+    $c         = htmlspecialchars($code, ENT_QUOTES);
+    $s         = htmlspecialchars($serverUrl, ENT_QUOTES);
+    $dl        = $apkExists
+        ? '<a class="btn primary" href="' . htmlspecialchars($apkUrl, ENT_QUOTES) . '">Telecharger l\'application</a>'
+        : '<p class="warn">L\'application n\'est pas encore deposee sur ce serveur. Demandez le fichier a votre administrateur, ou installez-le manuellement.</p>';
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+       . '<meta name="viewport" content="width=device-width, initial-scale=1"><title>Installer Gardien</title><style>'
+       . ':root{--b:#1487c9;--b2:#0e6da4}*{box-sizing:border-box}'
+       . 'body{margin:0;font:16px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;color:#191d23;background:#f2f4f6}'
+       . 'header{background:var(--b2);color:#fff;padding:22px 20px;display:flex;align-items:center;gap:10px}'
+       . 'header b{font-size:20px}.wrap{max-width:520px;margin:0 auto;padding:18px}'
+       . '.card{background:#fff;border:1px solid #e1e5ea;border-radius:12px;padding:18px;margin:14px 0;box-shadow:0 1px 3px rgba(16,24,40,.06)}'
+       . '.step{font-weight:650;color:var(--b2);margin:0 0 8px}'
+       . '.btn{display:block;text-align:center;padding:14px;border-radius:9px;font-weight:600;text-decoration:none;margin:8px 0}'
+       . '.btn.primary{background:var(--b);color:#fff}.btn.ghost{background:#fff;color:var(--b);border:1px solid var(--b)}'
+       . '.code{font:700 26px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.06em;text-align:center;background:#f7f8fa;border:2px dashed #ccd2da;border-radius:8px;padding:14px;user-select:all}'
+       . '.mut{color:#6d7783;font-size:14px}.warn{color:#b4700c;background:#fdf2e0;padding:10px;border-radius:8px}'
+       . '</style></head><body>'
+       . '<header><span style="font-size:24px">🛡</span><b>Gardien</b></header><div class="wrap">'
+       . '<div class="card"><p class="step">1. Installer l\'application</p>'
+       . $dl
+       . '<p class="mut">Si Android bloque : autorisez « Installer des applications inconnues » pour votre navigateur, puis rouvrez le fichier telecharge.</p></div>'
+       . '<div class="card"><p class="step">2. Ouvrir et appairer</p>'
+       . '<a class="btn ghost" href="' . htmlspecialchars($deep, ENT_QUOTES) . '">Ouvrir dans Gardien</a>'
+       . '<p class="mut">Une fois l\'app installee, ce bouton l\'ouvre deja remplie. Sinon, saisissez a la main :</p>'
+       . '<p class="mut">Serveur : <b>' . $s . '</b></p>'
+       . ($c !== '' ? '<p class="mut">Code :</p><div class="code">' . $c . '</div>' : '')
+       . '</div>'
+       . '<p class="mut" style="text-align:center">Gardien est <b>visible</b> sur l\'appareil (icone + notification permanente). Pour vos propres appareils uniquement.</p>'
+       . '</div></body></html>';
+    exit;
 }
 
 /* ---- sessions admin (cookie, fichiers) ---- */

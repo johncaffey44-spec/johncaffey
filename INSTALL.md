@@ -12,11 +12,12 @@ notification permanente) : aucun mode caché. Un appareil ne rejoint le parc qu'
 gardien/
 ├─ gardien-api.php          backend (à déposer sur le serveur)
 ├─ gardien.html             tableau de bord (à déposer sur le serveur)
+├─ gardien.apk              l'application Android, déjà compilée (déposée par l'installeur)
 ├─ Installer-Gardien.cmd    installeur Windows/IIS — DOUBLE-CLIC
 ├─ Installer-Gardien.ps1    (appelé par le .cmd)
 ├─ install.sh              installeur Linux (Apache/nginx) — bonus
 ├─ INSTALL.md              ce guide
-└─ gardien-antivol/         projet Android Studio (l'application du téléphone)
+└─ gardien-antivol/         projet Android Studio (les sources de l'app, pour recompiler)
 ```
 
 ---
@@ -73,12 +74,17 @@ gradle wrapper --gradle-version 8.9   # une seule fois
 ./gradlew assembleDebug
 ```
 
-## 4. Appairer un téléphone
+## 4. Appairer un téléphone (le plus simple)
 
-1. Dans le tableau de bord : **Ajouter** → un QR + un code (valable 30 min, usage unique) s'affichent.
-2. Dans l'app **Gardien** : **Scanner le QR**, ou saisissez l'adresse `…/gardien-api.php` + le code.
+1. Dans le tableau de bord : **Ajouter** → un **QR** + un code (30 min, usage unique) s'affichent.
+2. Sur le téléphone, **scannez le QR avec l'appareil photo** : il ouvre une page qui
+   propose de **télécharger l'app** (`gardien.apk` servie par le serveur), puis un bouton
+   **« Ouvrir dans Gardien »** qui lance l'app **déjà remplie** (serveur + code) → appairage automatique.
 3. Accordez les autorisations proposées (localisation, notifications, caméra) et activez
-   l'**administration d'appareil** (pour verrouillage / effacement).
+   l'**administration d'appareil** (pour verrouillage / effacement). C'est suivi.
+
+> Le téléphone a déjà Gardien ? Ouvrez l'app → **Scanner le QR** (bouton dans l'app) : il lit
+> directement le serveur et le code. La saisie manuelle (adresse `…/gardien-api.php` + code) reste possible.
 
 ## 5. Retirer proprement
 
