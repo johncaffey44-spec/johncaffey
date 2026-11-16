@@ -33,7 +33,10 @@ declare(strict_types=1);
 /* ------------------------------------------------------------------ réglages */
 $DATA_DIR        = __DIR__ . '/data';          // partagé avec le planning ; idéalement hors racine web
 $GDIR            = $DATA_DIR . '/gardien';     // sous-dossier propre à Gardien
-$ALLOWED_NETS    = ['127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']; // dashboard
+// Accès au TABLEAU DE BORD (admin). Les plages privées ci-dessous couvrent le LAN ET la plupart
+// des clients VPN WireGuard (Freebox : souvent 192.168.x ou 10.x). Si votre adresse WireGuard est
+// ailleurs (ex. 100.64.0.0/10), ajoutez-la ici. Les APPAREILS ne sont pas concernés ($DEVICE_OPEN).
+$ALLOWED_NETS    = ['127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
 $DEVICE_OPEN     = true;                        // true : les appareils joignent le serveur depuis n'importe quelle IP
 $SETUP_TOKEN     = '';                          // si non vide, exigé pour créer le 1er compte admin
 $SESSION_IDLE    = 12 * 3600;                   // déconnexion admin après N s sans échange

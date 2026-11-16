@@ -106,6 +106,30 @@ gradle wrapper --gradle-version 8.9   # une seule fois
 > Le téléphone a déjà Gardien ? Ouvrez l'app → **Scanner le QR** (bouton dans l'app) : il lit
 > directement le serveur et le code. La saisie manuelle (adresse `…/gardien-api.php` + code) reste possible.
 
+## 4 bis. Accès depuis l'extérieur (VPN WireGuard)
+
+Le serveur est en IP interne : le téléphone ne le joint, hors du Wi-Fi, que via un VPN
+vers la maison. Avec le **WireGuard de la Freebox** (vous l'avez déjà), ça marche sans
+rien changer au code.
+
+1. **Config WireGuard sur le téléphone** (profil généré par la Freebox) — vérifiez que
+   `AllowedIPs` inclut votre réseau local (`192.168.x.0/24`) ou vaut `0.0.0.0/0` (tunnel
+   complet). Sinon le téléphone ne route pas vers le serveur.
+2. **VPN permanent** : Android ▸ *Paramètres ▸ Réseau & Internet ▸ VPN ▸* (roue WireGuard)
+   ▸ **VPN permanent = activé**. Ne cochez **pas** « Bloquer les connexions sans VPN »
+   (sinon plus d'Internet si le tunnel tombe une seconde).
+3. **Premier appairage** : à la maison (Wi-Fi) ou VPN actif, pour que le téléphone joigne
+   le serveur. Ensuite il garde l'URL interne et la rejoint via WireGuard **de partout**.
+
+**Suivi des appareils** : fonctionne de l'extérieur sans réglage (le point d'entrée des
+appareils accepte toute source). **Tableau de bord à distance** (via le VPN) : l'allowlist
+`$ALLOWED_NETS` couvre déjà `10.0.0.0/8` et `192.168.0.0/16` — donc si votre adresse
+WireGuard est dans ces plages (cas Freebox fréquent), le tableau de bord répond aussi via
+le VPN, sans rien ajouter. Sinon, ajoutez votre sous-réseau VPN dans `$ALLOWED_NETS`.
+
+> Si les **photos** ne passent pas sur 4G via le tunnel (envoi volumineux), baissez le
+> **MTU WireGuard** côté téléphone (p. ex. 1280).
+
 ## 5. Retirer proprement
 
 Dans l'app : **Dissocier** → *Paramètres ▸ Sécurité ▸ Applications d'administration* : désactiver
