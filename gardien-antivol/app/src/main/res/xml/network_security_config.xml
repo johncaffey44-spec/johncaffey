@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sécurité réseau de Gardien.
+  - cleartextTrafficPermitted : autorise HTTP en clair (serveur interne sur LAN / via WireGuard,
+    où le trafic est déjà chiffré par le tunnel).
+  - trust-anchors « user » : fait confiance aux certificats que l'utilisateur installe lui-même
+    (Paramètres > Sécurité > Installer un certificat > Certificat CA). C'est ce qui permet à l'app
+    de se connecter au serveur Gardien en HTTPS avec un certificat AUTO-SIGNÉ (gardien-ca.cer),
+    une fois ce certificat installé sur l'appareil.
+  Compromis assumé : un antivol pour ses propres appareils, sur un réseau de confiance.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
