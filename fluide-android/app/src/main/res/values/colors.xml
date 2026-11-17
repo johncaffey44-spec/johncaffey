@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Thème clair -->
+    <color name="bg">#F2F3F7</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface2">#EEF0F4</color>
+    <color name="text">#111318</color>
+    <color name="text2">#5B6170</color>
+    <color name="divider">#E3E6EC</color>
+    <color name="accent">#2557D6</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="accent_soft">#E6EDFC</color>
+    <color name="ripple">#1F2557D6</color>
+
+    <color name="good">#15803D</color>
+    <color name="good_soft">#DCFCE7</color>
+    <color name="warn">#B45309</color>
+    <color name="warn_soft">#FEF3C7</color>
+    <color name="bad">#B91C1C</color>
+    <color name="bad_soft">#FEE2E2</color>
+    <color name="limit">#5F6672</color>
+    <color name="limit_soft">#E9EBEF</color>
+    <color name="info">#2557D6</color>
+    <color name="info_soft">#E6EDFC</color>
+
+    <!-- Icône (identique en clair et en sombre) -->
+    <color name="ic_launcher_bg">#2557D6</color>
+</resources>

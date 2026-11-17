@@ -1,0 +1,4 @@
+# Le .bat est stocké tel quel (CRLF) : téléchargé depuis GitHub, il reste exécutable par cmd.exe.
+*.bat -text
+*.sh text eol=lf
+*.apk binary
