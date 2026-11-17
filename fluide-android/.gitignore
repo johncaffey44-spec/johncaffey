@@ -1,0 +1,12 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.cxx/
+# Clé de signature : ne jamais la publier (une mise à jour signée avec elle
+# hériterait de la permission WRITE_SECURE_SETTINGS accordée à l'appli).
+*.jks
+*.keystore
+keystore.properties

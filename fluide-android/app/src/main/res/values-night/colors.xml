@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Thème sombre -->
+    <color name="bg">#0E1014</color>
+    <color name="surface">#1A1D23</color>
+    <color name="surface2">#252931</color>
+    <color name="text">#ECEEF2</color>
+    <color name="text2">#A2A9B6</color>
+    <color name="divider">#2C313A</color>
+    <color name="accent">#86A8FF</color>
+    <color name="on_accent">#0B1020</color>
+    <color name="accent_soft">#1E2A47</color>
+    <color name="ripple">#3386A8FF</color>
+
+    <color name="good">#4ADE80</color>
+    <color name="good_soft">#12301F</color>
+    <color name="warn">#FBBF24</color>
+    <color name="warn_soft">#3A2B0B</color>
+    <color name="bad">#F87171</color>
+    <color name="bad_soft">#3B1616</color>
+    <color name="limit">#A3AAB6</color>
+    <color name="limit_soft">#2A2E36</color>
+    <color name="info">#86A8FF</color>
+    <color name="info_soft">#1E2A47</color>
+</resources>
