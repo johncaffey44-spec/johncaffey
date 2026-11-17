@@ -16,10 +16,16 @@ gardien/
 ├─ Installer-Gardien.cmd    installeur Windows/IIS — DOUBLE-CLIC
 ├─ Installer-Gardien.ps1    (appelé par le .cmd)
 ├─ install.sh              installeur Linux (Apache/nginx) — bonus
+├─ Certificat-HTTPS.cmd    génère le certificat HTTPS (port 8443) sur IIS — DOUBLE-CLIC
+├─ Certificat-HTTPS.ps1    (appelé par le .cmd)
 ├─ INSTALL.md              ce guide
+├─ HTTPS.md                HTTPS en IP interne + installation du certificat sur iPhone / Android
 ├─ gardien-standalone/     Gardien SEUL, backend nommé api.php, accès par IP (voir son LISEZMOI)
 └─ gardien-antivol/         projet Android Studio (les sources de l'app, pour recompiler)
 ```
+
+> **HTTPS / iPhone** : pour servir Gardien en `https://<IP>:8443/` et le rendre sans avertissement
+> sur iPhone comme sur Android, voir **`HTTPS.md`**.
 
 > **Gardien tout seul, accessible par IP** (comme tes autres outils internes) : utilise le dossier
 > `gardien-standalone/` — son backend s'appelle `api.php`, le tableau de bord `index.html`. Dépose
