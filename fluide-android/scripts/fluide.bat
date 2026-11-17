@@ -271,13 +271,43 @@ echo Compilation optimisee des applis - ART : 5 a 30 minutes, telephone branche 
 echo Le telephone reste utilisable mais sera plus lent pendant l'operation.
 call :confirm "Lancer maintenant"
 if errorlevel 1 exit /b 0
-echo En cours, ne debranchez pas le telephone...
-adb shell cmd package bg-dexopt-job
-if errorlevel 1 (
-  echo Methode rapide indisponible, essai de la methode alternative...
-  adb shell cmd package compile -m speed-profile -a
-)
-echo Termine.
+set "SDK=0"
+for /f "delims=" %%A in ('adb shell getprop ro.build.version.sdk') do set "SDK=%%A"
+set "LOG=%TEMP%\fluide-compilation.txt"
+echo En cours, ne debranchez pas le telephone. Rien ne s'affiche avant la fin...
+if !SDK! GEQ 34 goto compile_art
+adb shell cmd package bg-dexopt-job > "%LOG%" 2>&1
+set "RC=%errorlevel%"
+goto compile_check
+:compile_art
+REM Android 14 et plus : bg-dexopt-job lance la tache de nuit, que le systeme interrompt
+REM si le telephone n'est pas inactif et en charge. Meme optimisation, au premier plan :
+adb shell pm art dexopt-packages -r bg-dexopt > "%LOG%" 2>&1
+set "RC=%errorlevel%"
+:compile_check
+call :compile_ok
+if not errorlevel 1 goto compile_done
+echo Methode principale interrompue ou indisponible : compilation de secours, plus longue...
+adb shell cmd package compile -m speed-profile -a > "%LOG%" 2>&1
+set "RC=%errorlevel%"
+call :compile_ok
+if not errorlevel 1 goto compile_done
+echo Compilation interrompue par le telephone. Detail :
+type "%LOG%"
+echo Reessayez telephone branche, sans l'utiliser pendant l'operation.
+exit /b 1
+:compile_done
+echo Termine : applis optimisees.
+exit /b 0
+
+:compile_ok
+REM Reussite = code de retour nul ET journal sans annulation ni erreur.
+REM La consigne "To cancel it, run ..." ne compte pas : on cherche "cancelled".
+if not "%RC%"=="0" exit /b 1
+findstr /i /c:"cancelled" /c:"unknown command" /c:"exception" "%LOG%" >nul
+if not errorlevel 1 exit /b 1
+findstr /i /b /c:"error" "%LOG%" >nul
+if not errorlevel 1 exit /b 1
 exit /b 0
 
 :trim

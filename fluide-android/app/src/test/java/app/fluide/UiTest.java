@@ -337,6 +337,9 @@ public class UiTest {
         String t = allText(a);
         assertTrue(t.contains("adb shell pm grant app.fluide android.permission.WRITE_SECURE_SETTINGS"));
         assertTrue(t.contains("settings put system peak_refresh_rate 120.0"));
+        assertTrue(t.contains(Build.VERSION.SDK_INT >= 34 ? "pm art dexopt-packages -r bg-dexopt"
+                : "cmd package bg-dexopt-job"));
+        assertTrue(t.contains("compile -m speed-profile -a"));
         assertTrue(t.contains("Facebook App Manager"));
         View preset = findText(a.getWindow().getDecorView(), "0,5x\nRecommandé");
         assertNotNull(preset);

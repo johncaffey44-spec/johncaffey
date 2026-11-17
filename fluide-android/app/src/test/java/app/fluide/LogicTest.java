@@ -256,6 +256,15 @@ public class LogicTest {
     }
 
     @Test
+    public void compileCommandAvoidsCancellableJobOnAndroid14() {
+        // Android 14+ : bg-dexopt-job est interrompu par le système (« Job cancelled »).
+        assertEquals("adb shell pm art dexopt-packages -r bg-dexopt", SystemTweaks.compileCommand(34));
+        assertEquals("adb shell pm art dexopt-packages -r bg-dexopt", SystemTweaks.compileCommand(36));
+        assertEquals("adb shell cmd package bg-dexopt-job", SystemTweaks.compileCommand(33));
+        assertTrue(SystemTweaks.COMPILE_FALLBACK_CMD.endsWith("compile -m speed-profile -a"));
+    }
+
+    @Test
     public void comparisonFlagsChangedConditions() {
         ResultStore.Entry a = new ResultStore.Entry();
         a.hz = 120;

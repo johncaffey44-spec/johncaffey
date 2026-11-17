@@ -15,7 +15,18 @@ import android.provider.Settings;
  */
 final class SystemTweaks {
     static final String PERM = "android.permission.WRITE_SECURE_SETTINGS";
-    static final String COMPILE_CMD = "adb shell cmd package bg-dexopt-job";
+    static final String COMPILE_FALLBACK_CMD = "adb shell cmd package compile -m speed-profile -a";
+
+    /**
+     * Compilation immédiate des applis. Android 14+ : « bg-dexopt-job » lance la tâche de nuit,
+     * que le système interrompt si le téléphone n'est pas inactif et en charge (« Job cancelled ») ;
+     * « pm art dexopt-packages » fait la même optimisation au premier plan, sans interruption.
+     */
+    static String compileCommand(int sdk) {
+        return sdk >= 34
+                ? "adb shell pm art dexopt-packages -r bg-dexopt"
+                : "adb shell cmd package bg-dexopt-job";
+    }
 
     static final float[] PRESETS = {0.5f, 1f, 0f};
     static final String[] PRESET_LABELS = {"0,5x\nRecommandé", "1x\nStandard", "Aucune\nDéconseillé"};

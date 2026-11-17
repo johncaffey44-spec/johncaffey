@@ -146,13 +146,36 @@ compile_apps() {
   echo "Compilation optimisée des applis (ART) : 5 à 30 minutes, téléphone branché de préférence."
   echo "Le téléphone reste utilisable mais sera plus lent pendant l'opération."
   confirm "Lancer maintenant ?" || return 0
-  local start
+  local start sdk log rc
   start=$(date +%s)
-  if ! "$ADB" shell cmd package bg-dexopt-job </dev/null; then
-    echo "Méthode rapide indisponible, essai de la méthode alternative…"
-    "$ADB" shell cmd package compile -m speed-profile -a </dev/null | tail -n 3
+  sdk="$(sh_ getprop ro.build.version.sdk)"
+  log="$(mktemp)"
+  if [ "${sdk:-0}" -ge 34 ] 2>/dev/null; then
+    # Android 14+ : « bg-dexopt-job » lance la tâche de nuit, que le système interrompt quand le
+    # téléphone n'est pas inactif et en charge. Même optimisation, mais au premier plan :
+    "$ADB" shell pm art dexopt-packages -r bg-dexopt </dev/null 2>&1 | tr -d '\r' | tee "$log" | tail -n 5
+  else
+    "$ADB" shell cmd package bg-dexopt-job </dev/null 2>&1 | tr -d '\r' | tee "$log" | tail -n 5
   fi
-  echo "Terminé en $(( ($(date +%s) - start) / 60 )) min."
+  rc=${PIPESTATUS[0]}
+  if ! compile_ok "$rc" "$log"; then
+    echo "Méthode principale interrompue ou indisponible : compilation de secours (plus longue)…"
+    "$ADB" shell cmd package compile -m speed-profile -a </dev/null 2>&1 | tr -d '\r' | tee "$log" | tail -n 3
+    rc=${PIPESTATUS[0]}
+    if ! compile_ok "$rc" "$log"; then
+      rm -f "$log"
+      echo "Compilation interrompue par le téléphone. Réessayez branché, sans l'utiliser pendant l'opération."
+      return 1
+    fi
+  fi
+  rm -f "$log"
+  echo "Terminé en $(( ($(date +%s) - start) / 60 )) min : applis optimisées."
+}
+
+# Réussite = code de retour nul ET journal sans annulation ni erreur.
+# (« To cancel it, run … » est une simple consigne : on cherche « cancelled », pas « cancel ».)
+compile_ok() {
+  [ "$1" -eq 0 ] && ! grep -qiE 'cancelled|unknown command|exception|^error' "$2"
 }
 
 trim_storage() {

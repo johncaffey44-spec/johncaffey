@@ -23,7 +23,7 @@ Ce qu'un logiciel peut réellement faire :
 |---|---|---|
 | Animations à 0,5x | Interface plus **réactive** (on attend moins). Ne rend pas les images plus régulières. | Appli (après autorisation ADB) ou script |
 | Fréquence d'écran élevée activée | Défilements plus nets si l'écran fait 90/120 Hz | Réglages Android, ou script (forçage) |
-| Compilation ART (`bg-dexopt-job`) | Moins de saccades après une mise à jour d'Android ou des applis | Script |
+| Compilation ART (`pm art dexopt-packages`, ou `bg-dexopt-job` avant Android 14) | Moins de saccades après une mise à jour d'Android ou des applis | Script |
 | Stockage libéré (> 15-20 % libre) | Écritures et mises à jour plus rapides | Appli |
 | Applis inutilisées / préinstallées retirées | Moins d'activité de fond et de mémoire occupée | Appli + script |
 | Économie d'énergie coupée, téléphone froid | Le processeur n'est plus bridé | Vous (l'appli le détecte) |
@@ -35,7 +35,7 @@ Et ce que Fluide **ne fera jamais**, parce que c'est contre-productif : vider la
 
 | Fichier | Rôle |
 |---|---|
-| `dist/Fluide-1.0.apk` | L'appli, Android 8.0 et plus (63 Ko, aucune permission Internet) |
+| `dist/Fluide-1.1.apk` | L'appli, Android 8.0 et plus (63 Ko, aucune permission Internet) |
 | `scripts/fluide.bat` | Script Windows (menu) : les réglages qu'Android réserve à ADB |
 | `scripts/fluide.sh` | Même script pour Linux / macOS |
 | `app/` | Code source Java, sans aucune bibliothèque |
@@ -46,7 +46,7 @@ Et ce que Fluide **ne fera jamais**, parce que c'est contre-productif : vider la
 
 1. Téléchargez les **SDK Platform-Tools** de Google :
    <https://developer.android.com/tools/releases/platform-tools>, et décompressez-les.
-2. Copiez `fluide.bat` (ou `fluide.sh`) **et** `Fluide-1.0.apk` dans le dossier `platform-tools`.
+2. Copiez `fluide.bat` (ou `fluide.sh`) **et** `Fluide-1.1.apk` dans le dossier `platform-tools`.
 
 **Sur le téléphone**
 
@@ -77,7 +77,7 @@ connaît pas. Le code est ici, et l'appli n'a pas d'accès Internet.
 | 1 | Diagnostic (lecture seule) | — |
 | 2 | Autorise l'appli à régler les animations (`pm grant … WRITE_SECURE_SETTINGS`) | Désinstaller l'appli |
 | 3 / 4 | Animations 0,5x / 1x | 4 |
-| 5 | Compilation optimisée des applis, 5 à 30 min | Inutile (le système recompile seul) |
+| 5 | Compilation optimisée des applis, 5 à 30 min. Android 14+ : `pm art dexopt-packages`, au premier plan ; si elle est interrompue (« cancelled ») ou refusée, repli automatique sur `compile -m speed-profile -a` | Inutile (le système recompile seul) |
 | 6 | Maintenance du stockage (TRIM) | — |
 | 7 | Force la fréquence d'écran maximale (coûte de l'autonomie ; sans effet sur Samsung) | 8 (valeurs d'origine sauvegardées) |
 | 9 | Désactive des applis préinstallées connues, **une par une avec confirmation** | 10 |
@@ -120,9 +120,9 @@ L'historique des mesures n'est ni sauvegardé dans le cloud ni transféré vers 
 
 ## Limites connues
 
-- **Testé sans téléphone physique.** L'appli est vérifiée par 46 tests automatiques sur un Android
+- **Testé sans téléphone physique.** L'appli est vérifiée par 47 tests automatiques sur un Android
   simulé (Robolectric, Android 8.0 et Android 16) et par l'analyse statique d'Android (lint, 0 erreur) ;
-  le script `.sh` par 54 vérifications contre un téléphone simulé. Le script `.bat` n'a pas pu être
+  le script `.sh` par 63 vérifications contre un téléphone simulé. Le script `.bat` n'a pas pu être
   exécuté sous Windows ici : il est vérifié statiquement (`scripts/test/check-bat.py`) et reprend la
   logique du `.sh`.
 - Le forçage de fréquence d'écran utilise les réglages standard d'Android (`peak_refresh_rate`,
@@ -136,7 +136,7 @@ L'historique des mesures n'est ni sauvegardé dans le cloud ni transféré vers 
 
 ```bash
 ./gradlew assembleRelease        # JDK 17+, Android SDK 36 ; signature via keystore.properties (non versionné)
-./gradlew testDebugUnitTest      # 46 tests ; captures d'écran dans build/screenshots/
+./gradlew testDebugUnitTest      # 47 tests ; captures d'écran dans build/screenshots/
 ./gradlew lintRelease
 bash scripts/test/test-fluide-sh.sh
 python3 scripts/test/check-bat.py scripts/fluide.bat

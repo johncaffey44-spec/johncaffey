@@ -3,7 +3,11 @@
 # État simulé dans $FAKE_DIR : réglages (settings/<espace>/<clé>), paquets actifs / désactivés /
 # retirés, permission accordée. Chaque appel est journalisé dans $FAKE_DIR/log.
 # Variables : FAKE_STATE=device|unauthorized|none   FAKE_MIUI=1 (refuse disable-user)
+#             FAKE_SDK=35 (version d'Android simulée)
 #             FAKE_DEXOPT_FAIL=1 (bg-dexopt-job indisponible)
+#             FAKE_BG_CANCELLED=1 (bg-dexopt-job interrompu, code 0 : cas réel Android 14+)
+#             FAKE_ART_MISSING=1 (pm art dexopt-packages inconnu)
+#             FAKE_ART_CANCELLED=1 (dexopt-packages interrompu)
 set -u
 D="${FAKE_DIR:?FAKE_DIR non défini}"
 mkdir -p "$D/settings"
@@ -43,7 +47,7 @@ case "$cmd" in
   "getprop ro.product.manufacturer") echo Google ;;
   "getprop ro.product.model") echo "Pixel Test" ;;
   "getprop ro.build.version.release") echo 15 ;;
-  "getprop ro.build.version.sdk") echo 35 ;;
+  "getprop ro.build.version.sdk") echo "${FAKE_SDK:-35}" ;;
   "grep MemTotal /proc/meminfo") echo "MemTotal:        7812345 kB" ;;
   "df -h /data | tail -n 1") echo "/dev/block/dm-48   110G   80G   30G  73% /data" ;;
   "settings get "*)
@@ -91,7 +95,21 @@ EOF
     pkg="${cmd##* }"; move "$pkg" removed enabled; echo "Package $pkg installed for user: 0" ;;
   "cmd package bg-dexopt-job")
     if [ "${FAKE_DEXOPT_FAIL:-}" = "1" ]; then echo "Unknown command: bg-dexopt-job"; exit 1; fi
+    if [ "${FAKE_BG_CANCELLED:-}" = "1" ]; then
+      echo "Job running...  To cancel it, run 'pm bg-dexopt-job --cancel'. in a separate shell."
+      echo "Job cancelled. See logs for details"
+      exit 0
+    fi
     echo "Success" ;;
+  "pm art dexopt-packages -r bg-dexopt")
+    if [ "${FAKE_ART_MISSING:-}" = "1" ]; then echo "Unknown command: dexopt-packages"; exit 255; fi
+    echo "Job running. To cancel it, run 'pm art cancel 3f1c9a2e' in a separate shell."
+    echo "  com.example.notes [status=PERFORMED] [reason=bg-dexopt]"
+    if [ "${FAKE_ART_CANCELLED:-}" = "1" ]; then
+      echo "  com.example.jeu [status=CANCELLED] [reason=bg-dexopt]"
+    else
+      echo "  com.example.jeu [status=PERFORMED] [reason=bg-dexopt]"
+    fi ;;
   "cmd package compile -m speed-profile -a") echo "Success" ;;
   "sm idle-maint run") ;;
   "pm trim-caches 999G") ;;

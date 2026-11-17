@@ -1,5 +1,6 @@
 package app.fluide;
 
+import android.os.Build;
 import android.provider.Settings;
 import android.widget.LinearLayout;
 
@@ -91,9 +92,12 @@ final class TabReglages {
         ui.body(c, "Après une mise à jour d'Android ou des applis, leur code tourne d'abord dans un mode moins"
                 + " optimisé : c'est la cause classique des saccades « depuis la mise à jour ». Android recompile"
                 + " la nuit, téléphone en charge et inactif. Pour le faire tout de suite (5 à 30 minutes,"
-                + " téléphone branché) :");
-        ui.code(c, SystemTweaks.COMPILE_CMD);
-        a.commandActions(c, "compilation", SystemTweaks.COMPILE_CMD);
+                + " téléphone branché, script PC option 5, ou) :");
+        String compile = SystemTweaks.compileCommand(Build.VERSION.SDK_INT);
+        ui.code(c, compile);
+        a.commandActions(c, "compilation", compile);
+        ui.small(c, "Si elle est refusée ou affiche « cancelled », version plus longue qui marche partout :");
+        ui.code(c, SystemTweaks.COMPILE_FALLBACK_CMD);
         ui.small(c, "Inutile de la répéter tous les jours : une fois après chaque grosse mise à jour suffit.");
 
         // 5. Applis préinstallées

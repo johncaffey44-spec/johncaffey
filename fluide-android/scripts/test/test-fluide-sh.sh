@@ -110,13 +110,33 @@ run 10 >/dev/null
 check "réinstallée (install-existing)" grep -qx com.miui.analytics "$FAKE_DIR/enabled"
 check "plus rien de retiré" eq "$(wc -l < "$FAKE_DIR/removed" | tr -d ' ')" "0"
 
-echo "5. Compilation"
+echo "5. Compilation, Android 14+ (dexopt-packages au premier plan)"
 reset_phone
 out="$(run 5)"
+check "dexopt-packages lancé" grep -q "pm art dexopt-packages -r bg-dexopt" "$FAKE_DIR/log"
+check "plus de bg-dexopt-job (interrompu par le système)" eq "$(grep -c 'bg-dexopt-job' "$FAKE_DIR/log")" "0"
+check "« To cancel it » n'est pas pris pour une annulation" eq "$(grep -c 'compile -m speed-profile' "$FAKE_DIR/log")" "0"
+check "réussite annoncée" has "$out" "applis optimisées"
+reset_phone
+out="$(FAKE_ART_CANCELLED=1 run 5)"
+check "annulation détectée : repli speed-profile" grep -q "cmd package compile -m speed-profile -a" "$FAKE_DIR/log"
+check "réussite après repli" has "$out" "applis optimisées"
+reset_phone
+out="$(FAKE_ART_MISSING=1 run 5)"
+check "commande absente : repli speed-profile" grep -q "cmd package compile -m speed-profile -a" "$FAKE_DIR/log"
+
+echo "5. Compilation, Android 13 et avant (bg-dexopt-job)"
+reset_phone
+out="$(FAKE_SDK=33 run 5)"
 check "bg-dexopt-job lancé" grep -q "cmd package bg-dexopt-job" "$FAKE_DIR/log"
 check "pas de repli inutile" eq "$(grep -c 'compile -m speed-profile' "$FAKE_DIR/log")" "0"
-out="$(FAKE_DEXOPT_FAIL=1 run 5)"
-check "repli speed-profile" grep -q "cmd package compile -m speed-profile -a" "$FAKE_DIR/log"
+reset_phone
+out="$(FAKE_SDK=33 FAKE_DEXOPT_FAIL=1 run 5)"
+check "échec : repli speed-profile" grep -q "cmd package compile -m speed-profile -a" "$FAKE_DIR/log"
+reset_phone
+out="$(FAKE_SDK=33 FAKE_BG_CANCELLED=1 run 5)"
+check "« Job cancelled » (code 0) détecté : repli" grep -q "cmd package compile -m speed-profile -a" "$FAKE_DIR/log"
+check "jamais « Terminé » sur une annulation sans repli" has "$out" "Méthode principale interrompue"
 
 echo "6/11. Stockage et cache"
 out="$(run 6)"
@@ -130,7 +150,7 @@ out="$(run a)"
 check "permission" test -f "$FAKE_DIR/granted"
 check "animations 0.5" eq "$(setting global window_animation_scale)" "0.5"
 check "TRIM" grep -q "sm idle-maint run" "$FAKE_DIR/log"
-check "compilation" grep -q "bg-dexopt-job" "$FAKE_DIR/log"
+check "compilation" grep -q "dexopt-packages" "$FAKE_DIR/log"
 check "écran non touché" eq "$(setting system peak_refresh_rate)" "(absent)"
 
 echo "Confirmation refusée"
