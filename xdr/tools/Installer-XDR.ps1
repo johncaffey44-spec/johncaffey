@@ -6,7 +6,8 @@
     3. donne au serveur web le droit d'écrire dans le dossier data ;
     4. crée la tâche planifiée « Sentinelle XDR » (analyse chaque minute) ;
     5. vérifie que le pare-feu Windows n'ouvre pas IIS à tout Internet (IPv6 compris) ;
-    6. ouvre Sentinelle dans le navigateur pour choisir le mot de passe.
+    6. propose d'installer AdGuard Home (voir les applications utilisées, filtrer pour les enfants) ;
+    7. ouvre Sentinelle dans le navigateur pour choisir le mot de passe.
   Options : -Target "D:\sites\xdr"  -Site "Default Web Site"  -SkipFirewall
 #>
 param(
@@ -157,7 +158,35 @@ try {
         } else { Ok "Aucune règle n'ouvre IIS à tout Internet." }
     }
 
-    # ------------------------------------------------------------------ 6. Fin
+    # ------------------------------------------------------------------ 6. AdGuard Home (facultatif)
+    Step "6. AdGuard Home : voir les applications utilisées par les enfants (facultatif)"
+    $agDir = Join-Path $env:ProgramFiles 'AdGuardHome'
+    $agExe = Join-Path $agDir 'AdGuardHome.exe'
+    if (Test-Path $agExe) {
+        Ok "AdGuard Home est déjà installé ($agDir)."
+    } else {
+        $ans = Read-Host "   Installer AdGuard Home (gratuit, officiel) sur ce PC ? O/N"
+        if ($ans -match '^[oOyY]') {
+            $zip = Join-Path $env:TEMP 'AdGuardHome_windows_amd64.zip'
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/AdguardTeam/AdGuardHome/releases/latest/download/AdGuardHome_windows_amd64.zip' -OutFile $zip
+            Expand-Archive -Path $zip -DestinationPath $env:ProgramFiles -Force
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            & $agExe -s install | Out-Null
+            Ok "AdGuard Home installé comme service Windows"
+            foreach ($proto in 'UDP', 'TCP') {
+                if (-not (Get-NetFirewallRule -DisplayName "AdGuard Home DNS ($proto, réseau local)" -ErrorAction SilentlyContinue)) {
+                    New-NetFirewallRule -DisplayName "AdGuard Home DNS ($proto, réseau local)" -Direction Inbound -Protocol $proto -LocalPort 53 -RemoteAddress LocalSubnet -Action Allow | Out-Null
+                }
+            }
+            Ok "Pare-feu : DNS (port 53) ouvert au seul réseau local"
+            Warn "Dans l'assistant qui s'ouvre : interface d'administration sur le PORT 3000 (IIS occupe le port 80), DNS sur le port 53, puis créez un identifiant."
+            Warn "Ensuite : Sentinelle › Paramètres › Navigation (DNS) : http://127.0.0.1:3000 + cet identifiant, puis l'onglet Enfants pour faire passer la maison par AdGuard Home."
+            Start-Process 'http://127.0.0.1:3000/'
+        } else { Ok "Étape passée : vous pourrez l'installer plus tard (voir le guide)." }
+    }
+
+    # ------------------------------------------------------------------ 7. Fin
     Step "Terminé"
     Ok "Ouverture de Sentinelle : choisissez votre mot de passe (la première fois, uniquement depuis ce PC)."
     Start-Process "http://localhost$url/"

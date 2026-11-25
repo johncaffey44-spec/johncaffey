@@ -14,6 +14,7 @@ Tableau de bord **local** pour surveiller et protéger le réseau d'une **Freebo
 |---|---|
 | **Tableau de bord** | Score de sécurité (A à E), débits Internet en direct, alertes récentes, tous les appareils avec leur icône, leur IP, leur connexion (Wi-Fi 2,4/5/6 GHz et signal, ou prise Ethernet), leurs débits et « ce qu'ils font en ce moment » (services détectés par DNS). |
 | **Appareils** | Recherche et filtres (en ligne, Wi-Fi, Ethernet, nouveaux, coupés). Fiche complète par appareil : adresses, fabricant, profil, historique de trafic sur 6 h, journal, domaines consultés. **Actions** : couper Internet (30 min, 1 h, 2 h, 8 h ou jusqu'à nouvel ordre), rétablir, **isoler**, réveiller (Wake-on-LAN), renommer, marquer comme connu ou inconnu. |
+| **Enfants** | Pour chaque enfant (ses appareils regroupés) : **temps passé par application ou site**, **heures d'activité** (la nuit en évidence), détail jour par jour, dernières activités, alertes (activité la nuit, **contournement du filtrage** par VPN, DNS chiffré ou relais privé iCloud, site adulte bloqué). **Protections** par enfant : filtre adulte, recherche sécurisée et mode restreint YouTube, **applications bloquées** (TikTok, Snapchat, Fortnite…). Rapport de la semaine sur le téléphone. |
 | **Trafic** | Historique sur 1 h, 24 h ou 7 jours (statistiques de la box), appareils les plus actifs, vue en tableau. |
 | **Menaces** | Alertes expliquées en clair, avec la référence **MITRE ATT&CK** quand elle existe et une **correction en un clic** quand la box le permet. Vous pouvez aussi « accepter le risque », pour éviter de crouler sous les alertes. |
 | **Contrôle d'accès** | Profils Freebox (un profil = les appareils d'une personne) : coupure immédiate ou minutée, **horaires** (ex. « 21 h 30 → 7 h, du dimanche au jeudi ») et semaine type visuelle. |
@@ -52,6 +53,7 @@ Prérequis : IIS et PHP déjà installés (votre `Installer-IIS-PHP.cmd`), PC re
    - donne à IIS le droit d'écrire dans `xdr\data` ;
    - crée la tâche planifiée **« Sentinelle XDR »** (une analyse par minute) ;
    - repère les règles du pare-feu Windows qui ouvrent IIS à **tout Internet** (IPv6 compris) et propose de les limiter au réseau local ;
+   - propose d'installer **AdGuard Home**, indispensable pour voir les applications utilisées par les enfants ;
    - ouvre `http://localhost/xdr/`.
 3. **Choisissez le mot de passe** (10 caractères minimum, une phrase de passe est idéale). Pour la sécurité, cette première étape n'est possible **que depuis le PC serveur lui-même**.
 4. Explorez la démonstration, puis passez à « Associer ma Freebox » ci-dessous.
@@ -99,13 +101,38 @@ La Freebox coupe Internet **par profil**. Créez vos profils dans Freebox OS (Co
 
 ---
 
-## Voir la navigation : AdGuard Home (facultatif)
+## Suivre ce que font les enfants
 
-1. Installez **AdGuard Home** pour Windows (site officiel d'AdGuard) sur ce même PC, en service.
-2. Dans Freebox OS › Paramètres › **DHCP**, mettez l'adresse IP de ce PC comme serveur DNS. Les appareils utilisent alors AdGuard Home pour leurs requêtes DNS.
-3. Dans Sentinelle › Paramètres › **Navigation (DNS)** : cochez « Utiliser AdGuard Home », indiquez l'adresse de son interface (ex. `http://127.0.0.1:3000`) et ses identifiants, puis cliquez sur **Tester**.
+![Onglet Enfants](docs/captures/enfants.jpg)
 
-Vous gagnez « ce qu'ils font en ce moment », l'onglet Activité de chaque appareil, les détections de domaines malveillants, de minage et de DGA, et le refus du DNS pour un appareil isolé. AdGuard Home bloque aussi les publicités et les sites malveillants pour toute la maison.
+1. **Dites à Sentinelle quels appareils sont ceux des enfants** : onglet **Enfants** › « Qui utilise quel appareil ? », ou bouton « À qui ? » dans la fiche d'un appareil. Les appareils d'un même enfant sont regroupés.
+2. **Installez AdGuard Home** sur le PC serveur (proposé par `Installer-XDR.cmd`, ou à la main ci-dessous). Sans lui, Sentinelle mesure seulement les heures où chaque appareil est actif, pas les applications.
+3. Onglet **Enfants** › « Faire passer la maison par AdGuard Home » : Sentinelle indique à la Freebox de distribuer ce PC comme serveur DNS. Deux choix :
+   - **AdGuard seul** : tout passe par le filtre, mais si le PC est éteint, Internet semble en panne pour toute la maison ;
+   - **avec la Freebox en secours** : Internet marche toujours, mais certains appareils passent parfois par le secours, sans filtre.
+4. Pour chaque enfant, ouvrez **Protections** : filtre adulte, recherche sécurisée, applications bloquées.
+5. Paramètres › **Enfants** : heures de nuit, alertes sur le téléphone, rapport du dimanche soir.
+
+**Bon à savoir**
+- Les **temps sont estimés** : chaque minute où l'appareil est actif sur le réseau compte, attribuée à l'application la plus sollicitée des 5 dernières minutes. C'est fiable pour repérer les tendances (« 3 h de TikTok mardi », « actif à 1 h du matin »), pas au chronomètre près.
+- **En 4G/5G, hors du Wi-Fi, rien n'est visible.** Pour le téléphone d'un enfant, ajoutez **Google Family Link** (Android) ou **Temps d'écran** (iPhone). Ils mesurent le temps par application sur l'appareil lui-même et peuvent **verrouiller** les réglages de contournement (VPN, DNS privé, relais privé iCloud).
+- Sentinelle voit les **noms de sites et d'applications**, jamais le contenu (messages, vidéos regardées, recherches).
+- Vous prévenez vos enfants : c'est ce que recommande la CNIL, et c'est aussi le plus efficace. Montrer cet écran ensemble aide à fixer des règles.
+
+### Installer AdGuard Home à la main
+
+1. Téléchargez `AdGuardHome_windows_amd64.zip` (site officiel ou GitHub d'AdGuard), décompressez-le dans `C:\Program Files\AdGuardHome`.
+2. Invite de commandes **administrateur** :
+
+```bash
+"C:\Program Files\AdGuardHome\AdGuardHome.exe" -s install
+```
+
+3. Ouvrez `http://127.0.0.1:3000`. Dans l'assistant, choisissez le **port 3000** pour l'interface d'administration (IIS occupe déjà le port 80), gardez le port 53 pour le DNS, et créez un identifiant.
+4. Pare-feu Windows : autorisez le port 53 (UDP et TCP) en entrée, pour le **sous-réseau local** seulement.
+5. Sentinelle › Paramètres › **Navigation (DNS)** : cochez « Utiliser AdGuard Home », adresse `http://127.0.0.1:3000`, identifiant, puis **Tester**.
+
+AdGuard Home apporte aussi « ce qu'ils font en ce moment » sur le tableau de bord, l'onglet Activité de chaque appareil, la détection des domaines malveillants, du minage et des DGA, et le refus du DNS pour un appareil isolé. Il bloque en plus les publicités et les sites malveillants pour toute la maison.
 
 ## Notifications sur le téléphone (facultatif)
 
@@ -153,9 +180,9 @@ Paramètres › **Diagnostic** vérifie automatiquement PHP, les extensions, les
 
 ## Ce qui a été vérifié, et ce qui reste à valider sur votre box
 
-**Testé** (PHP 8.3, Chromium) : toutes les actions de l'API contre la Freebox simulée (mise en service, connexion, CSRF, double authentification et codes de secours, blocage des essais, coupure par profil partagé ou dédié, isolement et retour arrière, corrections en un clic, horaires, filtrage Wi-Fi, renommage, redémarrage) ; l'interface sur ordinateur et téléphone, en thème sombre et clair, sans aucune erreur et sous CSP stricte ; la lecture des vrais flux RSS d'Univers Freebox et de Freenews.
+**Testé** (PHP 8.3, Chromium) : toutes les actions de l'API contre la Freebox simulée (mise en service, connexion, CSRF, double authentification et codes de secours, blocage des essais, coupure par profil partagé ou dédié, isolement et retour arrière, corrections en un clic, horaires, filtrage Wi-Fi, renommage, redémarrage, onglet Enfants : temps par application, protections, bascule du DNS de la box) ; l'interface sur ordinateur et téléphone, en thème sombre et clair, sans aucune erreur et sous CSP stricte ; la lecture des vrais flux RSS d'Univers Freebox et de Freenews.
 
-**Construit d'après la documentation et des projets publiés, à confirmer sur votre Freebox Ultra** : l'API Freebox OS (authentification, réseau, Wi-Fi, ports, UPnP, IPv6, système, Player) suit la bibliothèque de référence `freebox-api` et les définitions de types publiées. Le contrôle d'accès par profil (`network_control`) n'est pas documenté officiellement : il suit deux intégrations Home Assistant qui fonctionnent sur Freebox Ultra (`PUT` avec l'objet complet). La **création** d'un profil dédié (`POST profile/`) n'a pas d'exemple public : si elle échoue, créez le profil dans Freebox OS, le message vous y invite. Après chaque modification, Sentinelle relit la box pour vérifier que le changement a bien été appliqué, et le signale sinon.
+**Construit d'après la documentation et des projets publiés, à confirmer sur votre Freebox Ultra** : l'API Freebox OS (authentification, réseau, Wi-Fi, ports, UPnP, IPv6, système, Player) suit la bibliothèque de référence `freebox-api` et les définitions de types publiées. Le contrôle d'accès par profil (`network_control`) n'est pas documenté officiellement : il suit deux intégrations Home Assistant qui fonctionnent sur Freebox Ultra (`PUT` avec l'objet complet). La **création** d'un profil dédié (`POST profile/`) n'a pas d'exemple public : si elle échoue, créez le profil dans Freebox OS, le message vous y invite. Après chaque modification, Sentinelle relit la box pour vérifier que le changement a bien été appliqué, et le signale sinon. Les protections par enfant utilisent l'API officielle d'AdGuard Home (clients et services bloqués), testée ici contre une simulation : à confirmer avec votre installation.
 
 Les sources sont dans [`docs/RECHERCHE.md`](docs/RECHERCHE.md).
 
@@ -167,7 +194,7 @@ xdr/
 ├─ api.php               API JSON (point d'entrée unique, sessions, CSRF, audit)
 ├─ web.config / .htaccess  masquage des dossiers internes, en-têtes de sécurité
 ├─ assets/               app.js (interface), app.css (thème), favicon.svg
-├─ app/                  moteur PHP : Freebox.php (API Freebox), DemoBox.php (box simulée),
+├─ app/                  moteur PHP : Freebox.php (API Freebox), DemoBox.php (box simulée), Kids.php (enfants),
 │                        Network.php (appareils, actions), Detect.php (détections, score),
 │                        Collector.php (collecte), Schedules.php, Dns.php (AdGuard Home),
 │                        News.php (actualités), Notify.php, Auth.php, Db.php (SQLite), Http.php

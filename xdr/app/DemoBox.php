@@ -26,15 +26,15 @@ final class DemoBox implements Transport
 
     /** Appareils simulés. ap : 0 = 2,4 GHz, 1 = 5 GHz, 2 = 6 GHz ; port : prise Ethernet de la box. */
     public const DEVICES = [
-        ['mac' => '5A:1C:3E:92:7B:10', 'name' => 'iPhone de Léa', 'dhcp' => 'iPhone-de-Lea', 'type' => 'smartphone', 'vendor' => '', 'conn' => 'wifi', 'ap' => 1, 'ip' => 23, 'kind' => 'phone', 'sig' => -58],
+        ['mac' => '5A:1C:3E:92:7B:10', 'name' => 'iPhone de Léa', 'dhcp' => 'iPhone-de-Lea', 'type' => 'smartphone', 'vendor' => '', 'conn' => 'wifi', 'ap' => 1, 'ip' => 23, 'kind' => 'phone', 'sig' => -58, 'owner' => 'Léa'],
         ['mac' => 'D0:C2:4E:11:A8:42', 'name' => 'Galaxy S24', 'dhcp' => 'Galaxy-S24', 'type' => 'smartphone', 'vendor' => 'Samsung Electronics Co.,Ltd', 'conn' => 'wifi', 'ap' => 2, 'ip' => 24, 'kind' => 'phone', 'sig' => -49],
         ['mac' => '3C:22:FB:6D:01:9E', 'name' => 'MacBook Air', 'dhcp' => 'MacBook-Air', 'type' => 'laptop', 'vendor' => 'Apple, Inc.', 'conn' => 'wifi', 'ap' => 1, 'ip' => 25, 'kind' => 'laptop', 'sig' => -55],
-        ['mac' => 'A4:83:E7:2F:90:6C', 'name' => 'iPad', 'dhcp' => 'iPad', 'type' => 'tablet', 'vendor' => 'Apple, Inc.', 'conn' => 'wifi', 'ap' => 1, 'ip' => 26, 'kind' => 'tablet', 'sig' => -60, 'offline' => true],
+        ['mac' => 'A4:83:E7:2F:90:6C', 'name' => 'iPad', 'dhcp' => 'iPad', 'type' => 'tablet', 'vendor' => 'Apple, Inc.', 'conn' => 'wifi', 'ap' => 1, 'ip' => 26, 'kind' => 'tablet', 'sig' => -60, 'offline' => true, 'owner' => 'Léa'],
         ['mac' => 'D8:BB:C1:4A:77:03', 'name' => 'PC-GAMER', 'dhcp' => 'PC-GAMER', 'type' => 'workstation', 'vendor' => 'Micro-Star INTL CO., LTD.', 'conn' => 'eth', 'port' => 1, 'ip' => 30, 'kind' => 'pc'],
         ['mac' => '34:27:92:5C:10:B1', 'name' => 'Player TV Free 4K', 'dhcp' => 'Freebox-Player', 'type' => 'freebox_player', 'vendor' => 'Freebox SAS', 'conn' => 'eth', 'port' => 2, 'ip' => 31, 'kind' => 'player'],
         ['mac' => '8C:79:F5:21:C4:6A', 'name' => 'TV Salon', 'dhcp' => 'Samsung-TV', 'type' => 'television', 'vendor' => 'Samsung Electronics Co.,Ltd', 'conn' => 'wifi', 'ap' => 1, 'ip' => 32, 'kind' => 'tv', 'sig' => -61],
-        ['mac' => 'BC:33:29:7E:5A:F2', 'name' => 'PS5', 'dhcp' => 'PS5-123', 'type' => 'vg_console', 'vendor' => 'Sony Interactive Entertainment Inc.', 'conn' => 'eth', 'port' => 3, 'ip' => 33, 'kind' => 'console'],
-        ['mac' => '98:41:5C:3B:2D:07', 'name' => 'Nintendo Switch', 'dhcp' => 'Nintendo-Switch', 'type' => 'vg_console', 'vendor' => 'Nintendo Co.,Ltd', 'conn' => 'wifi', 'ap' => 0, 'ip' => 34, 'kind' => 'handheld', 'sig' => -66],
+        ['mac' => 'BC:33:29:7E:5A:F2', 'name' => 'PS5', 'dhcp' => 'PS5-123', 'type' => 'vg_console', 'vendor' => 'Sony Interactive Entertainment Inc.', 'conn' => 'eth', 'port' => 3, 'ip' => 33, 'kind' => 'console', 'owner' => 'Tom'],
+        ['mac' => '98:41:5C:3B:2D:07', 'name' => 'Nintendo Switch', 'dhcp' => 'Nintendo-Switch', 'type' => 'vg_console', 'vendor' => 'Nintendo Co.,Ltd', 'conn' => 'wifi', 'ap' => 0, 'ip' => 34, 'kind' => 'handheld', 'sig' => -66, 'owner' => 'Tom'],
         ['mac' => 'C0:6D:ED:8A:12:5B', 'name' => 'Caméra entrée', 'dhcp' => 'EZVIZ-C6N', 'type' => 'ip_camera', 'vendor' => 'Hangzhou Ezviz Software Co.,Ltd.', 'conn' => 'wifi', 'ap' => 0, 'ip' => 40, 'kind' => 'camera', 'sig' => -71],
         ['mac' => 'F8:0D:AC:63:9E:21', 'name' => 'Imprimante HP', 'dhcp' => 'HP-ENVY-6400', 'type' => 'printer', 'vendor' => 'HP Inc.', 'conn' => 'wifi', 'ap' => 0, 'ip' => 41, 'kind' => 'printer', 'sig' => -63],
         ['mac' => '44:65:0D:9F:3A:88', 'name' => 'Echo Dot cuisine', 'dhcp' => 'amazon-echo', 'type' => 'multimedia_device', 'vendor' => 'Amazon Technologies Inc.', 'conn' => 'wifi', 'ap' => 0, 'ip' => 42, 'kind' => 'speaker', 'sig' => -60],
@@ -112,6 +112,8 @@ final class DemoBox implements Transport
                 'workgroup' => 'WORKGROUP', 'smbv2_enabled' => true],
             'volume' => ['volume' => 28, 'mute' => false],
             'dns_denied' => [],
+            'dns_clients' => [],
+            'dhcp_dns' => ['192.168.1.254'],
             'challenges' => [],
             'sessions' => [],
             'auth_polls' => 0,
@@ -241,7 +243,11 @@ final class DemoBox implements Transport
             case $r === 'GET dhcp/config':
                 return ['enabled' => true, 'sticky_assign' => true, 'gateway' => '192.168.1.254', 'netmask' => '255.255.255.0',
                     'ip_range_start' => '192.168.1.10', 'ip_range_end' => '192.168.1.99', 'always_broadcast' => false,
-                    'dns' => ['192.168.1.254', '', '', '', '']];
+                    'dns' => array_slice(array_pad((array)($this->st['dhcp_dns'] ?? ['192.168.1.254']), 5, ''), 0, 5)];
+            case $r === 'PUT dhcp/config':
+                if (isset($in['dns']) && is_array($in['dns'])) $this->st['dhcp_dns'] = array_values(array_filter(array_map('strval', $in['dns'])));
+                $this->dirty = true;
+                return ['dns' => array_slice(array_pad($this->st['dhcp_dns'], 5, ''), 0, 5)];
             case $r === 'GET dhcp/static_lease':
                 return [
                     ['id' => '00:11:32:a7:5e:14', 'mac' => '00:11:32:A7:5E:14', 'ip' => '192.168.1.50', 'comment' => 'NAS', 'hostname' => 'DS920'],
@@ -702,6 +708,14 @@ final class DemoBox implements Transport
             default    => [0.0, 0.0],
         };
         return [max(0.0, $down), max(0.0, $up)];
+    }
+
+    public static function ownerOf(string $mac): string
+    {
+        foreach (self::DEVICES as $d) {
+            if ($d['mac'] === mac_norm($mac)) return (string)($d['owner'] ?? '');
+        }
+        return '';
     }
 
     public static function noise(string $salt, int $slot): float

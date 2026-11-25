@@ -64,8 +64,10 @@ final class Settings
         'poll_seconds'        => 5,
         'upload_spike_mbps'   => 8,               // envoi soutenu au-delà de N Mb/s…
         'upload_spike_factor' => 6,               // …et N fois au-dessus de l'habitude de l'appareil
-        'night_start'         => '01:00',
-        'night_end'           => '05:00',
+        'night_start'         => '23:00',         // nuit des enfants : activité signalée entre ces heures
+        'night_end'           => '06:00',
+        'kids_report'         => true,            // rapport de la semaine des enfants (dimanche soir)
+        'kids_notify'         => true,            // prévenir des points d'attention enfants (nuit, contournement…)
         'retention_days'      => 30,
         'dns_visibility'      => true,
         'adguard'             => ['enabled' => false, 'url' => '', 'user' => '', 'pass' => ''],
@@ -122,6 +124,8 @@ final class Settings
         if (isset($in['night_end'])) $s['night_end'] = $time($in['night_end'], $s['night_end']);
         if (isset($in['retention_days'])) $s['retention_days'] = max(2, min(365, (int)$in['retention_days']));
         if (isset($in['dns_visibility'])) $s['dns_visibility'] = (bool)$in['dns_visibility'];
+        if (isset($in['kids_report'])) $s['kids_report'] = (bool)$in['kids_report'];
+        if (isset($in['kids_notify'])) $s['kids_notify'] = (bool)$in['kids_notify'];
 
         if (isset($in['adguard']) && is_array($in['adguard'])) {
             $a = $in['adguard'];
@@ -328,7 +332,7 @@ function json_out(int $code, array $body): never
 
 /* ------------------------------------------------------------------ chargement */
 
-foreach (['Db', 'Http', 'Freebox', 'DemoBox', 'Dns', 'Network', 'Detect', 'Schedules', 'Collector', 'News', 'Notify', 'Auth'] as $part) {
+foreach (['Db', 'Http', 'Freebox', 'DemoBox', 'Dns', 'Kids', 'Network', 'Detect', 'Schedules', 'Collector', 'News', 'Notify', 'Auth'] as $part) {
     require_once __DIR__ . '/' . $part . '.php';
 }
 

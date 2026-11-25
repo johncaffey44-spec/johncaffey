@@ -48,6 +48,9 @@ final class Collector
                 Db::q('INSERT OR REPLACE INTO dev_traffic(ts, mac, down, up) VALUES(?, ?, ?, ?)', [$bucket, $d['mac'], $d['rate']['down'], $d['rate']['up']]);
             }
 
+            Kids::account($devices);
+            Kids::syncClients();
+            Kids::weeklyReport();
             $report['schedules'] = Schedules::apply($net);
             $new = Detect::run($net, $devices);
             Db::setKv('detect_last', (string)$t);
@@ -77,8 +80,9 @@ final class Collector
                     // Premier inventaire : ce qui est là depuis plus d'une heure est considéré comme connu.
                     $boxFirst = (int)$d['first_seen'];
                     $approved = $first && ($boxFirst === 0 || $boxFirst < $t - 3600) ? 1 : 0;
-                    Db::q('INSERT INTO devices(mac, first_seen, last_seen, name, vendor, type, approved, last_ip, online) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        [$mac, $t, $d['online'] ? $t : ($d['last_activity'] ?: $t), $d['name'], $d['vendor'], $d['type'], $approved, $d['ipv4'], $d['online'] ? 1 : 0]);
+                    Db::q('INSERT INTO devices(mac, first_seen, last_seen, name, vendor, type, approved, last_ip, online, owner) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [$mac, $t, $d['online'] ? $t : ($d['last_activity'] ?: $t), $d['name'], $d['vendor'], $d['type'], $approved, $d['ipv4'], $d['online'] ? 1 : 0,
+                            Network::isDemo() ? DemoBox::ownerOf($mac) : '']);
                     if (!$approved) {
                         Db::event('new', $mac, 'Nouvel appareil : ' . $d['name'] . ' — ' . ($d['vendor'] ?: 'fabricant inconnu') . ($d['ipv4'] ? ' — ' . $d['ipv4'] : ''));
                         $report['new'][] = $d['name'];
@@ -102,6 +106,7 @@ final class Collector
             }
             if ($first && $devices) Db::event('inventory', '', 'Inventaire initial : ' . count($devices) . ' appareils enregistrés.');
             $pdo->commit();
+            if ($first && Network::isDemo()) Kids::seedDemo();
         } catch (Throwable $e) {
             $pdo->rollBack();
             throw $e;

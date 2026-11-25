@@ -165,6 +165,35 @@ try {
         'player' => Network::make()->players(),
         'updates' => News::updates(clean_text(Network::make()->system()['firmware_version'] ?? '', 20)),
         'news' => News::get((bool)arg('refresh', false)),
+        'kids' => (function () {
+            $n = Network::make();
+            $catalog = [];
+            $catalogError = null;
+            if (Dns::enabled()) {
+                try {
+                    $catalog = Dns::serviceCatalog();
+                } catch (Throwable $e) {
+                    $catalogError = $e->getMessage();
+                }
+            }
+            $dhcp = [];
+            try {
+                $dhcp = $n->dhcpDns();
+            } catch (Throwable) {
+            }
+            $candidates = array_map(fn($d) => ['mac' => $d['mac'], 'name' => $d['name'], 'type' => $d['type'], 'type_label' => $d['type_label'],
+                'owner' => $d['owner'], 'online' => $d['online']], $n->devices(false));
+            return [
+                'kids' => Kids::summary(arg('range') === 'week' ? 'week' : 'today'),
+                'dns' => Dns::enabled(),
+                'catalog' => $catalog, 'catalog_error' => $catalogError,
+                'night' => [Settings::get('night_start'), Settings::get('night_end')],
+                'candidates' => $candidates,
+                'dhcp' => ['dns' => $dhcp, 'server_ip' => server_lan_ip()],
+                'report' => (bool)Settings::get('kids_report'),
+            ];
+        })(),
+        'kid_activity' => ['activity' => Dns::enabled() ? Kids::activity(clean_text((string)arg('owner'), 30)) : []],
         'journal' => [
             'events' => Db::all('SELECT e.ts, e.kind, e.mac, e.text, COALESCE(d.name, \'\') AS name FROM events e LEFT JOIN devices d ON d.mac = e.mac ORDER BY e.ts DESC LIMIT 300'),
             'audit' => Db::all('SELECT ts, ip, action, target, ok, detail FROM audit ORDER BY ts DESC LIMIT 300'),
@@ -223,6 +252,31 @@ try {
             return Network::make()->profileMode((int)arg('id'), (string)arg('mode'), max(0, min(10080, (int)arg('minutes', 0))));
         })(),
         'schedule_save' => (need_post() ?? Schedules::save($in)),
+        'device_owner' => (function () use ($needMac) {
+            need_post();
+            Kids::setOwner($needMac(), (string)arg('owner'));
+            return ['ok' => true];
+        })(),
+        'kid_protect' => (function () use (&$target) {
+            need_post();
+            $target = clean_text((string)arg('owner'), 30);
+            return Kids::protect($target, (bool)arg('parental', false), (bool)arg('safesearch', false), (array)arg('blocked', []));
+        })(),
+        'dns_dhcp' => (function () {
+            need_post();
+            $mode = (string)arg('mode');
+            $ip = (string)arg('ip') ?: server_lan_ip();
+            $servers = match ($mode) {
+                'adguard' => [$ip],
+                'adguard_fallback' => [$ip, '192.168.1.254'],
+                'freebox' => ['192.168.1.254'],
+                default => throw new InvalidArgumentException('Choix inconnu.'),
+            };
+            if ($mode !== 'freebox' && !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                throw new InvalidArgumentException('Adresse IP du serveur inconnue : ouvrez Sentinelle depuis un autre appareil (pas « localhost ») ou indiquez l\'IP du PC.');
+            }
+            return Network::make()->setDhcpDns($servers);
+        })(),
         'schedule_delete' => (function () {
             need_post();
             Schedules::delete((int)arg('id'));
@@ -333,6 +387,16 @@ try {
     if ($method === 'POST' && !in_array($action, ['login', 'setup', ''], true)) Db::audit($action, '', false, $e->getMessage());
     json_out($http, ['ok' => false, 'error' => ($e instanceof RuntimeException || $e instanceof PDOException) ? $e->getMessage()
         : 'Erreur interne du serveur (détails dans data/php-errors.log).']);
+}
+
+/** Adresse IPv4 de ce serveur sur le réseau local (pour le DNS distribué par la box). */
+function server_lan_ip(): string
+{
+    if (Network::isDemo()) return '192.168.1.51';
+    $host = (string)parse_url((string)(Settings::get('adguard')['url'] ?? ''), PHP_URL_HOST);
+    if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !str_starts_with($host, '127.')) return $host;
+    $srv = normalize_ip((string)($_SERVER['SERVER_ADDR'] ?? $_SERVER['LOCAL_ADDR'] ?? ''));
+    return filter_var($srv, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !str_starts_with($srv, '127.') ? $srv : '';
 }
 
 /** Vérifications de l'installation (page Paramètres › Diagnostic). */

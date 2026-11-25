@@ -16,7 +16,7 @@ final class Notify
         if (!$new || ($cfg['type'] ?? 'none') === 'none') return;
         $min = self::ORDER[$cfg['min_severity'] ?? 'elevee'] ?? 3;
         foreach ($new as $a) {
-            if ((self::ORDER[$a['severity']] ?? 0) < $min) continue;
+            if ($a['kind'] === 'parent' ? !Settings::get('kids_notify') : (self::ORDER[$a['severity']] ?? 0) < $min) continue;
             try {
                 self::send('Sentinelle · alerte ' . mb_strtolower(Detect::LABELS[$a['severity']] ?? ''), $a['title'] . "\n" . str_limit($a['detail'], 380), $a['severity']);
                 Db::q('UPDATE alerts SET notified = 1 WHERE fp = ?', [$a['fp']]);

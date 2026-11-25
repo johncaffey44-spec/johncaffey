@@ -151,6 +151,50 @@ final class Dns
         return $deny ? 'résolution DNS refusée par AdGuard Home' : 'résolution DNS rétablie';
     }
 
+    /* ------------------------------------------------------------------ clients AdGuard Home (protections par enfant) */
+
+    public static function clients(): array
+    {
+        if (Network::isDemo()) return array_values((array)(new DemoBox())->state('dns_clients'));
+        $r = self::call('GET', '/control/clients');
+        return array_values(array_filter((array)($r['clients'] ?? []), 'is_array'));
+    }
+
+    public static function client(string $name): ?array
+    {
+        foreach (self::clients() as $c) {
+            if (($c['name'] ?? '') === $name) return $c;
+        }
+        return null;
+    }
+
+    public static function saveClient(array $c, bool $exists): void
+    {
+        if (Network::isDemo()) {
+            $box = new DemoBox();
+            $all = (array)$box->state('dns_clients');
+            $all[$c['name']] = $c;
+            $box->setState('dns_clients', $all);
+            return;
+        }
+        $exists ? self::call('POST', '/control/clients/update', ['name' => $c['name'], 'data' => $c]) : self::call('POST', '/control/clients/add', $c);
+    }
+
+    /** Services bloquables proposés par AdGuard Home : identifiant → nom. */
+    public static function serviceCatalog(): array
+    {
+        if (Network::isDemo()) return Kids::DEMO_CATALOG;
+        return cache_get('dns-services', 86400, function (): array {
+            $r = self::call('GET', '/control/blocked_services/all');
+            $out = [];
+            foreach ((array)($r['blocked_services'] ?? []) as $s) {
+                if (isset($s['id'], $s['name'])) $out[(string)$s['id']] = clean_text($s['name'], 40);
+            }
+            asort($out, SORT_NATURAL | SORT_FLAG_CASE);
+            return $out;
+        });
+    }
+
     /* ------------------------------------------------------------------ démonstration */
 
     private const DEMO_PROFILES = [
@@ -176,6 +220,10 @@ final class Dns
     {
         $box = new DemoBox();
         $denied = (array)$box->state('dns_denied');
+        $blockedFor = [];
+        foreach ((array)$box->state('dns_clients') as $c) {
+            foreach ((array)($c['ids'] ?? []) as $ip) $blockedFor[$ip] = (array)($c['blocked_services'] ?? []);
+        }
         $now = time();
         $out = [];
         for ($t = $now - $now % 10; $t > $now - 900 && count($out) < $limit * 3; $t -= 10) {
@@ -205,6 +253,13 @@ final class Dns
                     $pick = 'ads.doubleclick.net';
                     $blocked = true;
                     $reason = 'FilteredBlackList';
+                } elseif (($d['owner'] ?? '') !== '' && $d['kind'] === 'phone' && crc32($d['mac'] . $t) % 23 === 0) {
+                    $pick = 'mask.icloud.com'; // relais privé iCloud : contourne le filtrage
+                }
+                $svcId = Kids::SERVICE_IDS[self::service($pick) ?? ''] ?? null;
+                if ($svcId !== null && in_array($svcId, $blockedFor[$ip] ?? [], true)) {
+                    $blocked = true;
+                    $reason = 'FilteredBlockedService';
                 }
                 if ($search !== '' && $search !== $ip && !str_contains($pick, $search)) continue;
                 $out[] = ['t' => $t - (crc32($d['mac'] . $t) % 9), 'ip' => $ip, 'domain' => $pick, 'type' => 'A', 'blocked' => $blocked,

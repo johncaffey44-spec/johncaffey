@@ -237,6 +237,84 @@ final class Detect
             }
         }
 
+        /* ---------------- enfants (contrôle parental, hors score de sécurité) ---------------- */
+        $owners = Kids::owners();
+        if ($owners) {
+            $ipOwner = [];
+            foreach ($owners as $o => $devs) {
+                foreach ($devs as $dv) {
+                    if ($dv['last_ip'] !== '') $ipOwner[$dv['last_ip']] = $o;
+                }
+            }
+            [$sh] = array_map('intval', explode(':', (string)Settings::get('night_start')));
+            [$eh] = array_map('intval', explode(':', (string)Settings::get('night_end')));
+            $h = (int)date('G');
+            if ($sh > $eh) {
+                $startDay = $h >= $sh ? date('Y-m-d') : date('Y-m-d', strtotime('-1 day'));
+                $endDay = date('Y-m-d', strtotime($startDay . ' +1 day'));
+                $sql = '((day = ? AND hour >= ?) OR (day = ? AND hour < ?))';
+                $par = [$startDay, $sh, $endDay, $eh];
+            } else {
+                $startDay = date('Y-m-d');
+                $sql = '(day = ? AND hour >= ? AND hour < ?)';
+                $par = [$startDay, $sh, $eh];
+            }
+            foreach ($owners as $o => $devs) {
+                $macs = array_column($devs, 'mac');
+                $in = implode(',', array_fill(0, count($macs), '?'));
+                $rows = Db::all("SELECT service, SUM(minutes) AS m FROM usage WHERE $sql AND mac IN ($in) GROUP BY service ORDER BY m DESC", [...$par, ...$macs]);
+                $min = array_sum(array_column($rows, 'm'));
+                if ($min >= 10) {
+                    $top = implode(', ', array_map(fn($r) => ($r['service'] ?: 'service inconnu') . ' ' . Kids::hm((int)$r['m']), array_slice($rows, 0, 3)));
+                    $d->add('child_night', "$o|$startDay", 'moyenne', "Activité la nuit : $o (" . Kids::hm($min) . ')',
+                        'Entre ' . Settings::get('night_start') . ' et ' . Settings::get('night_end') . " : $top.",
+                        'Programmez une coupure de nuit dans Contrôle d\'accès, et parlez-en ensemble.',
+                        [['type' => 'nav', 'href' => '#/access', 'label' => 'Programmer une coupure']], '', '', 'parent');
+                }
+            }
+            if (Dns::enabled()) {
+                try {
+                    $log = cache_get('dns-recent', 8, fn() => Dns::recent(500));
+                    $adult = [];
+                    $bypass = [];
+                    $seen = [];
+                    $oldest = time();
+                    foreach ($log as $e) {
+                        $oldest = min($oldest, $e['t']);
+                        $seen[$e['ip']] = true;
+                        if ($e['t'] < time() - 900 || !isset($ipOwner[$e['ip']])) continue;
+                        $o = $ipOwner[$e['ip']];
+                        if ($e['reason'] === 'FilteredParental') $adult[$o][$e['domain']] = true;
+                        if (($lbl = Kids::bypassLabel($e['domain'])) !== null) $bypass[$o][$lbl] = true;
+                    }
+                    // appareil actif depuis 10 min sans aucune requête DNS, alors qu'il passait par AdGuard Home hier
+                    if ($oldest <= time() - 600) {
+                        foreach ($owners as $o => $devs) {
+                            foreach ($devs as $dv) {
+                                if ($dv['last_ip'] === '' || isset($seen[$dv['last_ip']])) continue;
+                                $avg = (float)Db::val('SELECT AVG(down + up) FROM dev_traffic WHERE mac = ? AND ts >= ?', [$dv['mac'], time() - 600]);
+                                $before = (int)Db::val("SELECT COUNT(*) FROM usage WHERE mac = ? AND day >= ? AND service NOT IN ('', 'Autre')", [$dv['mac'], date('Y-m-d', strtotime('-1 day'))]);
+                                if ($avg >= 30_000 && $before > 0) $bypass[$o]['activité sans requête DNS visible (' . $dv['name'] . ')'] = true;
+                            }
+                        }
+                    }
+                    foreach ($adult as $o => $doms) {
+                        $d->add('child_adult', "$o|" . date('Y-m-d'), 'moyenne', "Site pour adultes bloqué : $o",
+                            'Le filtre a bloqué : ' . implode(', ', array_slice(array_keys($doms), 0, 3)) . '. Le blocage a fonctionné ; c\'est peut-être l\'occasion d\'en parler.',
+                            '', [], '', '', 'parent');
+                    }
+                    foreach ($bypass as $o => $labels) {
+                        $d->add('child_bypass', "$o|" . date('Y-m-d'), 'moyenne', "Contournement possible du filtrage : $o",
+                            'Indices : ' . implode(', ', array_keys($labels)) . '. Avec un VPN, un DNS chiffré ou le relais privé iCloud, la navigation échappe aux filtres et à Sentinelle.',
+                            'iPhone : Réglages › Wi-Fi › (i) du réseau › désactiver « Relais privé ». Android : Paramètres › DNS privé › Désactivé. Temps d\'écran ou Family Link peuvent verrouiller ces réglages.',
+                            [], '', '', 'parent');
+                    }
+                } catch (Throwable) {
+                    // AdGuard Home injoignable
+                }
+            }
+        }
+
         /* ---------------- Sentinelle elle-même ---------------- */
         if (Db::kv('ui_https', '1') === '0') {
             $d->add('xdr_http', 'xdr', 'faible', 'Interface Sentinelle ouverte en HTTP (non chiffré)',
@@ -283,7 +361,7 @@ final class Detect
                     $new[] = $x;
                 } else {
                     Db::q("UPDATE alerts SET severity = ?, mac = ?, title = ?, detail = ?, mitre = ?, fix = ?, action = ?,
-                           count = count + CASE WHEN kind = 'event' AND last_ts < ? THEN 1 ELSE 0 END,
+                           count = count + CASE WHEN kind != 'state' AND last_ts < ? THEN 1 ELSE 0 END,
                            notified = CASE WHEN status = 'resolved' THEN 0 ELSE notified END,
                            status = CASE WHEN status = 'resolved' THEN 'open' ELSE status END, last_ts = ? WHERE id = ?",
                         [$x['severity'], $x['mac'], $x['title'], $x['detail'], $x['mitre'], $x['fix'], $x['action'], $now - 600, $now, $row['id']]);
@@ -298,7 +376,7 @@ final class Detect
                     if (!isset($seen[$r['fp']])) Db::q("UPDATE alerts SET status = 'resolved', resolved_ts = ? WHERE id = ?", [$now, $r['id']]);
                 }
             }
-            Db::q("UPDATE alerts SET status = 'resolved', resolved_ts = ? WHERE kind = 'event' AND status = 'open' AND last_ts < ?", [$now, $now - 7 * 86400]);
+            Db::q("UPDATE alerts SET status = 'resolved', resolved_ts = ? WHERE kind IN ('event', 'parent') AND status = 'open' AND last_ts < ?", [$now, $now - 7 * 86400]);
             $pdo->commit();
         } catch (Throwable $e) {
             $pdo->rollBack();
@@ -310,7 +388,7 @@ final class Detect
     public static function score(): array
     {
         $counts = array_fill_keys(array_keys(self::WEIGHTS), 0);
-        foreach (Db::all("SELECT severity, COUNT(*) AS n FROM alerts WHERE status = 'open' GROUP BY severity") as $r) {
+        foreach (Db::all("SELECT severity, COUNT(*) AS n FROM alerts WHERE status = 'open' AND kind != 'parent' GROUP BY severity") as $r) {
             if (isset($counts[$r['severity']])) $counts[$r['severity']] = (int)$r['n'];
         }
         $v = 100.0;
@@ -334,7 +412,7 @@ final class Detect
             'resolved' => "status = 'resolved'",
             'all' => '1 = 1',
             default => "status != 'resolved'",
-        };
+        } . " AND kind != 'parent'";
         $rows = Db::all("SELECT * FROM alerts WHERE $where ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'ack' THEN 1 ELSE 2 END,
             CASE severity WHEN 'critique' THEN 0 WHEN 'elevee' THEN 1 WHEN 'moyenne' THEN 2 WHEN 'faible' THEN 3 ELSE 4 END, last_ts DESC LIMIT " . max(1, min(500, $limit)));
         return array_map(fn($r) => [

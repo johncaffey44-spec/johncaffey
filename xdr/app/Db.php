@@ -63,7 +63,13 @@ CREATE TABLE IF NOT EXISTS schedules (
     applied_until INTEGER NOT NULL DEFAULT 0, skip_until INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS usage (
+    day TEXT NOT NULL, hour INTEGER NOT NULL, mac TEXT NOT NULL, service TEXT NOT NULL, minutes INTEGER NOT NULL,
+    PRIMARY KEY (day, hour, mac, service)
+);
 SQL);
+        $cols = array_column($pdo->query('PRAGMA table_info(devices)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        if (!in_array('owner', $cols, true)) $pdo->exec("ALTER TABLE devices ADD COLUMN owner TEXT NOT NULL DEFAULT ''");
     }
 
     public static function q(string $sql, array $params = []): PDOStatement

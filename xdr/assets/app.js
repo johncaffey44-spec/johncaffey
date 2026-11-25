@@ -78,6 +78,7 @@
     external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     chevron: '<path d="M9 5l7 7-7 7"/>',
+    kid: '<circle cx="12" cy="7" r="3.5"/><path d="M5.5 20.5a6.5 6.5 0 0 1 13 0"/>',
     trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>',
     calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     thermo: '<path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 9v7"/>',
@@ -419,6 +420,7 @@
   const NAV = [
     ['dashboard', 'Tableau de bord', 'dashboard', 'Vue d\'ensemble en direct de votre réseau'],
     ['devices', 'Appareils', 'devices', 'Tout ce qui est connecté à votre Freebox'],
+    ['kids', 'Enfants', 'kid', 'Ce que font les enfants sur le réseau de la maison'],
     ['traffic', 'Trafic', 'traffic', 'Débits en direct et historique'],
     ['threats', 'Menaces', 'shield', 'Alertes, explications et corrections'],
     ['access', 'Contrôle d\'accès', 'clock', 'Couper Internet par profil et horaires'],
@@ -639,6 +641,7 @@
     try { await api.post('device_approve', { mac: dev.mac, approved }); toast(approved ? 'Appareil reconnu' : 'Marqué comme inconnu', 'ok', dev.name); after && after(); } catch (e) { fail(e); }
   }
   async function runAction(act, after) {
+    if (act.type === 'nav') { location.hash = act.href; return; }
     if (act.type === 'fix') {
       const ok = await confirmBox({ title: act.label, lead: 'Sentinelle va appliquer ce réglage sur votre Freebox, puis vérifier qu\'il a bien été pris en compte.', ok: 'Appliquer' });
       if (!ok) return;
@@ -795,6 +798,7 @@
       };
       for (const [id, label] of tabs) tabBar.append(h('button', { type: 'button', role: 'tab', 'data-id': id, onclick: () => show(id) }, label));
       const renameBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => renameFlow(d, reload) }, icon('edit'), 'Renommer');
+      const ownerBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => ownerFlow(d, reload) }, icon('kid'), d.owner ? `Enfant : ${d.owner}` : 'À qui ?');
       put(body,
         h('div', { class: 'drawer-head' }, avatar(d, true),
           h('div', { class: 'grow' }, h('h2', null, d.name), h('div', { class: 'muted' }, d.type_label, d.vendor ? ' · ' + d.vendor : '')),
@@ -809,12 +813,26 @@
           h('button', { class: 'btn sm', type: 'button', onclick: async () => { try { await api.post('device_wake', { mac: d.mac }); toast('Réveil envoyé', 'ok', d.name); } catch (e) { fail(e); } } }, icon('zap'), 'Réveiller'),
           d.flags.approved ? h('button', { class: 'btn sm', type: 'button', onclick: () => approveFlow(d, false, reload) }, icon('alert'), 'Je ne le connais pas')
             : h('button', { class: 'btn sm', type: 'button', onclick: () => approveFlow(d, true, reload) }, icon('check'), 'C\'est à moi'),
-          renameBtn,
+          renameBtn, ownerBtn,
           d.profile ? h('a', { class: 'btn sm ghost', href: '#/access', onclick: () => m.close() }, icon('clock'), 'Horaires') : null),
         tabBar, panel);
       show(tab);
     };
     load();
+  }
+  async function ownerFlow(d, after) {
+    const known = [...new Set(((state.ov && state.ov.devices) || []).map(x => x.owner).filter(Boolean))];
+    const listId = nextId('owners');
+    const input = h('input', { class: 'input', value: d.owner || '', maxlength: 30, list: listId, placeholder: 'Prénom de l\'enfant (vide = adulte)' });
+    const form = h('form', null, h('h2', null, 'À qui est cet appareil ?'),
+      h('p', { class: 'lead' }, 'Indiquez le prénom de l\'enfant qui utilise « ' + d.name + ' ». Son activité apparaîtra dans l\'onglet Enfants. Laissez vide pour un appareil d\'adulte.'),
+      h('label', { class: 'field' }, 'Prénom', input), h('datalist', { id: listId }, known.map(k => h('option', { value: k }))),
+      h('div', { class: 'actions' }, h('button', { class: 'btn ghost', type: 'button', onclick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary', type: 'submit' }, 'Enregistrer')));
+    const m = modal(form, { label: 'Propriétaire' });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      try { await api.post('device_owner', { mac: d.mac, owner: input.value.trim() }); m.close(); toast(input.value.trim() ? `Appareil de ${input.value.trim()}` : 'Appareil d\'adulte', 'ok', d.name); after && after(); } catch (err) { fail(err); }
+    });
   }
   async function renameFlow(d, after) {
     const name = h('input', { class: 'input', value: d.name, maxlength: 60, required: true });
@@ -923,6 +941,153 @@
     put(root, filt, summary, list);
     await refresh();
     poll(refresh, 10);
+  };
+
+  /* ---------- Enfants ---------- */
+  const hm = min => min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`;
+  function assignFlow(candidates, after) {
+    const personal = candidates.filter(c => ['smartphone', 'tablet', 'laptop', 'vg_console', 'workstation', 'television', 'multimedia_device', 'other', 'smart_home'].includes(c.type) || c.owner);
+    const known = [...new Set(candidates.map(c => c.owner).filter(Boolean))];
+    const listId = nextId('owners');
+    const rows = personal.map(c => ({ c, input: h('input', { class: 'input', value: c.owner || '', maxlength: 30, list: listId, placeholder: '—', 'aria-label': 'Enfant pour ' + c.name }) }));
+    const form = h('form', null, h('h2', null, 'Qui utilise quel appareil ?'),
+      h('p', { class: 'lead' }, 'Écrivez le prénom de l\'enfant à côté de chacun de ses appareils. Laissez vide pour les appareils des adultes.'),
+      h('datalist', { id: listId }, known.map(k => h('option', { value: k }))),
+      h('div', { class: 'stack', style: { gap: '8px', maxHeight: '55vh', overflowY: 'auto' } }, rows.map(({ c, input }) =>
+        h('div', { class: 'assign' }, h('span', { class: 'chip' + (c.online ? ' ok' : '') }, icon(TYPE_ICON[c.type] || 'unknown'), c.name), input))),
+      h('div', { class: 'actions' }, h('button', { class: 'btn ghost', type: 'button', onclick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary', type: 'submit' }, 'Enregistrer')));
+    const m = modal(form, { label: 'Appareils des enfants' });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      try {
+        for (const { c, input } of rows) if ((c.owner || '') !== input.value.trim()) await api.post('device_owner', { mac: c.mac, owner: input.value.trim() });
+        m.close(); toast('Appareils des enfants enregistrés'); after();
+      } catch (err) { fail(err); }
+    });
+  }
+  async function activityFlow(owner) {
+    const body = h('div', null, h('div', { class: 'skeleton' }));
+    const m = modal(h('div', null, h('div', { class: 'drawer-head' }, h('div', { class: 'grow' }, h('h2', null, `Activité de ${owner}`),
+      h('div', { class: 'muted' }, 'Derniers sites et applications demandés par ses appareils (noms de domaine, pas le contenu).')),
+      h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Fermer', onclick: () => m.close() }, icon('x'))), body), { drawer: true, label: 'Activité' });
+    try {
+      const r = await api.get('kid_activity', { owner });
+      put(body, r.activity.length ? h('div', { class: 'dns-list', style: { maxHeight: 'none' } }, r.activity.map(q => h('div', { class: 'dns-row' + (q.blocked ? ' blocked' : '') },
+        h('span', { class: 'faint tnum' }, fmt.time(q.t)),
+        h('span', null, h('span', { class: 'd mono' }, q.domain), h('div', { class: 'faint', style: { fontSize: '12px' } }, q.device)),
+        q.bypass ? h('span', { class: 'chip warn' }, icon('alert'), q.bypass)
+          : q.blocked ? h('span', { class: 'chip serious' }, icon('ban'), q.reason === 'FilteredParental' ? 'Adulte (bloqué)' : q.reason === 'FilteredBlockedService' ? 'Appli bloquée' : 'Bloqué')
+            : q.site ? h('span', { class: 'chip' }, q.site) : h('span')))) : emptyBox('Aucune requête récente pour ses appareils.'));
+    } catch (e) { put(body, errorBox(e)); }
+  }
+  function protectFlow(k, catalog, after) {
+    const p = k.protect || { parental: false, safesearch: false, blocked: [] };
+    const sel = new Set(p.blocked);
+    const parental = h('input', { type: 'checkbox', checked: p.parental });
+    const safe = h('input', { type: 'checkbox', checked: p.safesearch });
+    const search = h('input', { class: 'input', type: 'search', placeholder: 'Rechercher une application…' });
+    const list = h('div', { class: 'svc-pick' });
+    const draw = () => put(list, Object.entries(catalog).filter(([, n]) => n.toLowerCase().includes(search.value.toLowerCase())).map(([id, name]) => {
+      const cb = h('input', { type: 'checkbox', checked: sel.has(id), onchange: e => { e.target.checked ? sel.add(id) : sel.delete(id); } });
+      return h('label', { class: 'check' }, cb, name);
+    }));
+    search.addEventListener('input', draw);
+    draw();
+    const form = h('form', null, h('h2', null, `Protections de ${k.owner}`),
+      h('p', { class: 'lead' }, 'Appliquées par AdGuard Home à tous ses appareils, à la maison (Wi-Fi et Ethernet).'),
+      h('div', { class: 'stack', style: { gap: '10px' } },
+        h('label', { class: 'check' }, h('span', { class: 'switch' }, parental, h('span')), 'Filtre adulte (sites pornographiques, violents…)'),
+        h('label', { class: 'check' }, h('span', { class: 'switch' }, safe, h('span')), 'Recherche sécurisée (Google, Bing…) et mode restreint YouTube'),
+        h('div', { class: 'section-title', style: { margin: '10px 0 0' } }, 'Applications bloquées'), search, list),
+      h('div', { class: 'actions' }, h('button', { class: 'btn ghost', type: 'button', onclick: () => m.close() }, 'Annuler'), h('button', { class: 'btn primary', type: 'submit' }, 'Appliquer')));
+    const m = modal(form, { label: 'Protections' });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      try { await api.post('kid_protect', { owner: k.owner, parental: parental.checked, safesearch: safe.checked, blocked: [...sel] }); m.close(); toast('Protections appliquées', 'ok', k.owner); after(); } catch (err) { fail(err); }
+    });
+  }
+  VIEWS.kids = async root => {
+    let range = 'today';
+    const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Période' });
+    for (const [k, l] of [['today', 'Aujourd\'hui'], ['week', '7 derniers jours']]) {
+      const b = h('button', { type: 'button', 'aria-pressed': String(k === range) }, l);
+      b.addEventListener('click', () => { range = k; for (const x of seg.children) x.setAttribute('aria-pressed', String(x === b)); load(); });
+      seg.append(b);
+    }
+    const load = async () => {
+      let r;
+      try { r = await api.get('kids', { range }); setLive('on'); } catch (e) { put(root, errorBox(e)); return; }
+      const night = new Set((() => { const s = parseInt(r.night[0], 10), e = parseInt(r.night[1], 10), out = []; for (let x = s; x !== e && out.length < 24; x = (x + 1) % 24) out.push(x); return out; })());
+      const assignBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => assignFlow(r.candidates, load) }, icon('kid', 'sm'), 'Qui utilise quel appareil ?');
+      const dnsOk = r.dns && r.dhcp.server_ip && r.dhcp.dns[0] === r.dhcp.server_ip;
+      const setDhcp = async mode => {
+        const ok = await confirmBox({ title: mode === 'freebox' ? 'Revenir au DNS de la Freebox ?' : 'Filtrer toute la maison avec AdGuard Home ?', ok: 'Appliquer',
+          lead: mode === 'freebox' ? 'Les appareils n\'utiliseront plus AdGuard Home : plus de filtrage ni de suivi.'
+            : mode === 'adguard' ? `La Freebox indiquera ${r.dhcp.server_ip} comme seul DNS. Si ce PC est éteint, Internet semblera en panne pour toute la maison.`
+              : `La Freebox indiquera ${r.dhcp.server_ip} puis elle-même en secours : Internet reste disponible si ce PC est éteint, mais certains appareils pourront parfois passer par le secours (non filtré).` });
+        if (!ok) return;
+        try { await api.post('dns_dhcp', { mode }); toast('DNS de la maison mis à jour', 'ok', 'Les appareils l\'appliquent à leur prochaine reconnexion (ou en redémarrant le Wi-Fi).'); load(); } catch (e) { fail(e); }
+      };
+      const cards = r.kids.map(k => {
+        const maxH = Math.max(...k.hours, 1);
+        const maxS = Math.max(...k.services.map(x => x.minutes), 1);
+        const days = range === 'week' ? k.days : null;
+        const maxD = days ? Math.max(...days.map(x => x.minutes), 1) : 1;
+        const blockedNames = k.protect ? k.protect.blocked.map(id => r.catalog[id] || id) : [];
+        return h('div', { class: 'card' + (k.alerts.length ? ' glow' : '') },
+          h('div', { class: 'kid-head' }, h('span', { class: 'kid-avatar', 'aria-hidden': 'true' }, k.owner.slice(0, 1).toUpperCase()),
+            h('div', null, h('h2', { style: { fontSize: '19px' } }, k.owner), h('div', { class: 'chips', style: { marginTop: '6px' } },
+              k.devices.map(d => h('span', { class: 'chip' }, icon(TYPE_ICON[d.type] || 'unknown'), d.name, d.minutes ? ' · ' + hm(d.minutes) : '')))),
+            h('div', { class: 'kid-total' }, h('b', null, hm(k.total)), h('span', null, range === 'week' ? 'en ligne sur 7 jours' : 'en ligne aujourd\'hui'),
+              k.night ? h('div', null, h('span', { class: 'chip serious', style: { marginTop: '6px' } }, icon('clock'), `${hm(k.night)} la nuit`)) : null)),
+          k.alerts.length ? h('div', { class: 'stack', style: { gap: '8px', marginTop: '14px' } }, k.alerts.map(a => h('div', { class: 'alert moyenne' },
+            h('div', null, h('div', { class: 'alert-top' }, h('b', null, a.title), h('span', { class: 'faint', style: { fontSize: '12px' } }, fmt.ago(a.last))), h('p', null, a.detail),
+              h('div', { class: 'btns' }, h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => { try { await api.post('alert_status', { id: a.id, status: 'ack' }); load(); } catch (e) { fail(e); } } }, icon('check', 'sm'), 'Vu, on en a parlé')))))) : null,
+          h('div', { class: 'section-title', style: { margin: '18px 0 10px' } }, 'Applications et sites'),
+          k.services.length ? h('div', { class: 'svc-bars' }, k.services.slice(0, 7).map(x => h('div', { class: 'svc' }, h('span', { class: 'name', title: x.name }, x.name),
+            h('div', { class: 'track' }, h('i', { style: { width: Math.max(2, x.minutes / maxS * 100) + '%' } })), h('b', null, hm(x.minutes)))))
+            : h('p', { class: 'faint', style: { margin: 0, fontSize: '13px' } }, r.dns ? 'Pas encore d\'activité mesurée.' : 'Activez AdGuard Home pour voir les applications utilisées.'),
+          h('div', { class: 'section-title', style: { margin: '18px 0 10px' } }, range === 'week' ? 'Heures d\'activité (cumul 7 jours)' : 'Heures d\'activité'),
+          h('div', { class: 'hours', role: 'img', 'aria-label': 'Minutes d\'activité par heure' }, k.hours.map((v, i) => h('i', { class: night.has(i) ? 'night' : '', style: { height: (v ? Math.max(4, v / maxH * 100) : 0) + '%' }, title: `${i} h : ${hm(v)}${night.has(i) ? ' (nuit)' : ''}` }))),
+          h('div', { class: 'hours-scale' }, Array.from({ length: 24 }, (_, i) => h('span', null, i % 6 === 0 ? i + ' h' : ''))),
+          h('div', { class: 'legend', style: { marginTop: '8px' } }, h('span', null, h('span', { class: 'key down' }), 'Journée'), h('span', null, h('span', { class: 'key up' }), `Nuit (${r.night[0]} → ${r.night[1]})`)),
+          days ? [h('div', { class: 'section-title', style: { margin: '18px 0 10px' } }, 'Par jour'),
+            h('div', { class: 'svc-bars' }, days.map(x => h('div', { class: 'svc' }, h('span', { class: 'name' }, new Date(x.day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric' })),
+              h('div', { class: 'track' }, h('i', { style: { width: Math.max(2, x.minutes / maxD * 100) + '%' } })), h('b', null, hm(x.minutes)))))] : null,
+          r.dns ? [h('div', { class: 'section-title', style: { margin: '18px 0 10px' } }, 'Protections'),
+            h('div', { class: 'chips' },
+              h('span', { class: 'chip' + (k.protect && k.protect.parental ? ' ok' : '') }, icon(k.protect && k.protect.parental ? 'check' : 'x'), 'Filtre adulte'),
+              h('span', { class: 'chip' + (k.protect && k.protect.safesearch ? ' ok' : '') }, icon(k.protect && k.protect.safesearch ? 'check' : 'x'), 'Recherche sécurisée'),
+              blockedNames.length ? h('span', { class: 'chip crit' }, icon('ban'), 'Bloqués : ' + blockedNames.join(', ')) : h('span', { class: 'chip' }, 'Aucune appli bloquée'))] : null,
+          h('div', { class: 'btns', style: { marginTop: '16px' } },
+            r.dns ? h('button', { class: 'btn sm primary', type: 'button', onclick: () => protectFlow(k, r.catalog, load) }, icon('shield', 'sm'), 'Protections') : null,
+            r.dns ? h('button', { class: 'btn sm', type: 'button', onclick: () => activityFlow(k.owner) }, icon('eye', 'sm'), 'Activité détaillée') : null,
+            h('a', { class: 'btn sm ghost', href: '#/access' }, icon('clock', 'sm'), 'Couper / horaires')));
+      });
+      put(root,
+        h('div', { class: 'filters' }, seg, assignBtn),
+        !r.dns ? h('div', { class: 'card glow', style: { marginBottom: '18px' } }, h('div', { class: 'card-head' }, h('h2', null, icon('dns'), 'Pour voir les applications utilisées : AdGuard Home')),
+          h('div', { class: 'steps' },
+            h('div', { class: 'step' }, h('div', null, h('b', null, 'Installez AdGuard Home sur ce PC'), h('p', null, 'Gratuit (site officiel d\'AdGuard). Lancez « AdGuardHome.exe -s install » en administrateur, puis ouvrez http://127.0.0.1:3000. Important : choisissez le port 3000 pour son interface, car IIS occupe déjà le port 80.'))),
+            h('div', { class: 'step' }, h('div', null, h('b', null, 'Renseignez-le dans Sentinelle'), h('p', null, 'Paramètres › Navigation (DNS) : adresse http://127.0.0.1:3000, identifiant et mot de passe, puis « Tester ».'))),
+            h('div', { class: 'step' }, h('div', null, h('b', null, 'Faites passer la maison par lui'), h('p', null, 'Revenez ici : un bouton indiquera à la Freebox d\'utiliser ce PC comme DNS.'))),
+            h('div', { class: 'step' }, h('div', null, h('b', null, 'En attendant'), h('p', null, 'Sentinelle mesure déjà les heures où chaque appareil est actif, sans le détail des applications.')))),
+          h('div', { class: 'btns', style: { marginTop: '14px' } }, h('a', { class: 'btn primary sm', href: '#/settings' }, icon('settings', 'sm'), 'Ouvrir les paramètres'))) : null,
+        r.dns && !dnsOk ? h('div', { class: 'card glow', style: { marginBottom: '18px' } }, h('div', { class: 'card-head' }, h('h2', null, icon('dns'), 'Faire passer la maison par AdGuard Home'), h('div', { class: 'grow' }),
+          h('span', { class: 'chip warn' }, icon('alert'), 'DNS de la box : ' + (r.dhcp.dns.join(', ') || 'Freebox'))),
+          h('p', { class: 'muted', style: { marginTop: 0, fontSize: '13.5px' } }, r.dhcp.server_ip ? `Les appareils doivent utiliser ce PC (${r.dhcp.server_ip}) comme DNS : sinon, ni filtrage ni suivi.` : 'Ouvrez Sentinelle depuis un autre appareil (pas « localhost ») pour que l\'adresse de ce PC soit détectée.'),
+          r.dhcp.server_ip ? h('div', { class: 'btns' }, h('button', { class: 'btn primary sm', type: 'button', onclick: () => setDhcp('adguard') }, 'AdGuard Home seul (filtrage complet)'),
+            h('button', { class: 'btn sm', type: 'button', onclick: () => setDhcp('adguard_fallback') }, 'Avec la Freebox en secours')) : null) : null,
+        r.dns && dnsOk ? h('div', { style: { marginBottom: '18px' } }, h('div', { class: 'note-box' }, icon('check'), h('div', null, h('b', null, 'Filtrage actif pour toute la maison. '), `Les appareils utilisent ce PC (${r.dhcp.server_ip}) comme DNS. `,
+          h('button', { class: 'btn ghost sm', type: 'button', onclick: () => setDhcp('freebox') }, 'Revenir au DNS de la Freebox')))) : null,
+        r.kids.length ? h('div', { class: 'kids' }, cards)
+          : h('div', { class: 'card' }, emptyBox('Aucun appareil d\'enfant pour l\'instant.', 'kid'), h('div', { class: 'btns', style: { justifyContent: 'center' } }, h('button', { class: 'btn primary', type: 'button', onclick: () => assignFlow(r.candidates, load) }, icon('kid'), 'Indiquer les appareils des enfants'))),
+        h('div', { class: 'stack', style: { marginTop: '18px' } },
+          noteBox(h('b', null, 'Ce que Sentinelle voit, et ne voit pas. '), 'Temps estimés : chaque minute où l\'appareil est actif sur le réseau compte, attribuée à l\'application la plus sollicitée. Les noms de sites viennent du DNS : pas le contenu, pas les messages. Hors du Wi-Fi (4G/5G), rien n\'est visible : complétez avec Google Family Link (Android) ou Temps d\'écran (iPhone), qui mesurent le temps par application sur le téléphone et peuvent verrouiller les réglages.'),
+          noteBox(h('b', null, 'Prévenir vos enfants, c\'est la bonne approche : '), 'la CNIL recommande de leur expliquer clairement ce qui est suivi. Montrer cet écran ensemble aide à fixer des règles (heures, applications) plutôt qu\'à surveiller en cachette.')));
+    };
+    await load();
+    poll(load, 60);
   };
 
   /* ---------- Trafic ---------- */
@@ -1517,6 +1682,18 @@
         h('label', { class: 'field' }, 'Rafraîchissement du direct (s)', pollIn), h('label', { class: 'field' }, 'Conservation de l\'historique (jours)', retention)),
       h('div', { class: 'btns', style: { marginTop: '14px' } }, h('button', { class: 'btn', type: 'button', onclick: () => save({ upload_spike_mbps: Number(spike.value), upload_spike_factor: Number(factor.value), poll_seconds: Number(pollIn.value), retention_days: Number(retention.value) }) }, icon('check'), 'Enregistrer')));
 
+    /* Enfants */
+    const nStart = h('input', { class: 'input', type: 'time', value: st.night_start });
+    const nEnd = h('input', { class: 'input', type: 'time', value: st.night_end });
+    const kReport = h('input', { type: 'checkbox', checked: st.kids_report });
+    const kNotify = h('input', { type: 'checkbox', checked: st.kids_notify });
+    const kidsCard = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('kid'), 'Enfants')),
+      h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'La nuit commence à', nStart), h('label', { class: 'field' }, 'et finit à', nEnd)),
+      h('label', { class: 'check', style: { marginTop: '12px' } }, h('span', { class: 'switch' }, kNotify, h('span')), 'Me prévenir sur le téléphone (activité la nuit, contournement, site adulte bloqué)'),
+      h('label', { class: 'check', style: { marginTop: '10px' } }, h('span', { class: 'switch' }, kReport, h('span')), 'Rapport de la semaine, le dimanche soir'),
+      h('p', { class: 'faint', style: { fontSize: '12.5px' } }, 'Les notifications utilisent le service choisi dans « Notifications sur le téléphone ».'),
+      h('div', { class: 'btns' }, h('button', { class: 'btn', type: 'button', onclick: () => save({ night_start: nStart.value, night_end: nEnd.value, kids_report: kReport.checked, kids_notify: kNotify.checked }) }, icon('check'), 'Enregistrer')));
+
     /* DNS */
     const ag = st.adguard;
     const agOn = h('input', { type: 'checkbox', checked: ag.enabled });
@@ -1584,7 +1761,7 @@
         try { await api.post('demo_reset'); state.live = []; toast('Démonstration réinitialisée'); location.hash = '#/dashboard'; } catch (e) { fail(e); }
       } }, icon('refresh'), 'Réinitialiser la démonstration')) : null);
 
-    put(root, h('div', { class: 'grid g-2' }, h('div', { class: 'stack' }, freeboxCard, securityCard, cronCard), h('div', { class: 'stack' }, detectCard, dnsCard, notifyCard, newsCard, diagCard)));
+    put(root, h('div', { class: 'grid g-2' }, h('div', { class: 'stack' }, freeboxCard, securityCard, cronCard), h('div', { class: 'stack' }, kidsCard, dnsCard, notifyCard, detectCard, newsCard, diagCard)));
   };
 
   boot();

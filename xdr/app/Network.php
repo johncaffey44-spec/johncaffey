@@ -295,6 +295,7 @@ final class Network
             ],
             'activity' => ($ip !== '' && isset($dns[$ip])) ? $dns[$ip] : null,
             'note' => (string)($inv['note'] ?? ''),
+            'owner' => (string)($inv['owner'] ?? ''),
         ];
     }
 
@@ -933,6 +934,26 @@ final class Network
             $out[] = [$slice[0][0], array_sum(array_column($slice, 1)) / $c, array_sum(array_column($slice, 2)) / $c];
         }
         return $out;
+    }
+
+    /** Serveurs DNS distribués par le DHCP de la Freebox. */
+    public function dhcpDns(): array
+    {
+        $cfg = (array)$this->fbx->get('dhcp/config/');
+        return array_values(array_filter(array_map('strval', (array)($cfg['dns'] ?? [])), fn($x) => $x !== ''));
+    }
+
+    public function setDhcpDns(array $servers): array
+    {
+        $servers = array_values(array_filter($servers, fn($x) => filter_var($x, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)));
+        if (!$servers) throw new InvalidArgumentException('Adresse de serveur DNS invalide.');
+        $this->fbx->call('PUT', 'dhcp/config/', ['dns' => array_slice(array_pad($servers, 5, ''), 0, 5)]);
+        $now = $this->dhcpDns();
+        if (($now[0] ?? '') !== $servers[0]) {
+            throw new FreeboxError('La Freebox n\'a pas enregistré le serveur DNS.', 'not_applied', 'Faites-le dans Freebox OS › Paramètres de la Freebox › DHCP.');
+        }
+        Db::event('dhcp', '', 'DNS distribué par la Freebox : ' . implode(', ', $servers));
+        return ['ok' => true, 'dns' => $now];
     }
 
     public function reboot(): array
