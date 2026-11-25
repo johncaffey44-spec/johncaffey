@@ -1,0 +1,14 @@
+# Sentinelle XDR — équivalent Apache du web.config (si vous n'utilisez pas IIS).
+Options -Indexes
+DirectoryIndex index.html
+RedirectMatch 404 ^/(.*/)?(app|data|config|tools|certs|docs)(/|$)
+<FilesMatch "\.(sqlite|md|ps1|cmd|pem)$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+</IfModule>
