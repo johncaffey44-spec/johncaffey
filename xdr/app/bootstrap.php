@@ -11,8 +11,12 @@ if (PHP_VERSION_ID < 80100) {
     http_response_code(500);
     exit('Sentinelle XDR demande PHP 8.1 ou plus (PHP ' . PHP_VERSION . ' détecté).');
 }
+// Dès la première ligne : un avertissement ou une dépréciation (nouvelle version de PHP) ne doit
+// jamais s'afficher au milieu d'une réponse JSON. Ils vont dans le journal (data/php-errors.log).
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
 
-const XDR_VERSION = '1.1.0';
+const XDR_VERSION = '1.2.0';
 define('XDR_ROOT', str_replace('\\', '/', dirname(__DIR__)));
 
 /* ---------------------------------------------------------------------------------------
@@ -37,9 +41,20 @@ final class Cfg
             'session_idle_minutes'   => 30,
             'session_max_hours'      => 12,
         ];
-        $file = XDR_ROOT . '/config/config.php';
-        $user = is_file($file) ? (require $file) : [];
-        self::$c = array_replace($defaults, is_array($user) ? $user : []);
+        // installeur.php : écrit par l'installeur (emplacement des données) ; config.php : vos réglages, prioritaires.
+        $c = $defaults;
+        foreach (['installeur.php', 'config.php'] as $name) {
+            $file = XDR_ROOT . '/config/' . $name;
+            if (!is_file($file)) continue;
+            ob_start(); // un BOM UTF-8 ou un espace avant « <?php » partirait avant les en-têtes (session cassée)
+            try {
+                $user = require $file;
+            } finally {
+                ob_end_clean();
+            }
+            if (is_array($user)) $c = array_replace($c, $user);
+        }
+        self::$c = $c;
         if (!@date_default_timezone_set((string)self::$c['timezone'])) {
             date_default_timezone_set('Europe/Paris');
         }
@@ -332,10 +347,8 @@ function json_out(int $code, array $body): never
 
 /* ------------------------------------------------------------------ chargement */
 
-foreach (['Db', 'Http', 'Freebox', 'DemoBox', 'Dns', 'Kids', 'Network', 'Detect', 'Schedules', 'Collector', 'News', 'Notify', 'Auth'] as $part) {
+foreach (['Db', 'Http', 'Freebox', 'DemoBox', 'Dns', 'Kids', 'Network', 'Detect', 'Schedules', 'Collector', 'News', 'Notify', 'Auth', 'Perf', 'Tv'] as $part) {
     require_once __DIR__ . '/' . $part . '.php';
 }
 
 Cfg::load();
-ini_set('display_errors', '0');
-ini_set('log_errors', '1');

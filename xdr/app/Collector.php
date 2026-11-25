@@ -37,6 +37,7 @@ final class Collector
                 ]], false);
                 throw $e;
             }
+            Perf::trackLink((string)$link['state']);
             $report = ['devices' => count($devices), 'new' => [], 'alerts' => 0, 'schedules' => []];
             self::inventory($devices, $t, $report);
             $devices = $net->devices(true); // drapeaux « connu / nouveau » à jour après l'inventaire

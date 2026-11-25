@@ -329,7 +329,7 @@ final class Detect
         if ($cron < time() - 900) {
             $d->add('no_cron', 'xdr', 'faible', 'Surveillance continue inactive',
                 'Sans la tâche planifiée Windows, Sentinelle n\'analyse le réseau que lorsque cette page est ouverte : un intrus la nuit passerait inaperçu '
-                . 'et les horaires de coupure ne s\'appliqueraient pas.', 'Lancez tools\\Installer-XDR.cmd, ou créez la tâche décrite dans le guide.');
+                . 'et les horaires de coupure ne s\'appliqueraient pas.', 'Relancez INSTALLER.cmd (en administrateur) : il recrée la tâche planifiée.');
         }
         $fails = (int)Db::val('SELECT COUNT(*) FROM login_fail WHERE ts > ?', [time() - 3600]);
         if ($fails >= 8) {

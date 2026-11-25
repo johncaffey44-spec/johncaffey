@@ -522,6 +522,45 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--blue); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* performances */
+.use-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13.5px; }
+.use-row b { font-variant-numeric: tabular-nums; }
+.good-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.good-list li { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; color: var(--text-2); }
+.good-list .ic { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--s-good); }
+.speed-res { padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel-2); }
+.speed-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.speed-nums > div { display: grid; gap: 2px; }
+.speed-nums b { font-size: 22px; font-weight: 650; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+.speed-nums span:last-child { font-size: 12px; color: var(--text-3); }
+.speed-nums .key { margin: 5.5px 0 9.5px; } /* 3 px + marges = 18 px, comme l'icône : chiffres alignés */
+.speed-nums .ic { width: 14px; height: 14px; margin-bottom: 4px; }
+
+/* TV : télécommande, applications, chaînes */
+.remote { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.remote .remote-btn:first-child { grid-column: 1 / -1; }
+.remote-btn { flex-direction: column; gap: 4px; min-height: 64px; padding: 10px 6px; font-size: 12.5px; }
+.remote-btn .ic { width: 22px; height: 22px; }
+.remote-btn:active { transform: scale(.97); }
+.app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.app-tile { display: grid; justify-items: start; gap: 4px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel-2);
+  color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, transform .15s; min-width: 0; }
+.app-tile:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.app-tile b { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-tile > span:last-child { font-size: 12px; color: var(--text-3); }
+.app-ic { display: grid; place-content: center; width: 40px; height: 40px; border-radius: 12px; color: #fff; background: var(--grad); margin-bottom: 4px; }
+.app-ic .ic { width: 20px; height: 20px; }
+.chan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.chan { display: grid; grid-template-columns: 68px 1fr; gap: 12px; align-items: center; padding: 10px; border-radius: 14px; border: 1px solid var(--line);
+  background: var(--panel-2); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, transform .15s; min-width: 0; }
+.chan:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.chan img { width: 68px; height: 40px; object-fit: contain; border-radius: 8px; background: rgba(255, 255, 255, .06); }
+.chan > div { display: grid; gap: 2px; min-width: 0; }
+.chan b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chan span { font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chan-progress { display: block; height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 4px; }
+.chan-progress i { display: block; height: 100%; background: var(--grad-h); }
+
 /* ------------------------------------------------------------------ adaptatif
    Approche « mobile d'abord dans l'esprit » : les grilles de cartes (.devs, .news,
    .profiles, .kids) utilisent déjà auto-fill et se replient seules. Ces points de
@@ -593,6 +632,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .seg button { flex: 1; }
   .modal { padding: 18px; border-radius: 18px; }
   .svc-pick { grid-template-columns: 1fr 1fr; }
+  .speed-nums b { font-size: 18px; }
+  .chan-grid { grid-template-columns: 1fr; }
+  .app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Très petit téléphone. */
@@ -602,6 +644,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .dev-actions .btn { flex: 1; }
   .svc-pick { grid-template-columns: 1fr; }
   .hours { height: 76px; }
+  .speed-nums { grid-template-columns: 1fr 1fr; }
 }
 
 /* Tablette/téléphone tactile : cibles plus grandes, pas d'effet de survol collant. */
@@ -609,7 +652,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .btn { min-height: 44px; }
   .btn.sm { min-height: 38px; }
   .nav button { padding: 13px 12px; }
-  .dev:hover, .article:hover, .alert-mini:hover { transform: none; }
+  .dev:hover, .article:hover, .alert-mini:hover, .app-tile:hover, .chan:hover { transform: none; }
   .input, select.input { min-height: 46px; font-size: 16px; } /* 16px évite le zoom automatique de l'iPhone */
 }
 

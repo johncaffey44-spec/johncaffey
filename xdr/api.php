@@ -45,6 +45,22 @@ try {
     if (!ip_allowed(client_ip())) {
         json_out(403, ['ok' => false, 'error' => 'Accès refusé : Sentinelle n\'est accessible que depuis le réseau local de la maison.']);
     }
+    /* ---------- page de contrôle de l'installeur (depuis le serveur lui-même, avant toute écriture) ---------- */
+    if ($action === 'health') {
+        if (!is_local_request()) json_out(403, ['ok' => false, 'error' => 'Refusé : contrôle réservé au serveur lui-même.']);
+        $dir = data_dir();
+        if (!is_dir($dir)) @mkdir($dir, 0770, true);
+        $probe = $dir . '/.ecriture-' . bin2hex(random_bytes(4));
+        $writable = @file_put_contents($probe, 'ok') === 2;
+        if ($writable) @unlink($probe);
+        json_out(200, ['ok' => true, 'data' => [
+            'version' => XDR_VERSION, 'php' => PHP_VERSION, 'sapi' => PHP_SAPI,
+            'pool' => (string)(getenv('APP_POOL_ID') ?: ($_SERVER['APP_POOL_ID'] ?? '')),
+            'data_dir' => str_replace('/', '\\', $dir), 'writable' => $writable,
+            'missing' => array_values(array_filter(['curl', 'pdo_sqlite', 'mbstring', 'simplexml', 'session'], fn($e) => !extension_loaded($e))),
+            'open_basedir' => (string)ini_get('open_basedir'),
+        ]]);
+    }
     ensure_data_dir();
     ini_set('error_log', data_path('php-errors.log'));
     if (Db::kv('cron_key') === null) Db::setKv('cron_key', bin2hex(random_bytes(16)));
@@ -57,7 +73,7 @@ try {
     }
 
     Auth::start();
-    if ($method === 'POST') {
+    if ($method === 'POST' && $action !== 'speed_up') {
         $raw = (string)file_get_contents('php://input', false, null, 0, 1_000_000);
         $in = $raw !== '' ? json_decode($raw, true) : [];
         if (!is_array($in)) json_out(400, ['ok' => false, 'error' => 'Requête invalide (JSON attendu).']);
@@ -92,10 +108,44 @@ try {
     if (Auth::user() === null) json_out(401, ['ok' => false, 'error' => 'Session expirée : reconnectez-vous.', 'code' => 'auth']);
     if ($method === 'POST') {
         Auth::checkCsrf();
+        if ($action === 'speed_up') session_write_close(); // les envois parallèles du test ne s'attendent pas
     } else {
         session_write_close(); // libère la session : les rafraîchissements en parallèle ne s'attendent pas
     }
     if (Db::kv('ui_https') !== (is_https() ? '1' : '0')) Db::setKv('ui_https', is_https() ? '1' : '0');
+
+    if ($action === 'speed_down') {
+        // test de réception appareil ↔ serveur : données aléatoires (incompressibles), sans mise en tampon
+        set_time_limit(120);
+        $mb = max(1, min(100, (int)($_GET['mb'] ?? 25)));
+        header('Content-Type: application/octet-stream');
+        header('Content-Length: ' . ($mb << 20));
+        while (ob_get_level() > 0) ob_end_clean();
+        $block = random_bytes(1 << 20);
+        for ($i = 0; $i < $mb; $i++) {
+            echo $block;
+            flush();
+        }
+        exit;
+    }
+    if ($action === 'tv_logo') {
+        $uuid = (string)($_GET['uuid'] ?? '');
+        $img = Network::isDemo() ? null : Tv::logo(Freebox::make(), $uuid);
+        header('Cache-Control: private, max-age=86400');
+        if ($img !== null) {
+            header('Content-Type: ' . $img['type']);
+            echo $img['body'];
+            exit;
+        }
+        // démonstration, ou logo indisponible : vignette dessinée avec le nom de la chaîne
+        $label = htmlspecialchars(mb_substr(clean_text((string)($_GET['name'] ?? '?'), 14), 0, 14), ENT_QUOTES | ENT_XML1, 'UTF-8');
+        header('Content-Type: image/svg+xml; charset=utf-8');
+        echo '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 136 80"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+            . '<stop offset="0" stop-color="#2f7cff"/><stop offset=".55" stop-color="#8a4dff"/><stop offset="1" stop-color="#ff3b5c"/></linearGradient></defs>'
+            . '<rect width="136" height="80" rx="14" fill="url(#g)"/><text x="68" y="47" font-family="Segoe UI, Arial, sans-serif" font-size="'
+            . (mb_strlen($label) > 9 ? 15 : 20) . '" font-weight="700" fill="#fff" text-anchor="middle">' . $label . '</text></svg>';
+        exit;
+    }
 
     $mac = mac_norm((string)arg('mac'));
     $needMac = static function () use ($mac): string {
@@ -163,6 +213,20 @@ try {
         'wifi' => Network::make()->wifi(),
         'box' => Network::make()->box(),
         'player' => Network::make()->players(),
+        'perf' => Perf::diagnose(Network::make()),
+        'tv' => (function () {
+            $n = Network::make();
+            $p = $n->players();
+            $channels = [];
+            $chErr = null;
+            try {
+                $now = Tv::now($n->fbx);
+                foreach (Tv::channels($n->fbx) as $c) $channels[] = $c + ['now' => $now[$c['uuid']] ?? null];
+            } catch (Throwable $e) {
+                $chErr = $e->getMessage() . (($e instanceof FreeboxError && $e->hint) ? ' — ' . $e->hint : '');
+            }
+            return ['players' => $p['players'], 'errors' => $p['errors'], 'channels' => $channels, 'channels_error' => $chErr, 'apps' => Tv::apps()];
+        })(),
         'updates' => News::updates(clean_text(Network::make()->system()['firmware_version'] ?? '', 20)),
         'news' => News::get((bool)arg('refresh', false)),
         'kids' => (function () {
@@ -362,6 +426,36 @@ try {
             cache_drop('demo-hosts', 'demo-live', 'dns-recent');
             return ['ok' => true];
         })(),
+        'speed_up' => (function () {
+            need_post();
+            set_time_limit(120);
+            $in = fopen('php://input', 'rb');
+            $n = 0;
+            while ($in && !feof($in)) $n += strlen((string)fread($in, 1 << 20));
+            return ['bytes' => $n];
+        })(),
+        'speed_save' => (function () {
+            need_post();
+            $ip = client_ip();
+            $label = "Navigateur ($ip)";
+            try {
+                foreach (Network::make()->devices(false) as $d) {
+                    if (in_array($ip, $d['ipv4_all'], true) || in_array($ip, $d['ipv6'], true)) $label = $d['name'];
+                }
+            } catch (Throwable) {
+            }
+            return Perf::saveLan((float)arg('down', 0), (float)arg('up', 0), (float)arg('ping', 0), $label) + ['label' => $label];
+        })(),
+        'speed_wan' => (function () {
+            need_post();
+            set_time_limit(90);
+            return Perf::wanTest();
+        })(),
+        'player_cmd' => (function () use (&$target) {
+            need_post();
+            $target = (string)arg('cmd');
+            return Tv::command(Freebox::make(), (int)arg('id'), (string)arg('cmd'), (string)arg('value'));
+        })(),
         'cron_key_regen' => (function () {
             need_post();
             Db::setKv('cron_key', bin2hex(random_bytes(16)));
@@ -370,7 +464,7 @@ try {
         default => throw new RuntimeException('Action inconnue.', 404),
     };
 
-    if ($method === 'POST' && !in_array($action, ['logout', 'detect_run'], true)) {
+    if ($method === 'POST' && !in_array($action, ['logout', 'detect_run', 'speed_up', 'player_cmd'], true)) {
         $detail = is_array($data) ? json_encode(array_intersect_key($data, array_flip(['profile', 'until', 'still_denied', 'report', 'done', 'needs_choice'])), JSON_UNESCAPED_UNICODE) : '';
         Db::audit($action, $target, true, $detail === '[]' ? '' : (string)$detail);
     }
@@ -406,14 +500,14 @@ function diagnostics(): array
     $checks = [
         ['label' => 'PHP ' . PHP_VERSION, 'ok' => PHP_VERSION_ID >= 80100, 'fix' => 'PHP 8.1 ou plus est requis.'],
         ['label' => 'Extension curl', 'ok' => $ext('curl'), 'fix' => 'php.ini : extension=curl'],
-        ['label' => 'Extension pdo_sqlite', 'ok' => $ext('pdo_sqlite'), 'fix' => 'php.ini : extension=pdo_sqlite (et extension=sqlite3)'],
+        ['label' => 'Extension pdo_sqlite', 'ok' => $ext('pdo_sqlite'), 'fix' => 'php.ini : extension=pdo_sqlite (ou relancez INSTALLER.cmd)'],
         ['label' => 'Extension openssl', 'ok' => $ext('openssl'), 'fix' => 'php.ini : extension=openssl'],
         ['label' => 'Extension mbstring', 'ok' => $ext('mbstring'), 'fix' => 'php.ini : extension=mbstring'],
         ['label' => 'Lecture des flux RSS (SimpleXML)', 'ok' => $ext('simplexml'), 'fix' => 'php.ini : extension=simplexml'],
         ['label' => 'Dossier de données accessible en écriture', 'ok' => is_writable(data_dir()), 'fix' => 'Droit « Modification » pour IIS_IUSRS et IUSR sur le dossier data.'],
         ['label' => 'Connexion HTTPS à cette interface', 'ok' => is_https(), 'fix' => 'Recommandé : liaison HTTPS dans IIS (voir le guide).', 'warn' => true],
         ['label' => 'Tâche planifiée (surveillance continue)', 'ok' => (int)Db::kv('cron_last', '0') > time() - 900,
-            'fix' => 'Lancez tools\\Installer-XDR.cmd en administrateur, ou créez la tâche décrite dans le guide.', 'warn' => true],
+            'fix' => 'Relancez INSTALLER.cmd (en administrateur) : il recrée la tâche planifiée.', 'warn' => true],
         ['label' => 'Autorités de certification pour HTTPS (actualités)', 'ok' => PHP_OS_FAMILY !== 'Windows' || (bool)ini_get('curl.cainfo') || defined('CURLSSLOPT_NATIVE_CA'),
             'fix' => 'php.ini : curl.cainfo = "C:\\PHP\\extras\\ssl\\cacert.pem" (fichier cacert.pem de curl.se)', 'warn' => true],
     ];

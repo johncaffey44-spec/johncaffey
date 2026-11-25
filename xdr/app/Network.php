@@ -797,6 +797,9 @@ final class Network
             }
             $fg = is_array($status) ? ($status['foreground_app'] ?? null) : null;
             $pkg = (string)($fg['package'] ?? '');
+            if ($pkg !== '' && ($status['power_state'] ?? '') === 'running') {
+                Tv::learn($pkg, self::APPS[$pkg] ?? ucfirst((string)substr(strrchr('.' . $pkg, '.') ?: $pkg, 1)));
+            }
             $ch = $fg['context']['channel'] ?? null;
             $mac = mac_norm($p['mac'] ?? '');
             $h = $hosts[$mac] ?? null;

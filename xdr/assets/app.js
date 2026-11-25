@@ -79,6 +79,10 @@
     plus: '<path d="M12 5v14M5 12h14"/>',
     chevron: '<path d="M9 5l7 7-7 7"/>',
     kid: '<circle cx="12" cy="7" r="3.5"/><path d="M5.5 20.5a6.5 6.5 0 0 1 13 0"/>',
+    gauge: '<path d="M3.5 16a8.5 8.5 0 1 1 17 0"/><path d="M12 16l4.5-5"/><circle cx="12" cy="16" r="1.3"/>',
+    minus: '<path d="M5 12h14"/>',
+    pause: '<path d="M8.5 5v14M15.5 5v14"/>',
+    mute: '<path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
     trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>',
     calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     thermo: '<path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 9v7"/>',
@@ -422,12 +426,13 @@
     ['devices', 'Appareils', 'devices', 'Tout ce qui est connecté à votre Freebox'],
     ['kids', 'Enfants', 'kid', 'Ce que font les enfants sur le réseau de la maison'],
     ['traffic', 'Trafic', 'traffic', 'Débits en direct et historique'],
+    ['perf', 'Performances', 'gauge', 'Débit maximum, sans brider aucun appareil'],
     ['threats', 'Menaces', 'shield', 'Alertes, explications et corrections'],
     ['access', 'Contrôle d\'accès', 'clock', 'Couper Internet par profil et horaires'],
     ['exposure', 'Exposition', 'globe', 'Ce qui est ouvert sur Internet'],
     ['wifi', 'Wi-Fi', 'wifi', 'Réseaux, chiffrement et filtrage'],
     ['box', 'Ma Freebox', 'router', 'Configuration, connexion et mises à jour'],
-    ['player', 'Player TV', 'tv', 'Boîtier TV : état et mises à jour'],
+    ['player', 'TV', 'tv', 'Télécommande, chaînes et applications du Player'],
     ['news', 'Actualités Free', 'news', 'Les dernières nouvelles Free et Freebox'],
     ['journal', 'Journal', 'journal', 'Historique du réseau et des actions'],
     ['settings', 'Paramètres', 'settings', 'Freebox, sécurité, détection, notifications'],
@@ -1144,6 +1149,133 @@
     poll(load, 30);
   };
 
+  /* ---------- Performances ---------- */
+  const PERF_LV = { elevee: ['Fort impact', 'serious', 'alert'], moyenne: ['Impact moyen', 'warn', 'info'], faible: ['Petit gain', 'low', 'info'], info: ['Bon à savoir', '', 'info'] };
+  const mbit = v => (v >= 1000 ? nf1.format(v / 1000) + ' Gb/s' : nf0.format(v) + ' Mb/s');
+  async function lanTest(onStep) {
+    const pings = [];
+    for (let i = 0; i < 5; i++) {
+      const t = performance.now();
+      await fetch('api.php?action=session&p=' + i + Date.now(), { cache: 'no-store', credentials: 'same-origin' });
+      pings.push(performance.now() - t);
+    }
+    pings.sort((a, b) => a - b);
+    const ping = pings[2];
+    let bytes = 0;
+    const t0 = performance.now();
+    while (performance.now() - t0 < 4000 && bytes < (400 << 20)) {
+      const res = await fetch('api.php?action=speed_down&mb=25&t=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' });
+      if (!res.ok || !res.body) throw new ApiError(`Test de réception impossible (HTTP ${res.status}).`, res.status);
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.length;
+        onStep('down', bytes * 8 / ((performance.now() - t0) / 1000) / 1e6);
+      }
+    }
+    const down = bytes * 8 / ((performance.now() - t0) / 1000) / 1e6;
+    // envoi : morceaux de 4 Mo (sous la limite post_max_size de 8 Mo d'un PHP par défaut), 3 en parallèle
+    // pour que la ligne ne reste pas inoccupée entre deux requêtes
+    // Blob créé une seule fois : Chrome envoie un Blob ~10 fois plus vite qu'un tableau d'octets recopié à chaque requête,
+    // ce qui fausserait la mesure vers le bas sur un réseau rapide
+    const raw = new Uint8Array(4 << 20);
+    for (let i = 0; i < raw.length; i += 65536) crypto.getRandomValues(raw.subarray(i, i + 65536));
+    const chunk = new Blob([raw], { type: 'application/octet-stream' });
+    let sent = 0;
+    const t1 = performance.now();
+    const sender = async () => {
+      while (performance.now() - t1 < 4000 && sent < (300 << 20)) {
+        const res = await fetch('api.php?action=speed_up', { method: 'POST', body: chunk, credentials: 'same-origin', cache: 'no-store',
+          headers: { 'Content-Type': 'application/octet-stream', 'X-CSRF-Token': state.csrf } });
+        if (!res.ok) throw new ApiError(`Test d'envoi impossible (HTTP ${res.status}).`, res.status);
+        const r = await res.json();
+        if (!r.ok || r.data.bytes !== chunk.size) throw new ApiError('Test d\'envoi incomplet : le serveur n\'a pas reçu toutes les données (limite post_max_size de PHP ?).', 0);
+        sent += chunk.size;
+        onStep('up', sent * 8 / ((performance.now() - t1) / 1000) / 1e6);
+      }
+    };
+    await Promise.all([sender(), sender(), sender()]);
+    const up = sent * 8 / ((performance.now() - t1) / 1000) / 1e6;
+    const saved = await api.post('speed_save', { down, up, ping });
+    return { down, up, ping, label: saved.label };
+  }
+  VIEWS.perf = async root => {
+    const out = h('div', { class: 'stack', style: { gap: '10px' } }); // garde le dernier résultat quand la page se recharge
+    const load = async () => {
+      let r;
+      try { r = await api.get('perf'); setLive('on'); } catch (e) { put(root, errorBox(e)); return; }
+      const meter = (val, max) => h('div', { class: 'meter' }, h('i', { style: { width: Math.min(100, max ? val / max * 100 : 0).toFixed(2) + '%' } }));
+      const lanBtn = h('button', { class: 'btn primary', type: 'button' }, icon('gauge'), 'Tester cet appareil');
+      const wanBtn = h('button', { class: 'btn', type: 'button' }, icon('globe'), 'Tester la fibre (depuis le serveur)');
+      const showResult = (title, res, explain) => put(out, h('div', { class: 'speed-res' },
+        h('div', { class: 'faint', style: { fontSize: '12.5px' } }, title),
+        h('div', { class: 'speed-nums' }, h('div', null, h('span', { class: 'key down' }), h('b', null, mbit(res.down)), h('span', null, 'réception')),
+          h('div', null, h('span', { class: 'key up' }), h('b', null, mbit(res.up)), h('span', null, 'envoi')),
+          h('div', null, icon('clock', 'sm'), h('b', null, nf1.format(res.ping) + ' ms'), h('span', null, 'latence'))),
+        explain ? h('p', { class: 'muted', style: { margin: '8px 0 0', fontSize: '13px' } }, explain) : null));
+      lanBtn.addEventListener('click', () => busy(lanBtn, async () => {
+        put(out, h('div', { class: 'btns' }, h('span', { class: 'spinner' }), h('span', { class: 'muted' }, 'Mesure en cours (environ 10 secondes)…')));
+        try {
+          const res = await lanTest((dir, v) => put(out, h('div', { class: 'btns' }, h('span', { class: 'spinner' }),
+            h('span', { class: 'muted' }, `${dir === 'down' ? 'Réception' : 'Envoi'} : ${mbit(v)}…`))));
+          showResult(`Liaison de « ${res.label} » jusqu'au serveur`, res, res.down >= 300
+            ? 'Excellent : la liaison de cet appareil n\'est pas un frein, même en 4K ou en jeu en ligne.'
+            : res.down >= 50 ? 'Correct pour la vidéo 4K (≈ 25 Mb/s), mais loin de la fibre : un meilleur Wi-Fi (5/6 GHz, plus près de la box) ou un câble accélérerait cet appareil.'
+              : 'Faible : la liaison de cet appareil limite tout ce qu\'il fait. Rapprochez-le de la box, passez en 5/6 GHz ou en Ethernet.');
+          load();
+        } catch (e) { put(out, errorBox(e)); }
+      }));
+      wanBtn.addEventListener('click', () => busy(wanBtn, async () => {
+        put(out, h('div', { class: 'btns' }, h('span', { class: 'spinner' }), h('span', { class: 'muted' }, 'Mesure de la fibre depuis le serveur (environ 15 secondes)…')));
+        try {
+          const res = await api.post('speed_wan');
+          showResult('Fibre, mesurée par le PC serveur', res, 'Ce chiffre est plafonné par la carte réseau du PC (souvent 1 Gb/s ou 2,5 Gb/s) : la fibre Ultra peut aller au-delà. S\'il est proche de ce plafond, la ligne va bien.');
+          load();
+        } catch (e) { put(out, errorBox(e)); }
+      }));
+      const L = r.link;
+      put(root,
+        noteBox(h('b', null, 'Principe : rien n\'est bridé. '), 'Sentinelle ne limite aucun appareil pour en accélérer un autre. Elle repère ce qui freine chaque appareil (câble, Wi-Fi, saturation) et vous dit comment le corriger : chaque correction accélère un appareil sans rien retirer aux autres.'),
+        h('div', { class: 'grid g-2-1', style: { marginTop: '18px' } },
+          h('div', { class: 'stack' },
+            h('div', { class: 'card' + (r.issues.some(i => i.level === 'elevee') ? ' glow' : '') },
+              h('div', { class: 'card-head' }, h('h2', null, icon('gauge'), 'Ce qui limite votre débit'), h('div', { class: 'grow' }),
+                h('button', { class: 'btn sm ghost', type: 'button', onclick: load }, icon('refresh', 'sm'), 'Relancer')),
+              r.issues.length ? h('div', { class: 'alerts' }, r.issues.map(i => {
+                const [lab, cls, ic] = PERF_LV[i.level] || PERF_LV.info;
+                return h('div', { class: 'alert ' + (i.level === 'elevee' ? 'elevee' : i.level === 'moyenne' ? 'moyenne' : 'faible') },
+                  h('div', null, h('div', { class: 'alert-top' }, h('span', { class: 'chip ' + cls }, icon(ic), lab), h('b', null, i.title)),
+                    h('p', null, i.why), h('div', { class: 'fix' }, icon('shieldok', 'sm'), h('span', null, i.fix)),
+                    i.device ? h('div', { class: 'btns' }, h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openDevice(i.device.mac, load) },
+                      icon(TYPE_ICON[i.device.type] || 'unknown', 'sm'), 'Voir ' + i.device.name)) : null));
+              })) : emptyBox('Aucun frein détecté : votre réseau tourne à plein régime.', 'shieldok')),
+            r.good.length ? h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('check'), 'Ce qui va bien')),
+              h('ul', { class: 'good-list' }, r.good.map(g => h('li', null, icon('check'), h('span', null, g))))) : null),
+          h('div', { class: 'stack' },
+            h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('zap'), 'Tests de débit')),
+              h('p', { class: 'muted', style: { marginTop: 0, fontSize: '13.5px' } }, '« Cet appareil » mesure la liaison du téléphone, de la tablette ou du PC que vous tenez, jusqu\'au serveur : c\'est elle qui limite le plus souvent. Les tests occupent la ligne quelques secondes.'),
+              h('div', { class: 'btns' }, lanBtn, wanBtn), h('div', { style: { marginTop: '14px' } }, out)),
+            h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('traffic'), 'Utilisation en ce moment')),
+              h('div', { class: 'stack', style: { gap: '12px' } },
+                h('div', null, h('div', { class: 'use-row' }, h('span', null, h('span', { class: 'key down' }), ' Réception'), h('b', null, fmt.rate(L.down))), meter(L.down, L.bw_down / 8),
+                  h('div', { class: 'faint', style: { fontSize: '12px', marginTop: '4px' } }, `sur ${fmt.bits(L.bw_down)} disponibles`)),
+                h('div', null, h('div', { class: 'use-row' }, h('span', null, h('span', { class: 'key up' }), ' Envoi'), h('b', null, fmt.rate(L.up))), meter(L.up, L.bw_up / 8),
+                  h('div', { class: 'faint', style: { fontSize: '12px', marginTop: '4px' } }, `sur ${fmt.bits(L.bw_up)} disponibles`)))),
+            h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('shieldok'), 'Fiabilité de la connexion')),
+              h('div', { class: 'tile' }, h('div', { class: 'lab' }, `Disponibilité sur ${r.availability.days} jours`), h('div', { class: 'val' }, nf1.format(r.availability.percent) + ' %'),
+                h('div', { class: 'note' }, r.availability.count ? `${r.availability.count} coupure(s), ${r.availability.down_minutes} min au total` : 'Aucune coupure relevée par Sentinelle')),
+              r.outages.length ? h('div', { class: 'table-wrap', style: { marginTop: '10px' } }, h('table', null, h('tbody', null, r.outages.map(o => h('tr', null,
+                h('td', { class: 'faint' }, fmt.datetime(o.start)), h('td', null, o.stop ? `${Math.max(1, Math.round((o.stop - o.start) / 60))} min` : 'en cours')))))) : null,
+              h('p', { class: 'faint', style: { fontSize: '12px', marginBottom: 0 } }, 'Relevé par la tâche planifiée : une coupure pendant que le PC serveur est éteint n\'est pas comptée.')))),
+        r.tests.length ? h('div', { class: 'card', style: { marginTop: '18px' } }, h('div', { class: 'card-head' }, h('h2', null, icon('journal'), 'Historique des tests')),
+          h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, ['Quand', 'Appareil', 'Réception', 'Envoi', 'Latence'].map(t => h('th', null, t)))),
+            h('tbody', null, r.tests.map(t => h('tr', null, h('td', { class: 'faint nowrap' }, fmt.datetime(t.ts)), h('td', null, t.label),
+              h('td', { class: 'num' }, mbit(t.down)), h('td', { class: 'num' }, mbit(t.up)), h('td', { class: 'num' }, nf1.format(t.ping) + ' ms'))))))) : null);
+    };
+    await load();
+  };
+
   /* ---------- Menaces ---------- */
   VIEWS.threats = async root => {
     const head = h('div');
@@ -1446,40 +1578,99 @@
     api.get('updates').then(u => put(updSlot, updatesCard(u, 'Mises à jour de la Freebox'))).catch(e => put(updSlot, errorBox(e)));
   };
 
-  /* ---------- Player TV ---------- */
+  /* ---------- TV ---------- */
   VIEWS.player = async root => {
-    const newsSlot = h('div', null, h('div', { class: 'skeleton', style: { marginTop: '12px', height: '80px' } }));
-    const load = async () => {
-      let r;
-      try { r = await api.get('player'); setLive('on'); } catch (e) { put(root, errorBox(e)); return; }
-      put(root,
-        r.errors.length && !r.players.length ? errorBox({ message: 'Player inaccessible.', hint: r.errors.join(' · ') }) : null,
-        r.players.length ? h('div', { class: 'grid g-2' }, r.players.map(p => h('div', { class: 'card glow' },
-          h('div', { class: 'drawer-head' }, h('span', { class: 'avatar lg t-freebox_player' + (p.reachable ? '' : ' off') }, icon('stb'), h('span', { class: 'state' })),
-            h('div', { class: 'grow' }, h('h2', null, p.name), h('div', { class: 'muted' }, p.model || 'Player Freebox'))),
-          h('div', { class: 'chips', style: { marginBottom: '14px' } },
-            p.power === 'running' ? h('span', { class: 'chip ok' }, icon('play'), 'Allumé') : p.power === 'standby' ? h('span', { class: 'chip' }, icon('power'), 'En veille') : h('span', { class: 'chip' }, p.reachable ? 'État inconnu' : 'Injoignable'),
-            p.playback ? h('span', { class: 'chip low' }, p.playback === 'PLAYING' ? 'Lecture' : p.playback === 'PAUSED' ? 'En pause' : p.playback) : null),
-          p.power === 'running' && (p.channel || p.app) ? h('div', { class: 'tile', style: { marginBottom: '14px' } }, h('div', { class: 'lab' }, icon('eye', 'sm'), 'En ce moment'),
-            h('div', { class: 'val', style: { fontSize: '22px' } }, p.channel ? `${p.channel.number ? p.channel.number + ' · ' : ''}${p.channel.name}` : p.app.name),
-            h('div', { class: 'note' }, p.channel ? (p.channel.bouquet || 'Télévision') : `Application : ${p.app.package}`)) : null,
-          h('dl', { class: 'kv' },
-            h('dt', null, 'Volume'), h('dd', null, p.volume ? `${p.volume.level} %${p.volume.mute ? ' (muet)' : ''}` : '—'),
-            h('dt', null, 'Adresse IP'), h('dd', { class: 'mono' }, p.host ? p.host.ip : '—'),
-            h('dt', null, 'Connexion'), h('dd', null, p.host ? (p.host.conn.kind === 'ethernet' ? `Ethernet (${p.host.conn.port_name || 'port ' + p.host.conn.port})` : p.host.conn.kind === 'wifi' ? `Wi-Fi ${p.host.conn.band}` : '—') : '—'),
-            h('dt', null, 'Débit'), h('dd', null, p.host ? `↓ ${fmt.rate(p.host.rate.down)} · ↑ ${fmt.rate(p.host.rate.up)}` : '—'),
-            h('dt', null, 'Adresse MAC'), h('dd', { class: 'mono' }, p.mac || '—'),
-            h('dt', null, 'API du Player'), h('dd', null, p.api_available ? `disponible (v${p.api_version})` : 'indisponible'),
-            h('dt', null, 'Plateforme'), h('dd', null, p.stb_type || '—'))))) : emptyBox('Aucun Player détecté. Vérifiez qu\'il est allumé et que le droit « Contrôle du Freebox Player » est accordé à Sentinelle.', 'tv'),
-        h('div', { class: 'card', style: { marginTop: '18px' } }, h('div', { class: 'card-head' }, h('h2', null, icon('news'), 'Actualités et mises à jour du Player')),
-          noteBox('Le Player se met à jour automatiquement (Android TV et logiciel Free). Voici les dernières nouvelles le concernant.'), newsSlot));
-      if (!newsSlot.dataset.done) {
-        newsSlot.dataset.done = '1';
-        api.get('updates').then(u => put(newsSlot, u.player.length ? h('div', { class: 'stack', style: { gap: '8px', marginTop: '12px' } }, u.player.map(i => h('a', { class: 'alert-mini', href: i.link, target: '_blank', rel: 'noopener noreferrer' },
-          h('span', { class: 'sev-ic faible' }, icon('tv')), h('div', null, h('b', null, i.title), h('span', null, `${i.source} · ${fmt.ago(i.date)}`))))) : emptyBox('Aucune actualité récente sur le Player.')))
-          .catch(e => put(newsSlot, errorBox(e)));
-      }
+    let data = null;
+    let playerId = null;
+    let channelFilter = '';
+    let showAll = false;
+    const remoteSlot = h('div');
+    const appsSlot = h('div');
+    const chanSlot = h('div');
+    const newsSlot = h('div', null, h('div', { class: 'skeleton', style: { height: '80px' } }));
+    const send = async (cmd, value = '', label = '') => {
+      if (!playerId) { toast('Aucun Player disponible', 'err'); return; }
+      try {
+        await api.post('player_cmd', { id: playerId, cmd, value });
+        if (label) toast(label, 'ok');
+        setTimeout(load, 700);
+      } catch (e) { fail(e); }
     };
+    const drawRemote = () => {
+      const p = data.players.find(x => x.id === playerId) || data.players[0];
+      if (!p) {
+        put(remoteSlot, h('div', { class: 'card' }, emptyBox('Aucun Player détecté. Vérifiez qu\'il est branché et que le droit « Contrôle du Freebox Player » est accordé à Sentinelle.', 'tv'),
+          data.errors.length ? errorBox({ message: 'Détail', hint: data.errors.join(' · ') }) : null));
+        return;
+      }
+      const on = p.power === 'running';
+      const now = on ? (p.channel ? `${p.channel.number ? p.channel.number + ' · ' : ''}${p.channel.name}` : p.app ? p.app.name : 'Allumé') : 'En veille';
+      const num = h('input', { class: 'input', type: 'number', min: 1, max: 9999, placeholder: 'N°', 'aria-label': 'Numéro de chaîne', style: { width: '90px' } });
+      const go = h('form', { class: 'btns', style: { alignItems: 'center' } }, num, h('button', { class: 'btn', type: 'submit' }, 'Mettre la chaîne'));
+      go.addEventListener('submit', e => { e.preventDefault(); if (num.value) send('channel', num.value, 'Chaîne ' + num.value); });
+      const rb = (ic, label, cmd, extra = '') => h('button', { class: 'btn remote-btn' + extra, type: 'button', 'aria-label': label, title: label, onclick: () => send(cmd) }, icon(ic), h('span', null, label));
+      put(remoteSlot, h('div', { class: 'card glow' },
+        h('div', { class: 'drawer-head' }, h('span', { class: 'avatar lg t-freebox_player' + (p.reachable ? '' : ' off') }, icon('stb'), h('span', { class: 'state' })),
+          h('div', { class: 'grow' }, h('h2', null, p.name), h('div', { class: 'muted' }, [p.model && p.model !== p.name ? p.model : 'Player Freebox',
+            p.host && p.host.conn ? ({ wifi: 'Wi-Fi', ethernet: 'Ethernet' })[p.host.conn.kind] || '' : '', p.host ? p.host.ip : ''].filter(Boolean).join(' · '))),
+          data.players.length > 1 ? h('select', { class: 'input', style: { width: 'auto' }, 'aria-label': 'Choisir le Player', onchange: e => { playerId = Number(e.target.value); drawAll(); } },
+            data.players.map(x => h('option', { value: x.id, selected: x.id === playerId }, x.name))) : null),
+        h('div', { class: 'tile', style: { marginBottom: '14px' } }, h('div', { class: 'lab' }, icon(on ? 'play' : 'power', 'sm'), on ? 'En ce moment sur la TV' : 'État'),
+          h('div', { class: 'val', style: { fontSize: '22px' } }, now),
+          h('div', { class: 'note' }, p.volume ? `Volume ${p.volume.level} %${p.volume.mute ? ' (muet)' : ''}` : '', p.playback ? ` · ${p.playback === 'PAUSED' ? 'en pause' : 'lecture'}` : '')),
+        h('div', { class: 'remote' },
+          rb('power', on ? 'TV en direct' : 'Allumer', 'power', ' primary'),
+          rb('down', 'Chaîne −', 'prev'), rb('up', 'Chaîne +', 'next'),
+          rb(p.playback === 'PAUSED' ? 'play' : 'pause', p.playback === 'PAUSED' ? 'Lecture' : 'Pause', 'play_pause'),
+          rb('minus', 'Volume −', 'vol_down'), rb('plus', 'Volume +', 'vol_up'),
+          rb('mute', p.volume && p.volume.mute ? 'Son' : 'Muet', 'mute')),
+        h('div', { style: { marginTop: '12px' } }, go),
+        h('p', { class: 'faint', style: { fontSize: '12px', marginBottom: 0 } }, 'Les commandes passent par la Freebox : le téléphone qui pilote n\'a pas besoin d\'être sur le même Wi-Fi que la TV, seulement à la maison.')));
+    };
+    const drawApps = () => {
+      const known = new Set(data.apps.shortcuts.map(a => a.name.toLowerCase()).concat(['tv freebox']));
+      const mine = data.apps.mine.filter(a => !known.has(a.name.toLowerCase()));
+      const tile = (a, ic) => h('button', { class: 'app-tile', type: 'button', onclick: () => send('app', a.id, a.name + ' ouvert sur la TV') }, h('span', { class: 'app-ic' }, icon(ic || 'play')), h('b', null, a.name), h('span', null, 'Ouvrir sur la TV'));
+      put(appsSlot, h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('play'), 'Applications')),
+        h('div', { class: 'app-grid' }, data.apps.shortcuts.map(a => tile(a, a.icon))),
+        mine.length ? [h('div', { class: 'section-title', style: { margin: '18px 0 10px' } }, 'Vos applications (vues sur le Player)'),
+          h('div', { class: 'app-grid' }, mine.map(a => tile(a, 'play')))] : null,
+        h('p', { class: 'faint', style: { fontSize: '12px', marginBottom: 0 } }, 'Sentinelle retient les applications que vous utilisez sur le Player : elles apparaissent ici au fil de l\'eau.')));
+    };
+    const drawChannels = () => {
+      if (data.channels_error) { put(chanSlot, h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('tv'), 'Chaînes')), errorBox({ message: 'Guide des chaînes inaccessible.', hint: data.channels_error }))); return; }
+      const q = channelFilter.trim().toLowerCase();
+      const list = data.channels.filter(c => !q || c.name.toLowerCase().includes(q) || String(c.number) === q || (c.now && c.now.title.toLowerCase().includes(q)));
+      const shown = showAll ? list : list.slice(0, 48);
+      const search = h('input', { class: 'input', type: 'search', placeholder: 'Chaîne, numéro ou programme…', value: channelFilter, 'aria-label': 'Rechercher une chaîne' });
+      search.addEventListener('input', () => { channelFilter = search.value; drawChannels(); const el = chanSlot.querySelector('input'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+      put(chanSlot, h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('tv'), 'Chaînes'), h('p', { class: 'grow' }, 'Touchez une chaîne pour la mettre sur la TV')),
+        h('div', { class: 'search', style: { maxWidth: '420px', marginBottom: '14px' } }, icon('search'), search),
+        shown.length ? h('div', { class: 'chan-grid' }, shown.map(c => h('button', { class: 'chan', type: 'button', onclick: () => send('uuid', c.uuid, c.name + ' sur la TV') },
+          h('img', { src: `api.php?action=tv_logo&uuid=${encodeURIComponent(c.uuid)}&name=${encodeURIComponent(c.short || c.name)}`, alt: '', loading: 'lazy' }),
+          h('div', null, h('b', null, (c.number ? c.number + ' · ' : '') + c.name), c.now ? h('span', null, c.now.title) : h('span', { class: 'faint' }, '—'),
+            c.now ? h('i', { class: 'chan-progress' }, h('i', { style: { width: Math.min(100, Math.max(0, (Date.now() / 1000 - c.now.start) / (c.now.end - c.now.start) * 100)) + '%' } })) : null))))
+          : emptyBox('Aucune chaîne ne correspond.'),
+        !showAll && list.length > shown.length ? h('div', { class: 'btns', style: { marginTop: '12px' } }, h('button', { class: 'btn ghost', type: 'button', onclick: () => { showAll = true; drawChannels(); } }, `Afficher les ${list.length} chaînes`)) : null));
+    };
+    const drawAll = () => { drawRemote(); drawApps(); drawChannels(); };
+    const load = async () => {
+      try { data = await api.get('tv'); setLive('on'); } catch (e) { put(root, errorBox(e)); return; }
+      if (!playerId || !data.players.some(p => p.id === playerId)) playerId = (data.players.find(p => p.reachable) || data.players[0] || {}).id || null;
+      drawAll();
+    };
+    put(root,
+      h('div', { class: 'grid g-2' }, remoteSlot, appsSlot),
+      h('div', { style: { marginTop: '18px' } }, chanSlot),
+      h('div', { class: 'grid g-2', style: { marginTop: '18px' } },
+        h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('phone'), 'Regarder sur un autre écran')),
+          h('p', { class: 'muted', style: { marginTop: 0, fontSize: '13.5px' } }, 'Pour vos chaînes sur téléphone, tablette ou ordinateur, l\'outil officiel est l\'application Free TV (anciennement Oqee by Free) : vous vous connectez avec votre compte Freebox.'),
+          h('div', { class: 'btns' }, h('a', { class: 'btn primary', href: 'https://tv.free.fr', target: '_blank', rel: 'noopener noreferrer' }, icon('external'), 'Ouvrir tv.free.fr (ordinateur)')),
+          h('p', { class: 'faint', style: { fontSize: '12.5px', marginBottom: 0 } }, 'Sur téléphone ou tablette : cherchez « Free TV » dans le Play Store ou l\'App Store. Sentinelle ne diffuse pas les chaînes elle-même : les flux sont protégés (droits des chaînes, anticopie).')),
+        h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('news'), 'Actualités et mises à jour du Player')), newsSlot)));
+    api.get('updates').then(u => put(newsSlot, u.player.length ? h('div', { class: 'stack', style: { gap: '8px' } }, u.player.map(i => h('a', { class: 'alert-mini', href: i.link, target: '_blank', rel: 'noopener noreferrer' },
+      h('span', { class: 'sev-ic faible' }, icon('tv')), h('div', null, h('b', null, i.title), h('span', null, `${i.source} · ${fmt.ago(i.date)}`))))) : emptyBox('Aucune actualité récente sur le Player.')))
+      .catch(e => put(newsSlot, errorBox(e)));
     await load();
     poll(load, 15);
   };
@@ -1740,7 +1931,7 @@
     const cronUrl = `http://127.0.0.1${location.protocol === 'http:' && location.port ? ':' + location.port : ''}${r.cron.path}?action=cron&key=${r.cron.key}`;
     const cronCard = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('clock'), 'Surveillance continue'), h('div', { class: 'grow' }),
       r.cron.last > Date.now() / 1000 - 900 ? h('span', { class: 'chip ok' }, icon('check'), 'Active (' + fmt.ago(r.cron.last) + ')') : h('span', { class: 'chip warn' }, icon('alert'), 'Inactive')),
-      h('p', { class: 'muted', style: { marginTop: 0, fontSize: '13.5px' } }, 'Une tâche planifiée Windows appelle Sentinelle chaque minute : inventaire, détection, horaires et notifications tournent même page fermée. Le plus simple : lancez tools\\Installer-XDR.cmd en administrateur. Sinon, créez la tâche avec cette commande (invite de commandes administrateur) :'),
+      h('p', { class: 'muted', style: { marginTop: 0, fontSize: '13.5px' } }, 'Une tâche planifiée Windows appelle Sentinelle chaque minute : inventaire, détection, horaires et notifications tournent même page fermée. Le plus simple : relancez INSTALLER.cmd (double-clic, en administrateur). Sinon, créez la tâche avec cette commande (invite de commandes administrateur) :'),
       h('div', { class: 'tile mono', style: { fontSize: '12px', overflowWrap: 'anywhere' } },
         `schtasks /Create /TN "Sentinelle XDR" /SC MINUTE /MO 1 /RU SYSTEM /F /TR "curl.exe -s -m 50 -o NUL \\"${cronUrl}\\""`),
       h('div', { class: 'btns', style: { marginTop: '12px' } }, h('button', { class: 'btn ghost sm', type: 'button', onclick: async () => {

@@ -1,8 +1,10 @@
-*.cmd text eol=crlf
-*.ps1 text eol=crlf
+# Fichiers Windows : fins de ligne CRLF conservées telles quelles, comme pour Boussole
+# (cmd.exe lit mal les fichiers .cmd en LF ; le ZIP téléchargé depuis GitHub les reçoit donc intacts)
+*.cmd -text
+*.ps1 -text
+*.txt -text
 *.php text eol=lf
 *.js text eol=lf
 *.css text eol=lf
 *.html text eol=lf
 *.md text eol=lf
-*.txt text eol=crlf

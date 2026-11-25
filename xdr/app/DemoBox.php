@@ -32,8 +32,8 @@ final class DemoBox implements Transport
         ['mac' => 'A4:83:E7:2F:90:6C', 'name' => 'iPad', 'dhcp' => 'iPad', 'type' => 'tablet', 'vendor' => 'Apple, Inc.', 'conn' => 'wifi', 'ap' => 1, 'ip' => 26, 'kind' => 'tablet', 'sig' => -60, 'offline' => true, 'owner' => 'Léa'],
         ['mac' => 'D8:BB:C1:4A:77:03', 'name' => 'PC-GAMER', 'dhcp' => 'PC-GAMER', 'type' => 'workstation', 'vendor' => 'Micro-Star INTL CO., LTD.', 'conn' => 'eth', 'port' => 1, 'ip' => 30, 'kind' => 'pc'],
         ['mac' => '34:27:92:5C:10:B1', 'name' => 'Player TV Free 4K', 'dhcp' => 'Freebox-Player', 'type' => 'freebox_player', 'vendor' => 'Freebox SAS', 'conn' => 'eth', 'port' => 2, 'ip' => 31, 'kind' => 'player'],
-        ['mac' => '8C:79:F5:21:C4:6A', 'name' => 'TV Salon', 'dhcp' => 'Samsung-TV', 'type' => 'television', 'vendor' => 'Samsung Electronics Co.,Ltd', 'conn' => 'wifi', 'ap' => 1, 'ip' => 32, 'kind' => 'tv', 'sig' => -61],
-        ['mac' => 'BC:33:29:7E:5A:F2', 'name' => 'PS5', 'dhcp' => 'PS5-123', 'type' => 'vg_console', 'vendor' => 'Sony Interactive Entertainment Inc.', 'conn' => 'eth', 'port' => 3, 'ip' => 33, 'kind' => 'console', 'owner' => 'Tom'],
+        ['mac' => '8C:79:F5:21:C4:6A', 'name' => 'TV Salon', 'dhcp' => 'Samsung-TV', 'type' => 'television', 'vendor' => 'Samsung Electronics Co.,Ltd', 'conn' => 'wifi', 'ap' => 0, 'ip' => 32, 'kind' => 'tv', 'sig' => -71],
+        ['mac' => 'BC:33:29:7E:5A:F2', 'name' => 'PS5', 'dhcp' => 'PS5-123', 'type' => 'vg_console', 'vendor' => 'Sony Interactive Entertainment Inc.', 'conn' => 'eth', 'port' => 3, 'ip' => 33, 'kind' => 'console', 'cap' => 94, 'owner' => 'Tom'],
         ['mac' => '98:41:5C:3B:2D:07', 'name' => 'Nintendo Switch', 'dhcp' => 'Nintendo-Switch', 'type' => 'vg_console', 'vendor' => 'Nintendo Co.,Ltd', 'conn' => 'wifi', 'ap' => 0, 'ip' => 34, 'kind' => 'handheld', 'sig' => -66, 'owner' => 'Tom'],
         ['mac' => 'C0:6D:ED:8A:12:5B', 'name' => 'Caméra entrée', 'dhcp' => 'EZVIZ-C6N', 'type' => 'ip_camera', 'vendor' => 'Hangzhou Ezviz Software Co.,Ltd.', 'conn' => 'wifi', 'ap' => 0, 'ip' => 40, 'kind' => 'camera', 'sig' => -71],
         ['mac' => 'F8:0D:AC:63:9E:21', 'name' => 'Imprimante HP', 'dhcp' => 'HP-ENVY-6400', 'type' => 'printer', 'vendor' => 'HP Inc.', 'conn' => 'wifi', 'ap' => 0, 'ip' => 41, 'kind' => 'printer', 'sig' => -63],
@@ -357,6 +357,13 @@ final class DemoBox implements Transport
                     array_keys(self::AP), self::AP);
             case (bool)preg_match('~^GET wifi/ap/(\d+)/stations$~', $r, $m):
                 return $this->stations((int)$m[1]);
+            case (bool)preg_match('~^GET wifi/ap/(\d+)/neighbors$~', $r, $m):
+                $nb = [
+                    0 => [['Livebox-8A2C', 6, -58], ['SFR_4F10', 6, -66], ['Bbox-77E1', 6, -71], ['FreeWifi_secure', 6, -74], ['Livebox-1B07', 1, -79], ['DIRECT-HP-Imprimante', 11, -83]],
+                    1 => [['Livebox-8A2C-5G', 44, -70], ['SFR_4F10_5GHZ', 100, -78]],
+                    2 => [],
+                ][(int)$m[1]] ?? [];
+                return array_map(fn($x) => ['ssid' => $x[0], 'channel' => $x[1], 'signal' => $x[2], 'bssid' => substr(md5($x[0]), 0, 12)], $nb);
             case $r === 'GET wifi/bss':
                 $enc = [0 => 'wpa2_psk_ccmp', 1 => 'wpa23_psk_ccmp', 2 => 'wpa3_psk_ccmp'];
                 return array_map(fn($id) => ['id' => sprintf('34:27:92:5c:00:%02x', 0x10 + $id), 'phy_id' => $id,
@@ -386,8 +393,9 @@ final class DemoBox implements Transport
                 $out = [];
                 for ($port = 1; $port <= 4; $port++) {
                     $macs = array_values(array_filter(self::DEVICES, fn($d) => ($d['port'] ?? 0) === $port && $this->online($d)));
-                    $out[] = ['id' => $port, 'name' => 'Ethernet ' . $port, 'link' => $macs ? 'up' : 'down', 'speed' => $macs ? '2500' : '',
-                        'duplex' => $macs ? 'full' : '', 'mode' => $macs ? '2500BaseT-FD' : '',
+                    $spd = $port === 3 ? '100' : '2500';
+                    $out[] = ['id' => $port, 'name' => 'Ethernet ' . $port, 'link' => $macs ? 'up' : 'down', 'speed' => $macs ? $spd : '',
+                        'duplex' => $macs ? 'full' : '', 'mode' => $macs ? ($spd === '100' ? '100BaseTX-FD' : '2500BaseT-FD') : '',
                         'mac_list' => array_map(fn($d) => ['mac' => $d['mac'], 'hostname' => $this->nameOf($d['mac'])], $macs)];
                 }
                 return $out;
@@ -451,6 +459,28 @@ final class DemoBox implements Transport
             case $r === 'GET netshare/samba':
                 return $this->st['samba'];
 
+            /* --- TV : chaînes et guide --- */
+            case $r === 'GET tv/channels':
+                $out = [];
+                foreach (self::CHANNELS as [$num, $id, $name]) {
+                    $uuid = 'uuid-webtv-' . $id;
+                    $out[$uuid] = ['uuid' => $uuid, 'name' => $name, 'short_name' => $name, 'available' => true, 'has_service' => true, 'has_abo' => true,
+                        'logo_url' => "https://mafreebox.freebox.fr/api/v16/tv/img/channels/logos68x60/$uuid.png"];
+                }
+                return $out;
+            case $r === 'GET tv/bouquets/freeboxtv/channels':
+                return array_map(fn($c) => ['uuid' => 'uuid-webtv-' . $c[1], 'number' => $c[0], 'sub_number' => 0, 'available' => true], self::CHANNELS);
+            case (bool)preg_match('~^GET tv/epg/by_time/(\d+)$~', $r, $m):
+                $slot = (int)$m[1] - (int)$m[1] % 3600;
+                $out = [];
+                foreach (self::CHANNELS as [$num, $id, $name, $genre]) {
+                    $titles = self::PROGRAMS[$genre];
+                    $title = $titles[crc32($id . '|' . $slot) % count($titles)];
+                    $out['uuid-webtv-' . $id] = ['pluri_' . $id . '_' . $slot => ['title' => $title, 'date' => $slot, 'duration' => 3600,
+                        'category_name' => ['info' => 'Information', 'kids' => 'Jeunesse', 'sport' => 'Sport', 'gen' => 'Divertissement'][$genre]]];
+                }
+                return $out;
+
             /* --- Player TV --- */
             case $r === 'GET player':
                 return [['id' => 1, 'device_name' => 'Player TV Free 4K', 'device_model' => 'Player TV Free 4K', 'api_version' => '14.0',
@@ -460,6 +490,17 @@ final class DemoBox implements Transport
                 return $this->playerStatus();
             case (bool)preg_match('~^GET player/(\d+)/api/v\d+/control/volume$~', $r, $m):
                 return $this->st['volume'];
+            case (bool)preg_match('~^PUT player/(\d+)/api/v\d+/control/volume$~', $r, $m):
+                if (array_key_exists('volume', $in)) $this->st['volume']['volume'] = max(0, min(100, (int)$in['volume']));
+                if (array_key_exists('mute', $in)) $this->st['volume']['mute'] = (bool)$in['mute'];
+                $this->dirty = true;
+                return $this->st['volume'];
+            case (bool)preg_match('~^POST player/(\d+)/api/v\d+/control/open$~', $r, $m):
+                $this->playerOpen((string)($in['url'] ?? ''));
+                return null;
+            case (bool)preg_match('~^POST player/(\d+)/api/v\d+/control/mediactrl$~', $r, $m):
+                $this->playerMedia((string)($in['name'] ?? ''));
+                return null;
         }
         throw new DemoBoxError('invalid_request', "Point d'API inconnu de la démonstration : $r");
     }
@@ -622,8 +663,91 @@ final class DemoBox implements Transport
         return $out;
     }
 
+    /** Chaînes simulées : numéro, identifiant, nom, genre. */
+    private const CHANNELS = [
+        [1, 612, 'TF1', 'gen'], [2, 201, 'France 2', 'gen'], [3, 202, 'France 3', 'gen'], [4, 210, 'Canal+', 'gen'], [5, 203, 'France 5', 'gen'],
+        [6, 613, 'M6', 'gen'], [7, 204, 'Arte', 'gen'], [9, 614, 'W9', 'gen'], [10, 615, 'TMC', 'gen'], [11, 616, 'TFX', 'gen'],
+        [13, 205, 'LCP', 'info'], [14, 206, 'France 4', 'kids'], [15, 617, 'BFM TV', 'info'], [16, 618, 'CNews', 'info'], [17, 619, 'CStar', 'gen'],
+        [18, 620, 'Gulli', 'kids'], [21, 621, "L'Équipe", 'sport'], [22, 622, '6ter', 'gen'], [23, 623, 'RMC Story', 'gen'],
+        [24, 624, 'RMC Découverte', 'gen'], [25, 625, 'Chérie 25', 'gen'], [27, 207, 'franceinfo:', 'info'],
+    ];
+    private const PROGRAMS = [
+        'gen'   => ['Journal', 'Série policière', 'Film du soir', 'Divertissement', 'Magazine de société', 'Documentaire', 'Jeu télévisé', 'Série humoristique'],
+        'info'  => ['Le journal', 'Édition spéciale', 'Le grand débat', 'Les informés', 'Point sur l\'actualité'],
+        'kids'  => ['Dessins animés', 'Film d\'animation', 'Série jeunesse', 'Magazine jeunesse'],
+        'sport' => ['L\'Équipe du soir', 'Football : le résumé', 'Tennis : le tournoi', 'Cyclisme', 'Basket-ball'],
+    ];
+
+    private function channelFg(int $num): array
+    {
+        foreach (self::CHANNELS as [$n, $id, $name]) {
+            if ($n === $num) {
+                return ['package' => 'fr.freebox.tv', 'package_id' => 28, 'cur_url' => "tv://?channel=$n",
+                    'context' => ['channel' => ['channelName' => $name, 'channelNumber' => $n, 'bouquetName' => 'Freebox TV', 'channelUuid' => 'uuid-webtv-' . $id],
+                        'player' => ['playbackState' => 'PLAYING']]];
+            }
+        }
+        throw new DemoBoxError('invalid_request', 'Chaîne inconnue');
+    }
+
+    private function playerOpen(string $url): void
+    {
+        $pkg = null;
+        if (preg_match('~^(?:app:fr\.freebox\.tv|tv://)\??(.*)$~', $url, $m)) {
+            parse_str($m[1], $q);
+            $num = (int)($q['channel'] ?? 0);
+            if (!$num && !empty($q['uuid'])) {
+                foreach (self::CHANNELS as [$n, $id]) {
+                    if ('uuid-webtv-' . $id === $q['uuid']) $num = $n;
+                }
+            }
+            $num = $num ?: (int)($this->st['player']['channel'] ?? 1);
+            $fg = $this->channelFg($num);
+            $this->st['player'] = ['until' => $this->now + 4 * 3600, 'fg' => $fg, 'channel' => $num];
+            $this->dirty = true;
+            return;
+        }
+        $map = ['https://www.netflix.com' => 'com.netflix.ninja', 'https://www.youtube.com' => 'com.google.android.youtube.tv',
+            'https://www.primevideo.com' => 'com.amazon.amazonvideo.livingroom', 'vodservice://replay' => 'fr.freebox.vodlauncher', 'pvr://' => 'fr.freebox.pvr'];
+        if (isset($map[$url])) $pkg = $map[$url];
+        elseif (preg_match('~^app:([a-z0-9_.]+)$~i', $url, $m)) $pkg = $m[1];
+        elseif (preg_match('~^https://~', $url)) $pkg = 'com.android.browser';
+        if ($pkg === null) throw new DemoBoxError('invalid_request', 'Adresse non prise en charge');
+        $this->st['player'] = ['until' => $this->now + 4 * 3600, 'fg' => ['package' => $pkg, 'package_id' => 0, 'cur_url' => '',
+            'context' => ['player' => ['playbackState' => 'PLAYING']]], 'channel' => (int)($this->st['player']['channel'] ?? 1)];
+        $this->dirty = true;
+    }
+
+    private function playerMedia(string $name): void
+    {
+        $p = $this->st['player'] ?? null;
+        if (!$p || ($p['until'] ?? 0) < $this->now) {
+            $status = $this->playerStatus();
+            if (($status['power_state'] ?? '') !== 'running') throw new DemoBoxError('invalid_request', 'Le Player est en veille');
+            $p = ['until' => $this->now + 4 * 3600, 'fg' => $status['foreground_app'], 'channel' => (int)($status['foreground_app']['context']['channel']['channelNumber'] ?? 1)];
+        }
+        if (in_array($name, ['next', 'previous', 'prev'], true)) {
+            $nums = array_column(self::CHANNELS, 0);
+            $i = array_search((int)$p['channel'], $nums, true);
+            $i = $i === false ? 0 : ($i + ($name === 'next' ? 1 : -1) + count($nums)) % count($nums);
+            $p['channel'] = $nums[$i];
+            $p['fg'] = $this->channelFg($nums[$i]);
+        } elseif ($name === 'play_pause') {
+            $st = $p['fg']['context']['player']['playbackState'] ?? 'PLAYING';
+            $p['fg']['context']['player']['playbackState'] = $st === 'PLAYING' ? 'PAUSED' : 'PLAYING';
+        } else {
+            throw new DemoBoxError('invalid_request', 'Commande inconnue');
+        }
+        $p['until'] = $this->now + 4 * 3600;
+        $this->st['player'] = $p;
+        $this->dirty = true;
+    }
+
     private function playerStatus(): array
     {
+        if (($this->st['player']['until'] ?? 0) > $this->now && !empty($this->st['player']['fg'])) {
+            return ['power_state' => 'running', 'foreground_app' => $this->st['player']['fg']];
+        }
         $h = (int)date('G', $this->now);
         $min = (int)date('i', $this->now);
         $tv = static fn(string $name, int $num) => ['package' => 'fr.freebox.tv', 'package_id' => 28, 'cur_url' => "tv://?channel=$num",
@@ -707,6 +831,11 @@ final class DemoBox implements Transport
             'guest'    => $n('a') < 0.5 ? [(1 + 4 * $n('b')) * $mb, (0.1 + 0.4 * $n('c')) * $mb] : [0.02 * $mb, 0.01 * $mb],
             default    => [0.0, 0.0],
         };
+        if (!empty($d['cap'])) {
+            $cap = $d['cap'] * $mb * 0.98;
+            $down = min($down, $cap);
+            $up = min($up, $cap);
+        }
         return [max(0.0, $down), max(0.0, $up)];
     }
 

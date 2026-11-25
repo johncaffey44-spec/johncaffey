@@ -13,7 +13,7 @@ final class Db
     {
         if (self::$pdo !== null) return self::$pdo;
         if (!extension_loaded('pdo_sqlite')) {
-            throw new RuntimeException("L'extension PHP « pdo_sqlite » n'est pas activée. Dans php.ini, retirez le « ; » devant « extension=pdo_sqlite » et « extension=sqlite3 », puis redémarrez IIS (commande : iisreset).");
+            throw new RuntimeException("L'extension PHP « pdo_sqlite » n'est pas activée. Dans php.ini, retirez le « ; » devant « extension=pdo_sqlite », puis redémarrez IIS (commande : iisreset), ou relancez INSTALLER.cmd.");
         }
         $pdo = new PDO('sqlite:' . data_path('xdr.sqlite'), null, null, [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS schedules (
     applied_until INTEGER NOT NULL DEFAULT 0, skip_until INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS speedtests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL DEFAULT '',
+    down REAL NOT NULL DEFAULT 0, up REAL NOT NULL DEFAULT 0, ping REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS outages (id INTEGER PRIMARY KEY AUTOINCREMENT, start INTEGER NOT NULL, stop INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS usage (
     day TEXT NOT NULL, hour INTEGER NOT NULL, mac TEXT NOT NULL, service TEXT NOT NULL, minutes INTEGER NOT NULL,
     PRIMARY KEY (day, hour, mac, service)

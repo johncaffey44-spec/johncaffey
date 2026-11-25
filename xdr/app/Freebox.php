@@ -52,6 +52,7 @@ final class Freebox
         'parental' => 'Accès au contrôle parental',
         'profile'  => 'Gestion des profils utilisateur',
         'player'   => 'Contrôle du Freebox Player',
+        'tv'       => 'Accès au guide TV',
     ];
 
     private array $state;
@@ -293,6 +294,14 @@ final class Freebox
         }
     }
 
+    /** Lecture d'un fichier de la box (logos des chaînes) : corps brut, pas de JSON. */
+    public function binary(string $path): array
+    {
+        $this->discover();
+        $r = $this->t->send('GET', $this->state['base'] . ltrim($path, '/'), null, ['X-Fbx-App-Auth: ' . $this->sessionToken()]);
+        return ['status' => (int)$r['status'], 'body' => (string)$r['body']];
+    }
+
     /** Appel sans session (découverte, association). */
     private function raw(string $method, string $path, ?array $body = null): array
     {
@@ -329,6 +338,7 @@ final class Freebox
         $need = match (explode('/', ltrim($path, '/'))[0]) {
             'network_control', 'profile', 'parental' => '« ' . self::PERMISSIONS['settings'] . ' », « ' . self::PERMISSIONS['parental'] . ' » et « ' . self::PERMISSIONS['profile'] . ' »',
             'player' => '« ' . self::PERMISSIONS['player'] . ' »',
+            'tv' => '« ' . self::PERMISSIONS['tv'] . ' »',
             default  => '« ' . self::PERMISSIONS['settings'] . ' »',
         };
         return 'Dans Freebox OS : Paramètres de la Freebox › Gestion des accès › onglet Applications › « Sentinelle XDR » › crayon : cochez '

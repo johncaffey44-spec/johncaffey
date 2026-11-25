@@ -1,2 +1,5 @@
 data/
 config/config.php
+config/installeur.php
+journal-installation-*.txt
+*.avant-sentinelle-*

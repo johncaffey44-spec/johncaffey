@@ -6,6 +6,7 @@
  *   php tools\setup.php --password     crée ou remplace le mot de passe administrateur
  *   php tools\setup.php --reset-2fa    désactive la double authentification (téléphone perdu)
  *   php tools\setup.php --cron-key     affiche la clé de la tâche planifiée (la crée si besoin)
+ *   php tools\setup.php --data-dir     affiche le dossier des données réellement utilisé (sans rien créer)
  *   php tools\setup.php --demo-reset   remet la démonstration à zéro
  */
 declare(strict_types=1);
@@ -36,6 +37,10 @@ function ask(string $question, bool $secret = false): string
 
 $args = array_slice($argv, 1);
 try {
+    if (in_array('--data-dir', $args, true)) { // utilisé par l'installeur, avant toute création
+        out(str_replace('/', '\\', data_dir()));
+        exit(0);
+    }
     ensure_data_dir();
     if (in_array('--cron-key', $args, true)) {
         if (Db::kv('cron_key') === null) Db::setKv('cron_key', bin2hex(random_bytes(16)));
@@ -44,7 +49,7 @@ try {
     }
     if (in_array('--check', $args, true) || $args === []) {
         out('Sentinelle XDR ' . XDR_VERSION . ' — PHP ' . PHP_VERSION . ' (' . PHP_OS_FAMILY . ')');
-        foreach (['curl', 'pdo_sqlite', 'openssl', 'mbstring', 'simplexml'] as $ext) {
+        foreach (['curl', 'pdo_sqlite', 'mbstring', 'simplexml', 'session'] as $ext) {
             out(sprintf('  %-12s %s', $ext, extension_loaded($ext) ? 'OK' : 'MANQUANTE — php.ini : extension=' . $ext));
         }
         out('  données      ' . data_dir() . (is_writable(data_dir()) ? ' (écriture OK)' : ' (PAS accessible en écriture)'));

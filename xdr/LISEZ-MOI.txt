@@ -1,46 +1,72 @@
-﻿SENTINELLE XDR - Installation sur Windows 11 Pro (IIS + PHP)
-==============================================================
+﻿SENTINELLE XDR 1.2.0 - Installation sur Windows 11 Pro (IIS + PHP)
+=====================================================================
 
 AVANT DE COMMENCER
-- IIS et PHP doivent déjà être installés (votre script Installer-IIS-PHP.cmd).
-- Le PC doit être relié à la Freebox, de préférence par câble Ethernet.
+- Le PC serveur a été préparé avec le tutoriel « Serveur web IIS + PHP »
+  (Installer-IIS-PHP.cmd : IIS avec CGI, PHP 8.5 dans C:\PHP).
+- Le PC est relié à la Freebox, de préférence par câble Ethernet.
 
-1. DÉBLOQUER LE ZIP (évite les avertissements de Windows)
+1. DÉBLOQUER LE ZIP (AVANT d'extraire)
    Clic droit sur le fichier .zip > Propriétés > cochez « Débloquer » > OK.
 
 2. EXTRAIRE
    Clic droit sur le .zip > « Extraire tout... » (par exemple sur le Bureau).
+   Un dossier au nom en « (1) » (ZIP téléchargé deux fois) ne pose pas de problème.
 
 3. INSTALLER
    Ouvrez le dossier « xdr » et double-cliquez sur INSTALLER.cmd.
-   Acceptez la demande d'administrateur. Le script :
-   - active les extensions PHP nécessaires (avec une sauvegarde de php.ini) ;
-   - copie Sentinelle dans C:\inetpub\wwwroot\xdr (vos données sont conservées
-     lors d'une mise à jour) ;
-   - donne à IIS le droit d'écrire dans le dossier data ;
+   Acceptez la demande d'administrateur. Si Windows affiche « Windows a protégé
+   votre ordinateur » : « Informations complémentaires » > « Exécuter quand même ».
+
+   Le script ANALYSE d'abord sans rien modifier, puis affiche les changements
+   prévus ([à faire]). Tapez O puis Entrée pour les appliquer. Il :
+   - règle php.ini seulement si besoin, après en avoir fait une copie ;
+   - fait de /xdr une application IIS à part, avec son propre pool
+     « SentinelleXDR » ;
+   - range les données dans C:\SentinelleDonnees, HORS du site, accessibles au
+     seul pool de Sentinelle (aucune autre application du serveur ne peut lire
+     la clé d'accès à votre Freebox) ;
+   - copie Sentinelle dans C:\inetpub\wwwroot\xdr (vos données et réglages sont
+     conservés lors d'une mise à jour) ;
+   - vérifie que tout répond et que les fichiers internes sont invisibles ;
    - crée la tâche planifiée « Sentinelle XDR » (une analyse par minute) ;
-   - vérifie que le pare-feu Windows n'ouvre pas IIS à tout Internet ;
-   - propose d'installer AdGuard Home (indispensable pour l'onglet Enfants).
-   Si Windows affiche « Windows a protégé votre ordinateur » :
-   « Informations complémentaires » > « Exécuter quand même ».
+   - limite au réseau de la maison les règles du pare-feu ouvertes à Internet ;
+   - propose AdGuard Home (indispensable pour l'onglet Enfants).
+   Un journal complet est écrit dans ce dossier :
+   journal-installation-sentinelle-....txt
 
 4. CHOISIR LE MOT DE PASSE
-   Le navigateur s'ouvre sur http://localhost/xdr/ : choisissez le mot de passe
-   (10 caractères minimum). Cette étape se fait UNIQUEMENT depuis ce PC.
+   Sur CE PC, ouvrez http://localhost/xdr/ et choisissez le mot de passe
+   (10 caractères minimum). Cette étape se fait UNIQUEMENT depuis le serveur.
 
 5. ASSOCIER LA FREEBOX
    Paramètres > Freebox > « Associer ma Freebox », puis appuyez sur la flèche
    droite de l'écran de la Freebox pour accepter. Ensuite, dans Freebox OS :
    Paramètres de la Freebox > Gestion des accès > Applications > Sentinelle XDR,
-   et cochez les 4 droits indiqués dans Sentinelle.
+   et cochez les droits indiqués dans Sentinelle.
 
 6. DEPUIS UN AUTRE APPAREIL DE LA MAISON (téléphone, tablette)
-   http://NOM-DU-PC/xdr/   (l'adresse s'affiche à la fin de l'installation)
+   http://ADRESSE-DU-PC/xdr/   (l'adresse s'affiche à la fin de l'installation)
+
+MISE À JOUR
+   Relancez INSTALLER.cmd depuis la nouvelle version : il ne refait que ce qui
+   manque, sans toucher à vos données.
+
+OPTIONS (invite de commandes administrateur, dans ce dossier)
+   powershell -NoProfile -ExecutionPolicy Bypass -File tools\Installer-XDR.ps1 -Simulation
+   -Simulation       analyse et affiche le plan, sans rien modifier
+   -DossierDonnees   autre dossier pour les données (ex. D:\SentinelleDonnees)
+   -SansPareFeu      ne touche ni au pare-feu ni au profil réseau
+   -AdGuard          installe AdGuard Home sans poser la question
+   -Desinstaller     retire l'application (les données sont conservées)
 
 EN CAS DE PROBLÈME
-- Paramètres > Diagnostic vérifie l'installation point par point.
-- Le guide complet (dépannage, installation manuelle) est dans README.md.
+- Le message affiché dit pourquoi le script s'est arrêté, et rien n'est perdu :
+  corrigez puis relancez INSTALLER.cmd.
+- Erreurs IIS fréquentes (500.19, 404.3, 500.21, 401.3, 503) : voir le tableau
+  « Dépannage » du guide complet (README.md).
+- Dans Sentinelle : Paramètres > Diagnostic vérifie l'installation.
 
 SÉCURITÉ
 Ne publiez jamais Sentinelle sur Internet (aucune redirection de port vers ce PC).
-Pour y accéder de l'extérieur, utilisez le VPN WireGuard de la Freebox.
+Pour y accéder de l'extérieur, utilisez le VPN WireGuard de la Freebox ou Tailscale.

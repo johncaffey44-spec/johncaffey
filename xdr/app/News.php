@@ -132,6 +132,13 @@ final class News
         return null;
     }
 
+    /** Titre consacré à un concurrent sans parler de Free. */
+    private static function rival(string $title): bool
+    {
+        $t = mb_strtolower($title);
+        return (bool)preg_match('/livebox|\bbbox\b|\bsfr\b|\borange\b|bouygues|\bsosh\b|b&you/u', $t) && !preg_match('/\bfree\b|freebox/u', $t);
+    }
+
     private static function tags(string $t): array
     {
         $t = mb_strtolower($t);
@@ -155,7 +162,9 @@ final class News
     public static function updates(string $current, string $model = ''): array
     {
         $news = self::get();
-        $maj = array_values(array_filter($news['items'] ?? [], fn($i) => in_array('maj', $i['tags'], true)));
+        // un article sur une box concurrente (Livebox, Bbox…) ne doit ni s'afficher ici, ni fournir un « dernier numéro de version »
+        $mine = array_values(array_filter($news['items'] ?? [], fn($i) => !self::rival((string)$i['title'])));
+        $maj = array_values(array_filter($mine, fn($i) => in_array('maj', $i['tags'], true)));
         $latest = '';
         $latestItem = null;
         foreach ($maj as $i) {
@@ -175,7 +184,7 @@ final class News
             'behind' => $cur !== '' && $latest !== '' && version_compare($cur, $latest, '<'),
             'ahead' => $cur !== '' && $latest !== '' && version_compare($cur, $latest, '>='),
             'box' => array_map($slim, array_slice(array_values(array_filter($maj, fn($i) => !in_array('player', $i['tags'], true) || in_array('freebox', $i['tags'], true))), 0, 8)),
-            'player' => array_map($slim, array_slice(array_values(array_filter($news['items'] ?? [], fn($i) => in_array('player', $i['tags'], true))), 0, 8)),
+            'player' => array_map($slim, array_slice(array_values(array_filter($mine, fn($i) => in_array('player', $i['tags'], true))), 0, 8)),
             'checked' => (int)($news['ts'] ?? 0),
         ];
     }

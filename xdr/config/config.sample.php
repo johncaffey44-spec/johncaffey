@@ -1,15 +1,16 @@
 <?php
 /*
  * Sentinelle XDR — configuration « figée » (facultative).
- * Copiez ce fichier en config.php pour modifier ces valeurs. Elles touchent à la sécurité :
- * elles ne se changent pas depuis l'interface web, exprès.
+ * Copiez ce fichier en config.php pour modifier ces valeurs (enregistrez-le en UTF-8 sans BOM).
+ * Elles touchent à la sécurité : elles ne se changent pas depuis l'interface web, exprès.
  * Les autres réglages (Freebox, détection, notifications, AdGuard…) se font dans Paramètres.
  */
 return [
-    // Dossier des données (base SQLite, clé d'accès Freebox, sessions). Idéalement HORS de la
-    // racine du site, par exemple : 'C:/ProgramData/SentinelleXDR'. Donnez alors aux comptes
-    // IIS_IUSRS et IUSR le droit « Modification » sur ce dossier.
-    // 'data_dir' => 'C:/ProgramData/SentinelleXDR',
+    // Dossier des données (base SQLite, clé d'accès Freebox, sessions). INSTALLER.cmd le règle
+    // tout seul (C:\SentinelleDonnees, hors du site, réservé au pool IIS « SentinelleXDR ») et
+    // l'écrit dans config/installeur.php. Ne le changez ici que si vous savez pourquoi : relancez
+    // ensuite INSTALLER.cmd pour qu'il donne les bons droits au nouveau dossier.
+    // 'data_dir' => 'D:/SentinelleDonnees',
 
     // Réseaux autorisés à ouvrir l'interface. Par défaut : réseau local seulement.
     // 'allowed_networks' => ['127.0.0.0/8', '::1/128', '192.168.1.0/24', 'fe80::/10'],
