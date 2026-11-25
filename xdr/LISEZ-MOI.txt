@@ -1,0 +1,46 @@
+﻿SENTINELLE XDR - Installation sur Windows 11 Pro (IIS + PHP)
+==============================================================
+
+AVANT DE COMMENCER
+- IIS et PHP doivent déjà être installés (votre script Installer-IIS-PHP.cmd).
+- Le PC doit être relié à la Freebox, de préférence par câble Ethernet.
+
+1. DÉBLOQUER LE ZIP (évite les avertissements de Windows)
+   Clic droit sur le fichier .zip > Propriétés > cochez « Débloquer » > OK.
+
+2. EXTRAIRE
+   Clic droit sur le .zip > « Extraire tout... » (par exemple sur le Bureau).
+
+3. INSTALLER
+   Ouvrez le dossier « xdr » et double-cliquez sur INSTALLER.cmd.
+   Acceptez la demande d'administrateur. Le script :
+   - active les extensions PHP nécessaires (avec une sauvegarde de php.ini) ;
+   - copie Sentinelle dans C:\inetpub\wwwroot\xdr (vos données sont conservées
+     lors d'une mise à jour) ;
+   - donne à IIS le droit d'écrire dans le dossier data ;
+   - crée la tâche planifiée « Sentinelle XDR » (une analyse par minute) ;
+   - vérifie que le pare-feu Windows n'ouvre pas IIS à tout Internet ;
+   - propose d'installer AdGuard Home (indispensable pour l'onglet Enfants).
+   Si Windows affiche « Windows a protégé votre ordinateur » :
+   « Informations complémentaires » > « Exécuter quand même ».
+
+4. CHOISIR LE MOT DE PASSE
+   Le navigateur s'ouvre sur http://localhost/xdr/ : choisissez le mot de passe
+   (10 caractères minimum). Cette étape se fait UNIQUEMENT depuis ce PC.
+
+5. ASSOCIER LA FREEBOX
+   Paramètres > Freebox > « Associer ma Freebox », puis appuyez sur la flèche
+   droite de l'écran de la Freebox pour accepter. Ensuite, dans Freebox OS :
+   Paramètres de la Freebox > Gestion des accès > Applications > Sentinelle XDR,
+   et cochez les 4 droits indiqués dans Sentinelle.
+
+6. DEPUIS UN AUTRE APPAREIL DE LA MAISON (téléphone, tablette)
+   http://NOM-DU-PC/xdr/   (l'adresse s'affiche à la fin de l'installation)
+
+EN CAS DE PROBLÈME
+- Paramètres > Diagnostic vérifie l'installation point par point.
+- Le guide complet (dépannage, installation manuelle) est dans README.md.
+
+SÉCURITÉ
+Ne publiez jamais Sentinelle sur Internet (aucune redirection de port vers ce PC).
+Pour y accéder de l'extérieur, utilisez le VPN WireGuard de la Freebox.

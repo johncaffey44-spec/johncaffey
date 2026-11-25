@@ -12,7 +12,7 @@ if (PHP_VERSION_ID < 80100) {
     exit('Sentinelle XDR demande PHP 8.1 ou plus (PHP ' . PHP_VERSION . ' détecté).');
 }
 
-const XDR_VERSION = '1.0.0';
+const XDR_VERSION = '1.1.0';
 define('XDR_ROOT', str_replace('\\', '/', dirname(__DIR__)));
 
 /* ---------------------------------------------------------------------------------------

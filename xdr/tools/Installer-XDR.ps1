@@ -7,7 +7,8 @@
     4. crée la tâche planifiée « Sentinelle XDR » (analyse chaque minute) ;
     5. vérifie que le pare-feu Windows n'ouvre pas IIS à tout Internet (IPv6 compris) ;
     6. propose d'installer AdGuard Home (voir les applications utilisées, filtrer pour les enfants) ;
-    7. ouvre Sentinelle dans le navigateur pour choisir le mot de passe.
+    7. vérifie que Sentinelle répond à travers IIS ;
+    8. ouvre Sentinelle dans le navigateur pour choisir le mot de passe.
   Options : -Target "D:\sites\xdr"  -Site "Default Web Site"  -SkipFirewall
 #>
 param(
@@ -16,6 +17,7 @@ param(
     [switch]$SkipFirewall
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'   # sinon les téléchargements sont très lents sous Windows PowerShell
 function Step([string]$t) { Write-Host ""; Write-Host "== $t" -ForegroundColor Cyan }
 function Ok([string]$t) { Write-Host "   [OK] $t" -ForegroundColor Green }
 function Warn([string]$t) { Write-Host "   [!]  $t" -ForegroundColor Yellow }
@@ -52,7 +54,10 @@ try {
     $content = if (Test-Path $ini) { Get-Content $ini -Raw -Encoding UTF8 } else { '' }
     if ($missing.Count -gt 0) {
         Copy-Item $ini "$ini.avant-sentinelle" -Force -ErrorAction SilentlyContinue
-        if ($content -match '(?m)^\s*;\s*extension_dir\s*=\s*"ext"') { $content = $content -replace '(?m)^\s*;\s*(extension_dir\s*=\s*"ext")', '$1' }
+        if ($content -notmatch '(?m)^\s*extension_dir\s*=') {
+            # chemin complet : un chemin relatif dépend du dossier de lancement de PHP
+            $content += "`r`nextension_dir = `"$(Join-Path $phpDir 'ext')`""
+        }
         foreach ($ext in $missing) {
             if ($content -match "(?m)^\s*;\s*extension\s*=\s*(php_)?$ext(\.dll)?\s*$") {
                 $content = $content -replace "(?m)^\s*;\s*(extension\s*=\s*(php_)?$ext(\.dll)?)\s*$", '$1'
@@ -122,7 +127,13 @@ try {
         $port = (Get-WebBinding -Name $Site -Protocol http | Select-Object -First 1).bindingInformation.Split(':')[1]
     } catch { $port = '80' }
     $base = if ($port -and $port -ne '80') { "http://127.0.0.1:$port$url" } else { "http://127.0.0.1$url" }
-    $key = (& $php (Join-Path $dstFull 'tools\setup.php') --cron-key | Select-Object -Last 1).Trim()
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $out = @(& $php (Join-Path $dstFull 'tools\setup.php') --cron-key 2>&1 | ForEach-Object { "$_" })
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    $key = if ($out.Count) { $out[-1].Trim() } else { '' }
+    if ($code -ne 0 -or $key -notmatch '^[0-9a-f]{32}$') { throw "Sentinelle n'a pas pu créer sa base de données : $($out -join ' ')" }
     icacls $data /grant '*S-1-5-32-568:(OI)(CI)M' '*S-1-5-17:(OI)(CI)M' /T /Q | Out-Null
     $cronUrl = "$base/api.php?action=cron&key=$key"
     $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
@@ -152,8 +163,12 @@ try {
         if ($exposed.Count -gt 0) {
             $ans = Read-Host "   Limiter ces règles au réseau local (recommandé) ? O/N"
             if ($ans -match '^[oOyY]') {
-                $exposed | Set-NetFirewallRule -RemoteAddress LocalSubnet
-                Ok "Règles limitées au réseau local (LocalSubnet)."
+                foreach ($r in $exposed) {
+                    try {
+                        $r | Set-NetFirewallRule -RemoteAddress LocalSubnet
+                        Ok "« $($r.DisplayName) » limitée au réseau local."
+                    } catch { Warn "« $($r.DisplayName) » n'a pas pu être modifiée (règle imposée par une stratégie ?) : faites-le à la main." }
+                }
             } else { Warn "Règles laissées telles quelles." }
         } else { Ok "Aucune règle n'ouvre IIS à tout Internet." }
     }
@@ -173,7 +188,8 @@ try {
             Expand-Archive -Path $zip -DestinationPath $env:ProgramFiles -Force
             Remove-Item $zip -Force -ErrorAction SilentlyContinue
             & $agExe -s install | Out-Null
-            Ok "AdGuard Home installé comme service Windows"
+            if ($LASTEXITCODE -ne 0) { Warn "AdGuard Home : l'installation du service a renvoyé le code $LASTEXITCODE." }
+            else { Ok "AdGuard Home installé comme service Windows" }
             foreach ($proto in 'UDP', 'TCP') {
                 if (-not (Get-NetFirewallRule -DisplayName "AdGuard Home DNS ($proto, réseau local)" -ErrorAction SilentlyContinue)) {
                     New-NetFirewallRule -DisplayName "AdGuard Home DNS ($proto, réseau local)" -Direction Inbound -Protocol $proto -LocalPort 53 -RemoteAddress LocalSubnet -Action Allow | Out-Null
@@ -186,7 +202,25 @@ try {
         } else { Ok "Étape passée : vous pourrez l'installer plus tard (voir le guide)." }
     }
 
-    # ------------------------------------------------------------------ 7. Fin
+    # ------------------------------------------------------------------ 7. Vérification
+    Step "7. Vérification : Sentinelle répond-elle à travers IIS ?"
+    try {
+        $resp = Invoke-WebRequest -UseBasicParsing -TimeoutSec 20 -Uri "$base/api.php?action=session"
+        $j = $resp.Content | ConvertFrom-Json
+        if ($j.ok) { Ok "Sentinelle répond (version $($j.data.version), mode $($j.data.mode))." }
+        else { Warn "Sentinelle répond avec une erreur : $($j.error)" }
+    } catch {
+        $msg = $_.Exception.Message
+        try {
+            $body = (New-Object IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd()
+            $j = $body | ConvertFrom-Json
+            if ($j.error) { $msg = $j.error }
+        } catch { }
+        Warn "Sentinelle ne répond pas correctement : $msg"
+        Warn "Vérifiez dans IIS que les fichiers .php sont associés à PHP (Mappages de gestionnaires), puis relancez INSTALLER.cmd."
+    }
+
+    # ------------------------------------------------------------------ 8. Fin
     Step "Terminé"
     Ok "Ouverture de Sentinelle : choisissez votre mot de passe (la première fois, uniquement depuis ce PC)."
     Start-Process "http://localhost$url/"
