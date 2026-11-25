@@ -522,23 +522,54 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--blue); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ------------------------------------------------------------------ adaptatif */
+/* ------------------------------------------------------------------ adaptatif
+   Approche « mobile d'abord dans l'esprit » : les grilles de cartes (.devs, .news,
+   .profiles, .kids) utilisent déjà auto-fill et se replient seules. Ces points de
+   rupture ajustent la coquille, les grilles fixes et la densité, de l'écran large
+   au téléphone, en passant par la tablette (portrait et paysage). */
+
+/* Grand écran de bureau : on élargit un peu les colonnes fixes. */
+@media (min-width: 1600px) {
+  .main { padding: 26px 40px 64px; max-width: 1760px; }
+  .g-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Ordinateur portable / grande tablette paysage. */
 @media (max-width: 1280px) {
   .g-hero { grid-template-columns: 1fr; }
   .g-2-1 { grid-template-columns: 1fr; }
   .g-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 960px) {
+
+/* Tablette : la barre latérale devient un menu escamotable plein écran. */
+@media (max-width: 1024px) {
   .shell { grid-template-columns: 1fr; }
-  .side { position: fixed; left: 0; top: 0; bottom: 0; width: 280px; transform: translateX(-102%); transition: transform .28s var(--ease); box-shadow: var(--shadow); }
+  .side {
+    position: fixed; left: 0; top: 0; bottom: 0; width: min(300px, 82vw);
+    transform: translateX(-102%); transition: transform .28s var(--ease); box-shadow: var(--shadow);
+    padding-top: max(22px, env(safe-area-inset-top));
+  }
   .side.open { transform: none; }
   .menu-btn { display: inline-flex; }
-  .main { padding: 16px 16px 48px; }
-  .top h1 { font-size: 22px; }
-  .g-2, .g-3, .g-tiles { grid-template-columns: 1fr 1fr; }
-  .drawer { border-radius: 0; padding: 20px 16px; }
+  .main { padding: 18px 22px 52px; }
+  .top h1 { font-size: 23px; }
+  .drawer { width: min(640px, 100%); border-radius: 22px 0 0 22px; }
 }
-@media (max-width: 620px) {
+
+/* Tablette portrait : deux colonnes partout où c'est confortable. */
+@media (max-width: 860px) {
+  .main { padding: 16px 18px 48px; }
+  .g-2, .g-3, .g-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kids { grid-template-columns: 1fr; }
+  .devs { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .drawer { width: 100%; border-radius: 0; padding: 20px 18px; }
+}
+
+/* Grand téléphone / petite tablette. */
+@media (max-width: 680px) {
+  .main { padding: 14px 14px 44px; }
+  .top { gap: 10px 14px; }
+  .top h1 { font-size: 21px; }
   .g-2, .g-3 { grid-template-columns: 1fr; }
   .g-tiles { grid-template-columns: 1fr 1fr; gap: 10px; }
   .tile { padding: 14px; }
@@ -546,13 +577,48 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .score { grid-template-columns: 1fr; justify-items: center; text-align: center; }
   .score .sevs { justify-content: center; }
   .score h3 { justify-content: center; }
-  .devs { grid-template-columns: 1fr; }
+  .devs, .news, .profiles { grid-template-columns: 1fr; }
   .card { padding: 16px; border-radius: 18px; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
   .kv dd { margin-bottom: 8px; }
   .hbar { grid-template-columns: 1fr; gap: 4px; }
+  .svc { grid-template-columns: 1fr auto; }
+  .svc .track { grid-column: 1 / -1; order: 3; }
+  .assign { grid-template-columns: 1fr; gap: 6px; }
+  .kid-head { gap: 10px; }
+  .kid-total { margin-left: 0; width: 100%; text-align: left; }
+  .kid-total b { font-size: 26px; }
   .toasts { right: 10px; left: 10px; bottom: 10px; width: auto; }
+  .seg { width: 100%; }
+  .seg button { flex: 1; }
+  .modal { padding: 18px; border-radius: 18px; }
+  .svc-pick { grid-template-columns: 1fr 1fr; }
 }
+
+/* Très petit téléphone. */
+@media (max-width: 400px) {
+  .g-tiles { grid-template-columns: 1fr; }
+  .btns .btn { flex: 1; }
+  .dev-actions .btn { flex: 1; }
+  .svc-pick { grid-template-columns: 1fr; }
+  .hours { height: 76px; }
+}
+
+/* Tablette/téléphone tactile : cibles plus grandes, pas d'effet de survol collant. */
+@media (hover: none) and (pointer: coarse) {
+  .btn { min-height: 44px; }
+  .btn.sm { min-height: 38px; }
+  .nav button { padding: 13px 12px; }
+  .dev:hover, .article:hover, .alert-mini:hover { transform: none; }
+  .input, select.input { min-height: 46px; font-size: 16px; } /* 16px évite le zoom automatique de l'iPhone */
+}
+
+/* Encoches et barres système (iPhone, Android plein écran). */
+@media (max-width: 1024px) {
+  .main { padding-bottom: max(52px, env(safe-area-inset-bottom)); }
+  .toasts { bottom: max(10px, env(safe-area-inset-bottom)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
