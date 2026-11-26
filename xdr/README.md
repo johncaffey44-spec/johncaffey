@@ -150,6 +150,8 @@ La Freebox coupe Internet **par profil**. Créez vos profils dans Freebox OS (Co
 
 ## Suivre ce que font les enfants
 
+> **Tutoriel illustré AdGuard Home** (installation, port 3000, identifiant, réglage dans Sentinelle, bascule de la maison) : [`docs/Tutoriel-AdGuard-Home.pdf`](docs/Tutoriel-AdGuard-Home.pdf).
+
 ![Onglet Enfants](docs/captures/enfants.jpg)
 
 1. **Dites à Sentinelle quels appareils sont ceux des enfants** : onglet **Enfants** › « Qui utilise quel appareil ? », ou bouton « À qui ? » dans la fiche d'un appareil. Les appareils d'un même enfant sont regroupés.

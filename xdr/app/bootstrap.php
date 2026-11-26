@@ -16,7 +16,7 @@ if (PHP_VERSION_ID < 80100) {
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
-const XDR_VERSION = '1.2.1';
+const XDR_VERSION = '1.2.2';
 define('XDR_ROOT', str_replace('\\', '/', dirname(__DIR__)));
 
 /* ---------------------------------------------------------------------------------------
@@ -145,7 +145,7 @@ final class Settings
         if (isset($in['adguard']) && is_array($in['adguard'])) {
             $a = $in['adguard'];
             $s['adguard']['enabled'] = (bool)($a['enabled'] ?? $s['adguard']['enabled']);
-            if (isset($a['url'])) $s['adguard']['url'] = rtrim($url($a['url']), '/');
+            if (isset($a['url'])) $s['adguard']['url'] = rtrim($url(Dns::normalizeUrl((string)$a['url'])), '/');
             if (isset($a['user'])) $s['adguard']['user'] = $str($a['user'], 100);
             // Mot de passe : une valeur vide ou masquée ne remplace pas celui enregistré.
             if (isset($a['pass']) && $a['pass'] !== '' && $a['pass'] !== '••••••••') $s['adguard']['pass'] = $str($a['pass'], 200);

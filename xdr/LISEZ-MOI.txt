@@ -1,4 +1,4 @@
-﻿SENTINELLE XDR 1.2.1 - Installation sur Windows 11 Pro (IIS + PHP)
+﻿SENTINELLE XDR 1.2.2 - Installation sur Windows 11 Pro (IIS + PHP)
 =====================================================================
 
 AVANT DE COMMENCER
@@ -32,6 +32,7 @@ AVANT DE COMMENCER
    - crée la tâche planifiée « Sentinelle XDR » (une analyse par minute) ;
    - limite au réseau de la maison les règles du pare-feu ouvertes à Internet ;
    - propose AdGuard Home (indispensable pour l'onglet Enfants).
+     Pas à pas, avec captures annotées : docs\Tutoriel-AdGuard-Home.pdf
    Un journal complet est écrit dans ce dossier :
    journal-installation-sentinelle-....txt
 

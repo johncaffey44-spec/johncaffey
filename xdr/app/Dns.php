@@ -50,26 +50,51 @@ final class Dns
         return null;
     }
 
-    /** Appel à l'API d'AdGuard Home (authentification de base). */
-    private static function call(string $method, string $path, ?array $body = null): mixed
+    /** « 127.0.0.1:3000 » saisi sans http:// devient « http://127.0.0.1:3000 » (au lieu d'être refusé sans un mot). */
+    public static function normalizeUrl(string $u): string
     {
-        $a = Settings::get('adguard');
+        $u = trim($u);
+        if ($u !== '' && !preg_match('~^[a-z][a-z0-9+.-]*://~i', $u) && preg_match('~^[a-z0-9.\-\[\]:]+(/\S*)?$~i', $u)) $u = 'http://' . $u;
+        return rtrim($u, '/');
+    }
+
+    /** Appel à l'API d'AdGuard Home (authentification de base). $cfg : réglages à essayer (sinon ceux enregistrés). */
+    private static function call(string $method, string $path, ?array $body = null, ?array $cfg = null): mixed
+    {
+        $a = $cfg ?? Settings::get('adguard');
         $url = rtrim((string)$a['url'], '/') . $path;
         $r = Http::request($method, $url, $body === null ? null : json_encode($body, JSON_UNESCAPED_SLASHES),
             $body === null ? ['Accept: application/json'] : ['Accept: application/json', 'Content-Type: application/json'],
             ['timeout' => 5, 'no_proxy' => true, 'userpwd' => ($a['user'] ?? '') !== '' ? $a['user'] . ':' . ($a['pass'] ?? '') : '']);
-        if ($r['error'] !== '') throw new RuntimeException('AdGuard Home injoignable : ' . $r['error']);
-        if ($r['status'] === 401 || $r['status'] === 403) throw new RuntimeException('AdGuard Home refuse l\'identifiant ou le mot de passe.');
+        if ($r['error'] !== '') throw new RuntimeException('AdGuard Home injoignable (' . $r['error'] . ') : le service « AdGuard Home » est-il démarré, et le port est-il le bon (3000) ?');
+        if ($r['status'] === 401 || $r['status'] === 403) throw new RuntimeException('AdGuard Home refuse l\'identifiant ou le mot de passe : ce sont ceux choisis dans son assistant d\'installation.');
+        if ($r['status'] === 404) throw new RuntimeException('Rien qui ressemble à AdGuard Home à cette adresse (HTTP 404) : vérifiez le port, par exemple http://127.0.0.1:3000.');
         if ($r['status'] >= 400) throw new RuntimeException("AdGuard Home a répondu HTTP {$r['status']}.");
         $j = json_decode($r['body'], true);
         return $j ?? $r['body'];
     }
 
-    public static function test(): array
+    /**
+     * Essaie les réglages SAISIS dans le formulaire (avant même « Enregistrer ») ; sans adresse saisie, ceux
+     * enregistrés. Un mot de passe vide ou masqué reprend celui enregistré. Jamais de faux « OK » de démonstration
+     * pour une vraie adresse.
+     */
+    public static function test(array $form = []): array
     {
-        if (Network::isDemo()) return ['ok' => true, 'version' => 'démo', 'protection' => true];
-        $s = self::call('GET', '/control/status');
-        return ['ok' => true, 'version' => (string)($s['version'] ?? '?'), 'protection' => (bool)($s['protection_enabled'] ?? false)];
+        $saved = Settings::get('adguard');
+        $url = self::normalizeUrl((string)($form['url'] ?? ''));
+        $typed = $url !== '';
+        if (!$typed) {
+            if (Network::isDemo() && (string)$saved['url'] === '') return ['ok' => true, 'version' => 'démo', 'protection' => true];
+            $url = (string)$saved['url'];
+        }
+        if (!preg_match('~^https?://[^\s"<>]+$~i', $url)) throw new InvalidArgumentException('Adresse d\'AdGuard Home invalide : saisissez par exemple http://127.0.0.1:3000.');
+        $pass = (string)($form['pass'] ?? '');
+        if ($pass === '' || $pass === '••••••••') $pass = (string)($saved['pass'] ?? '');
+        $user = $typed ? (string)($form['user'] ?? '') : (string)($saved['user'] ?? '');
+        $s = self::call('GET', '/control/status', null, ['url' => $url, 'user' => $user, 'pass' => $pass]);
+        if (!is_array($s) || !isset($s['version'])) throw new RuntimeException('Cette adresse répond, mais pas comme AdGuard Home : vérifiez le port (3000 ?).');
+        return ['ok' => true, 'version' => (string)$s['version'], 'protection' => (bool)($s['protection_enabled'] ?? false), 'url' => $url];
     }
 
     /** Dernières requêtes DNS, normalisées. */

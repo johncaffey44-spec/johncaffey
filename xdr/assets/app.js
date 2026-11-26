@@ -1074,7 +1074,7 @@
         !r.dns ? h('div', { class: 'card glow', style: { marginBottom: '18px' } }, h('div', { class: 'card-head' }, h('h2', null, icon('dns'), 'Pour voir les applications utilisées : AdGuard Home')),
           h('div', { class: 'steps' },
             h('div', { class: 'step' }, h('div', null, h('b', null, 'Installez AdGuard Home sur ce PC'), h('p', null, 'Gratuit (site officiel d\'AdGuard). Lancez « AdGuardHome.exe -s install » en administrateur, puis ouvrez http://127.0.0.1:3000. Important : choisissez le port 3000 pour son interface, car IIS occupe déjà le port 80.'))),
-            h('div', { class: 'step' }, h('div', null, h('b', null, 'Renseignez-le dans Sentinelle'), h('p', null, 'Paramètres › Navigation (DNS) : adresse http://127.0.0.1:3000, identifiant et mot de passe, puis « Tester ».'))),
+            h('div', { class: 'step' }, h('div', null, h('b', null, 'Renseignez-le dans Sentinelle'), h('p', null, 'Paramètres › Navigation (DNS) : adresse http://127.0.0.1:3000, identifiant et mot de passe, « Tester », puis « Enregistrer ».'))),
             h('div', { class: 'step' }, h('div', null, h('b', null, 'Faites passer la maison par lui'), h('p', null, 'Revenez ici : un bouton indiquera à la Freebox d\'utiliser ce PC comme DNS.'))),
             h('div', { class: 'step' }, h('div', null, h('b', null, 'En attendant'), h('p', null, 'Sentinelle mesure déjà les heures où chaque appareil est actif, sans le détail des applications.')))),
           h('div', { class: 'btns', style: { marginTop: '14px' } }, h('a', { class: 'btn primary sm', href: '#/settings' }, icon('settings', 'sm'), 'Ouvrir les paramètres'))) : null,
@@ -1890,19 +1890,20 @@
     /* DNS */
     const ag = st.adguard;
     const agOn = h('input', { type: 'checkbox', checked: ag.enabled });
-    const agUrl = h('input', { class: 'input mono', value: ag.url, placeholder: 'http://192.168.1.51:3000' });
+    const agUrl = h('input', { class: 'input mono', value: ag.url, placeholder: 'http://127.0.0.1:3000' });
     const agUser = h('input', { class: 'input', value: ag.user, autocomplete: 'off' });
     const agPass = pwField({ value: ag.pass, autocomplete: 'new-password' });
     const dnsVis = h('input', { type: 'checkbox', checked: st.dns_visibility });
     const dnsCard = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, icon('dns'), 'Navigation (DNS) avec AdGuard Home')),
-      noteBox(h('b', null, 'Pourquoi ? '), 'La Freebox ne dit pas quels sites sont visités. AdGuard Home (gratuit, installable sur ce PC Windows) note les noms de domaine demandés par chaque appareil, bloque publicités et sites malveillants, et permet à Sentinelle de couper le DNS d\'un appareil isolé. Ensuite, indiquez l\'IP de ce PC comme serveur DNS dans Freebox OS › Paramètres › DHCP.'),
+      noteBox(h('b', null, 'Pourquoi ? '), 'La Freebox ne dit pas quels sites sont visités. AdGuard Home (gratuit, installable sur ce PC Windows) note les noms de domaine demandés par chaque appareil, bloque publicités et sites malveillants, et permet à Sentinelle de couper le DNS d\'un appareil isolé. Ensuite, onglet Enfants › « Faire passer la maison par AdGuard Home ».'),
       h('label', { class: 'check', style: { margin: '14px 0' } }, h('span', { class: 'switch' }, agOn, h('span')), 'Utiliser AdGuard Home'),
-      h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'Adresse de l\'interface AdGuard Home', agUrl), h('label', { class: 'field' }, 'Identifiant', agUser), h('label', { class: 'field' }, 'Mot de passe', agPass.wrap)),
+      h('div', { class: 'form-grid' }, h('label', { class: 'field' }, 'Adresse de l\'interface AdGuard Home', agUrl, h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Installé sur ce PC : http://127.0.0.1:3000 (le port choisi dans son assistant).')),
+        h('label', { class: 'field' }, 'Identifiant', agUser, h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Celui créé dans l\'assistant d\'AdGuard Home.')), h('label', { class: 'field' }, 'Mot de passe', agPass.wrap)),
       h('label', { class: 'check', style: { marginTop: '12px' } }, h('span', { class: 'switch' }, dnsVis, h('span')), 'Afficher l\'activité de navigation dans Sentinelle'),
       h('p', { class: 'faint', style: { fontSize: '12.5px' } }, 'Loi : informez les personnes du foyer. Surveiller à son insu la navigation d\'un adulte, conjoint compris, peut constituer un délit (art. 226-1 et 226-15 du Code pénal ; peines aggravées entre conjoints). Pour un enfant mineur, le contrôle parental est légitime : la CNIL recommande de l\'en informer clairement et de préférer les outils qui restent en local, comme Sentinelle.'),
       h('div', { class: 'btns' },
         h('button', { class: 'btn', type: 'button', onclick: () => save({ dns_visibility: dnsVis.checked, adguard: { enabled: agOn.checked, url: agUrl.value, user: agUser.value, pass: agPass.input.value } }) }, icon('check'), 'Enregistrer'),
-        h('button', { class: 'btn ghost', type: 'button', onclick: async () => { try { const t = await api.post('adguard_test'); toast('AdGuard Home répond', 'ok', `Version ${t.version} · protection ${t.protection ? 'active' : 'inactive'}`); } catch (e) { fail(e); } } }, icon('zap'), 'Tester')));
+        h('button', { class: 'btn ghost', type: 'button', onclick: async () => { try { const t = await api.post('adguard_test', { url: agUrl.value, user: agUser.value, pass: agPass.input.value }); toast('AdGuard Home répond', 'ok', `Version ${t.version} · protection ${t.protection ? 'active' : 'inactive'} · cliquez sur « Enregistrer »`); } catch (e) { fail(e); } } }, icon('zap'), 'Tester')));
 
     /* Notifications */
     const n = st.notify;

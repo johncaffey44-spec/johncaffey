@@ -411,7 +411,7 @@ try {
             Notify::send('Sentinelle · test', 'Les notifications fonctionnent. Vous serez prévenu des alertes importantes.', 'moyenne');
             return ['ok' => true];
         })(),
-        'adguard_test' => (need_post() ?? Dns::test()),
+        'adguard_test' => (need_post() ?? Dns::test(['url' => (string)arg('url'), 'user' => (string)arg('user'), 'pass' => (string)arg('pass')])),
         'box_reboot' => (function () {
             need_post();
             Auth::confirm((string)arg('password'));
@@ -491,7 +491,20 @@ function server_lan_ip(): string
     $host = (string)parse_url((string)(Settings::get('adguard')['url'] ?? ''), PHP_URL_HOST);
     if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !str_starts_with($host, '127.')) return $host;
     $srv = normalize_ip((string)($_SERVER['SERVER_ADDR'] ?? $_SERVER['LOCAL_ADDR'] ?? ''));
-    return filter_var($srv, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !str_starts_with($srv, '127.') ? $srv : '';
+    if (filter_var($srv, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !str_starts_with($srv, '127.')) return $srv;
+    // page ouverte sur le serveur lui-même (localhost) : adresse de l'interface qui mène à la Freebox
+    // (une « connexion » UDP n'envoie rien, elle choisit seulement la route)
+    $box = (string)parse_url((string)Settings::get('freebox_url'), PHP_URL_HOST);
+    $boxIp = filter_var($box, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $box : (string)@gethostbyname($box !== '' ? $box : 'mafreebox.freebox.fr');
+    foreach (array_unique([$boxIp, '192.168.1.254', '1.1.1.1']) as $cible) {
+        if (!filter_var($cible, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || str_starts_with($cible, '127.')) continue;
+        $sock = @stream_socket_client('udp://' . $cible . ':53', $errno, $errstr, 1);
+        if (!$sock) continue;
+        $local = (string)preg_replace('/:\d+$/', '', (string)stream_socket_get_name($sock, false));
+        fclose($sock);
+        if (filter_var($local, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !str_starts_with($local, '127.')) return $local;
+    }
+    return '';
 }
 
 /** Vérifications de l'installation (page Paramètres › Diagnostic). */
