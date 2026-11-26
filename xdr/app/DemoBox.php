@@ -204,7 +204,7 @@ final class DemoBox implements Transport
                         $this->dirty = true;
                         return ['session_token' => $tok, 'challenge' => $c, 'permissions' => [
                             'settings' => true, 'parental' => true, 'profile' => true, 'player' => true, 'contacts' => false,
-                            'calls' => false, 'explorer' => false, 'downloader' => false, 'tv' => false, 'pvr' => false, 'camera' => false, 'home' => false,
+                            'calls' => false, 'explorer' => false, 'downloader' => false, 'tv' => true, 'pvr' => false, 'camera' => false, 'home' => false,
                         ]];
                     }
                 }

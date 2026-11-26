@@ -1771,7 +1771,8 @@
       if (st.status === 'pending') continue;
       if (st.status === 'granted') {
         put(steps, step('Demande envoyée', 'OK', true), step('Validé sur la Freebox', 'Sentinelle est associée.', true),
-          step('Accordez les droits (obligatoire)', 'Ouvrez Freebox OS (http://mafreebox.freebox.fr) › Paramètres de la Freebox › Gestion des accès › onglet Applications › « Sentinelle XDR » › crayon. Cochez : « Modification des réglages de la Freebox », « Accès au contrôle parental », « Gestion des profils utilisateur » et « Contrôle du Freebox Player ». Validez.'),
+          step('Accordez les droits (obligatoire)', 'Ouvrez Freebox OS (http://mafreebox.freebox.fr) › Paramètres de la Freebox › Gestion des accès › onglet Applications › « Sentinelle XDR » › crayon. Cochez les 4 droits : « Modification des réglages de la Freebox », « Accès au contrôle parental », « Gestion des profils utilisateur » et « Contrôle du Freebox Player ». Le guide TV est déjà accordé par défaut.'),
+          step('Retirez les droits inutiles (conseillé)', 'Toute nouvelle application reçoit d\'office l\'accès aux fichiers, aux téléchargements, aux contacts, aux appels, aux enregistrements et aux machines virtuelles de la box. Sentinelle ne s\'en sert pas : décochez-les, puis validez.'),
           step('Fermez le robinet', 'Dans Gestion des accès › Paramètres, désactivez ensuite les « nouvelles demandes d\'association » : plus aucune application ne pourra demander l\'accès.'));
         put(status, h('div', { style: { marginTop: '14px' } }, noteBox(h('b', null, 'Terminé. '), 'Rouvrez Paramètres pour vérifier les droits : chaque droit accordé y apparaît coché.')));
         toast('Freebox associée', 'ok');
@@ -1797,7 +1798,7 @@
     const perms = r.permissions;
     const permList = h('div', { class: 'stack', style: { gap: '8px' } }, Object.entries(r.permission_labels).map(([k, label]) => {
       const ok = perms ? !!perms[k] : null;
-      return h('div', { class: 'note-box' }, icon(ok ? 'check' : ok === false ? 'x' : 'info'), h('div', null, h('b', null, label), ok === false ? h('div', null, 'Non accordé : cochez-le dans Freebox OS › Gestion des accès › Applications.') : null));
+      return h('div', { class: 'note-box' + (ok ? ' ok' : ok === false ? ' ko' : '') }, icon(ok ? 'check' : ok === false ? 'x' : 'info'), h('div', null, h('b', null, label), ok === false ? h('div', null, 'Non accordé : cochez-le dans Freebox OS › Gestion des accès › Applications.') : null));
     }));
     const freeboxCard = h('div', { class: 'card' },
       h('div', { class: 'card-head' }, h('h2', null, icon('router'), 'Freebox'), h('div', { class: 'grow' }),
@@ -1818,6 +1819,7 @@
         h('dt', null, 'Chiffrement'), h('dd', null, fb.encrypted ? 'HTTPS (certificat Freebox vérifié)' : 'HTTP local'),
         h('dt', null, 'Version de l\'API'), h('dd', null, fb.api ? `${fb.api.api_version} — ${fb.api.box_model || fb.api.device_name}` : '—')) : null,
       h('div', { class: 'section-title' }, 'Droits accordés à Sentinelle'),
+      fb.paired ? null : h('p', { class: 'muted', style: { margin: '0 0 10px', fontSize: '13px' } }, 'Ces droits s\'accordent dans Freebox OS, une fois la Freebox associée : la liste se cochera alors toute seule.'),
       r.permissions_error ? errorBox({ message: r.permissions_error }) : permList);
 
     /* Sécurité */

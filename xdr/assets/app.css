@@ -427,6 +427,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .err-box p { margin: 4px 0 0; color: var(--text-2); }
 .note-box { display: flex; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel-2); font-size: 13px; color: var(--text-2); }
 .note-box .ic { color: var(--blue); margin-top: 1px; }
+.note-box.ok .ic { color: var(--s-good); }
+.note-box.ko { border-color: rgba(255, 90, 106, .45); }
+.note-box.ko .ic { color: var(--s-crit); }
 .note-box b { color: var(--text); }
 .skeleton { height: 120px; border-radius: var(--radius); background: linear-gradient(100deg, var(--panel) 30%, var(--panel-2) 50%, var(--panel) 70%); background-size: 300% 100%; animation: shimmer 1.4s infinite linear; border: 1px solid var(--line); }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }

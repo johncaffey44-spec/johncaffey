@@ -16,7 +16,7 @@ if (PHP_VERSION_ID < 80100) {
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
-const XDR_VERSION = '1.2.0';
+const XDR_VERSION = '1.2.1';
 define('XDR_ROOT', str_replace('\\', '/', dirname(__DIR__)));
 
 /* ---------------------------------------------------------------------------------------

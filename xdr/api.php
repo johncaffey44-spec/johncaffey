@@ -267,9 +267,10 @@ try {
             $real = new Freebox(new CurlTransport(), false);
             $perms = null;
             $permError = null;
-            $fbx = $demo ? Freebox::make() : $real;
+            // toujours les droits de VOTRE Freebox : ceux de la box de démonstration induiraient en erreur
+            $fbx = $real;
             try {
-                if ($fbx->paired()) $perms = $fbx->permissions();
+                if ($fbx->paired()) $perms = $fbx->permissions(true); // relus à chaque ouverture : un droit coché à l'instant apparaît
             } catch (Throwable $e) {
                 $permError = $e->getMessage() . (($e instanceof FreeboxError && $e->hint) ? ' — ' . $e->hint : '');
             }

@@ -126,14 +126,17 @@ Sans HTTPS, le mot de passe Sentinelle circule en clair sur votre réseau. Dans 
 
 ## Associer la Freebox
 
+> **Tutoriel illustré** (captures annotées, flèches et encadrés) : [`docs/Tutoriel-Associer-Freebox.pdf`](docs/Tutoriel-Associer-Freebox.pdf).
+
 1. Paramètres › **Freebox** › **Associer ma Freebox**.
 2. Allez devant la Freebox (le boîtier Server) : l'écran affiche une demande « Sentinelle XDR ». **Appuyez sur la flèche droite** pour accepter (vous avez environ 2 minutes).
 3. **Accordez les droits**, faute de quoi la plupart des actions répondront « droit manquant » : ouvrez Freebox OS (`http://mafreebox.freebox.fr`) › Paramètres de la Freebox › **Gestion des accès** › onglet **Applications** › « Sentinelle XDR » › crayon, puis cochez :
    - « Modification des réglages de la Freebox » ;
    - « Accès au contrôle parental » ;
    - « Gestion des profils utilisateur » ;
-   - « Contrôle du Freebox Player » ;
-   - « Accès au guide TV ».
+   - « Contrôle du Freebox Player ».
+
+   Le guide TV est déjà accordé par défaut. **Décochez en revanche ce dont Sentinelle n'a pas besoin** : toute nouvelle application reçoit d'office l'accès aux fichiers de la box, aux téléchargements, aux contacts, aux appels, aux enregistrements et aux machines virtuelles. Moins de droits, c'est moins de dégâts possibles si la clé d'accès était un jour volée.
 4. **Fermez la porte** : Gestion des accès › Paramètres › décochez « Permettre les nouvelles demandes d'association ».
 5. Dans Paramètres, la liste « Droits accordés à Sentinelle » doit afficher une coche pour chacun.
 

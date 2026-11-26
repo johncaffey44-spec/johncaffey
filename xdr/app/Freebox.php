@@ -57,6 +57,7 @@ final class Freebox
 
     private array $state;
     private ?string $session = null;
+    private int $sessionTs = 0;
     private array $perms = [];
     private string $stateFile;
 
@@ -198,8 +199,10 @@ final class Freebox
 
     /* ------------------------------------------------------------------ session */
 
-    public function permissions(): array
+    /** Droits accordés par la box. $fresh : nouvelle session, pour voir tout de suite un droit coché dans Freebox OS. */
+    public function permissions(bool $fresh = false): array
     {
+        if ($fresh) $this->dropSession();
         $this->sessionToken();
         return $this->perms;
     }
@@ -215,6 +218,7 @@ final class Freebox
         $s = read_json($this->sessionFile());
         if (!empty($s['token']) && ($s['ts'] ?? 0) > time() - 1200 && ($s['base'] ?? '') === ($this->state['base'] ?? '')) {
             $this->perms = (array)($s['perms'] ?? []);
+            $this->sessionTs = (int)$s['ts'];
             return $this->session = (string)$s['token'];
         }
         return $this->openSession();
@@ -237,6 +241,7 @@ final class Freebox
         $this->session = (string)($res['session_token'] ?? '');
         if ($this->session === '') throw new FreeboxError('Ouverture de session refusée par la Freebox.', 'session_failed');
         $this->perms = (array)($res['permissions'] ?? []);
+        $this->sessionTs = time();
         write_json($this->sessionFile(), ['token' => $this->session, 'perms' => $this->perms, 'ts' => time(), 'base' => $this->state['base'] ?? '']);
         return $this->session;
     }
@@ -265,6 +270,12 @@ final class Freebox
         if (empty($j['success'])) {
             $code = (string)($j['error_code'] ?? 'error');
             if ($retry && in_array($code, ['auth_required', 'invalid_session'], true)) {
+                $this->dropSession();
+                return $this->call($method, $path, $body, false);
+            }
+            // droit peut-être coché dans Freebox OS depuis l'ouverture de la session : une session neuve en tient compte
+            // (au plus une fois par minute, pour ne pas ouvrir une session à chaque appel si le droit manque vraiment)
+            if ($retry && $code === 'insufficient_rights' && time() - $this->sessionTs > 60) {
                 $this->dropSession();
                 return $this->call($method, $path, $body, false);
             }

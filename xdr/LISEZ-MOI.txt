@@ -1,4 +1,4 @@
-﻿SENTINELLE XDR 1.2.0 - Installation sur Windows 11 Pro (IIS + PHP)
+﻿SENTINELLE XDR 1.2.1 - Installation sur Windows 11 Pro (IIS + PHP)
 =====================================================================
 
 AVANT DE COMMENCER
@@ -43,7 +43,8 @@ AVANT DE COMMENCER
    Paramètres > Freebox > « Associer ma Freebox », puis appuyez sur la flèche
    droite de l'écran de la Freebox pour accepter. Ensuite, dans Freebox OS :
    Paramètres de la Freebox > Gestion des accès > Applications > Sentinelle XDR,
-   et cochez les droits indiqués dans Sentinelle.
+   cochez les 4 droits indiqués et décochez ceux qui ne servent pas.
+   Pas à pas, avec captures annotées : docs\Tutoriel-Associer-Freebox.pdf
 
 6. DEPUIS UN AUTRE APPAREIL DE LA MAISON (téléphone, tablette)
    http://ADRESSE-DU-PC/xdr/   (l'adresse s'affiche à la fin de l'installation)
